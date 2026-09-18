@@ -413,6 +413,53 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
           ownerId: user.uid,
           createdAt: now,
         });
+
+        // An insight is also remembered as an observed software event.
+        const memoryId = `insight_${insId}`;
+        await setDoc(
+          doc(db, "projects", projectId, "memoryEntries", memoryId),
+          {
+            id: memoryId,
+            projectId,
+            ownerId: user.uid,
+            type: "insight",
+            title: ins.title,
+            summary: ins.description,
+            status: "KNOWN",
+            evidence: [ins.evidence, ...(ins.affectedFiles || [])].filter(Boolean),
+            source: { kind: "after_analysis", id: insId },
+            relatedFiles: ins.affectedFiles || [],
+            relatedNodes: ins.affectedComponents || [],
+            createdAt: ins.createdAt || now,
+            observedAt: now,
+          },
+          { merge: true }
+        );
+      }
+
+      // Dependency declarations are part of the software's persistent memory.
+      const memoryDependencies = (data.graphNodes || []).filter((node: any) => node.type === "dependency");
+      for (const dependency of memoryDependencies) {
+        const memoryId = `dependency_${String(dependency.id).replace(/[^A-Za-z0-9_-]/g, "")}`;
+        await setDoc(
+          doc(db, "projects", projectId, "memoryEntries", memoryId),
+          {
+            id: memoryId,
+            projectId,
+            ownerId: user.uid,
+            type: "dependency",
+            title: dependency.label,
+            summary: dependency.description || `Dependency declared in ${dependency.filePath || "repository metadata"}.`,
+            status: "KNOWN",
+            evidence: [dependency.filePath || "repository dependency metadata"],
+            source: { kind: "repository_dependency", id: dependency.dependency || dependency.id },
+            relatedFiles: dependency.filePath ? [dependency.filePath] : [],
+            relatedNodes: [dependency.id],
+            createdAt: now,
+            observedAt: now,
+          },
+          { merge: true }
+        );
       }
 
       setCurrentProject(newProject);
