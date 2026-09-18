@@ -258,9 +258,8 @@ export function ProductGraphPage() {
                   <div
                     className="origin-top-left"
                     style={{
-                      width: canvasWidth,
-                      minHeight: canvasHeight,
-                      transform: `scale(${graphZoom})`,
+                      width: canvasWidth * graphZoom,
+                      minHeight: canvasHeight * graphZoom,
                     }}
                   >
                     <svg
@@ -316,7 +315,13 @@ export function ProductGraphPage() {
                             />
                             <circle
                               r="4"
-                              className={`fill-${node.status === "warning" ? "amber" : node.status === "updated" ? "sky" : "emerald"}-500`}
+                              className={
+                                node.status === "warning"
+                                  ? "fill-amber-500"
+                                  : node.status === "updated"
+                                  ? "fill-sky-500"
+                                  : "fill-emerald-500"
+                              }
                             />
                             <text
                               x="0"
