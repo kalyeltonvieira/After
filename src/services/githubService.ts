@@ -154,7 +154,7 @@ export function openGitHubOAuthPopup(authUrl: string): Promise<{ code: string | 
  * Fetch authenticated GitHub user details
  */
 export async function getConnectedGitHubUser(): Promise<GitHubUser> {
-  const res = await fetch("/api/projects/github-user", { headers: await authenticatedHeaders() });
+  const res = await fetch("/api/projects/github-user", { credentials: "include", headers: await authenticatedHeaders() });
 
   const data = await res.json();
   if (!res.ok || data.error) {
@@ -168,7 +168,7 @@ export async function getConnectedGitHubUser(): Promise<GitHubUser> {
  * List repositories accessible to the user
  */
 export async function listUserRepositories(): Promise<GitHubRepositoryItem[]> {
-  const res = await fetch("/api/projects/github-repos", { headers: await authenticatedHeaders() });
+  const res = await fetch("/api/projects/github-repos", { credentials: "include", headers: await authenticatedHeaders() });
 
   const data = await res.json();
   if (!res.ok || data.error) {
@@ -186,7 +186,7 @@ export async function listRepositoryBranches(
 ): Promise<GitHubBranchItem[]> {
   const params = new URLSearchParams({ repository });
 
-  const res = await fetch(`/api/projects/github-branches?${params.toString()}`, { headers: await authenticatedHeaders() });
+  const res = await fetch(`/api/projects/github-branches?${params.toString()}`, { credentials: "include", headers: await authenticatedHeaders() });
   const data = await res.json();
 
   if (!res.ok || data.error) {
@@ -204,6 +204,7 @@ export async function linkRepositoryToAfter(
 ): Promise<LinkRepositoryResponse> {
   const res = await fetch("/api/projects/github-link", {
     method: "POST",
+    credentials: "include",
     headers: await authenticatedHeaders(),
     body: JSON.stringify(payload),
   });
