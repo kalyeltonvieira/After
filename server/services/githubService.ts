@@ -463,7 +463,7 @@ export async function linkRepositoryToAfter(
   const { owner, repo } = parsed;
   const repository = await getRepository(owner, repo, token);
 
-  const defaultBranch = options?.requestedBranch || repository.default_branch || "main";
+  const defaultBranch = repository.default_branch;
 
   let webhookConfigured = false;
   if (options?.webhookBaseUrl && token && repository.permissions?.admin && process.env.GITHUB_WEBHOOK_SECRET) {
