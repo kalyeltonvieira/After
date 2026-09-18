@@ -3,6 +3,7 @@ import type { Response } from "express";
 import { requireFirebaseUser, type AuthenticatedRequest } from "../auth.js";
 import { createGitHubSession, createOAuthState, consumeOAuthState, getGitHubToken, persistGitHubToken } from "../githubSession.js";
 import { loadProjectContext } from "../projectContext.js";
+import { enqueueIncrementalAnalysis } from "../services/incrementalAnalysis.js";
 import {
   parseGitHubRepo,
   getGitHubOAuthUrl,
@@ -138,6 +139,38 @@ projectsRouter.post("/github-link", requireFirebaseUser, async (req: Authenticat
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
+});
+
+// Persistent analysis job status and explicit incremental re-processing.
+projectsRouter.get("/analysis-jobs/latest", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+  const projectId = String(req.query.projectId || "");
+  if (!projectId) return res.status(400).json({ error: "projectId is required." });
+  const context = await loadProjectContext(projectId, req.user!.uid);
+  if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
+  const db = (await import("firebase-admin/firestore")).getFirestore((await import("../auth.js")).adminApp);
+  const snap = await db.collection("projects").doc(projectId).collection("analysisJobs")
+    .orderBy("createdAt", "desc").limit(10).get();
+  return res.json({ jobs: snap.docs.map((doc) => doc.data()) });
+});
+
+projectsRouter.post("/analysis-jobs", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+  const { projectId, changedFiles, removedFiles, commitSha } = req.body || {};
+  if (!projectId) return res.status(400).json({ error: "projectId is required." });
+  const context = await loadProjectContext(String(projectId), req.user!.uid);
+  if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
+  const files = Array.isArray(changedFiles) ? changedFiles.filter((value: any) => typeof value === "string") : [];
+  const removed = Array.isArray(removedFiles) ? removedFiles.filter((value: any) => typeof value === "string") : [];
+  if (files.length + removed.length === 0) return res.status(400).json({ error: "changedFiles or removedFiles is required." });
+  const branch = String(context.project.branch || context.project.defaultBranch || "");
+  const queued = await enqueueIncrementalAnalysis({
+    projectId: String(projectId),
+    ownerId: req.user!.uid,
+    branch,
+    changedFiles: files,
+    removedFiles: removed,
+    commitSha: typeof commitSha === "string" ? commitSha : undefined,
+  });
+  return res.status(202).json(queued);
 });
 
 // Calculate direct and transitive impact from persisted, evidence-backed graph edges.
