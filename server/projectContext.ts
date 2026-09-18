@@ -4,19 +4,19 @@ export async function loadProjectContext(projectId: string, uid: string) {
   const db = getAdminFirestore();
   const projectSnap = await db.collection("projects").doc(projectId).get();
   if (!projectSnap.exists || projectSnap.data()?.ownerId !== uid) return null;
-  const [eventsSnap, insightsSnap, experimentsSnap, memorySnap] = await Promise.all([
+  const project = projectSnap.data() || {};
+  const results = await Promise.allSettled([
     projectSnap.ref.collection("events").get(),
     projectSnap.ref.collection("insights").get(),
     projectSnap.ref.collection("experiments").get(),
     projectSnap.ref.collection("memoryEntries").get(),
   ]);
-  const project = projectSnap.data() || {};
   return {
     project: { ...project, id: projectId },
-    timeline: eventsSnap.docs.map((doc) => doc.data()),
-    insights: insightsSnap.docs.map((doc) => doc.data()),
-    experiments: experimentsSnap.docs.map((doc) => doc.data()),
-    memoryEntries: memorySnap.docs.map((doc) => doc.data()),
+    timeline: results[0].status === "fulfilled" ? results[0].value.docs.map((doc) => doc.data()) : project.events || [],
+    insights: results[1].status === "fulfilled" ? results[1].value.docs.map((doc) => doc.data()) : project.insights || [],
+    experiments: results[2].status === "fulfilled" ? results[2].value.docs.map((doc) => doc.data()) : project.experiments || [],
+    memoryEntries: results[3].status === "fulfilled" ? results[3].value.docs.map((doc) => doc.data()) : project.memoryEntries || [],
     graphNodes: project.graphNodes || [],
     graphEdges: project.graphEdges || [],
   };
