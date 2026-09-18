@@ -218,6 +218,7 @@ export interface AnalysisJob {
   branch?: string;
   commitSha?: string;
   changedFiles?: string[];
+  removedFiles?: string[];
   startedAt?: string;
   completedAt?: string;
   createdAt: string;
