@@ -56,7 +56,7 @@ projectsRouter.post("/github-session", requireFirebaseUser, async (req: Authenti
     const sessionId = createGitHubSession(req.user!.uid, githubAccessToken);
     await persistGitHubToken(req.user!.uid, githubAccessToken);
 
-    const firebaseIdToken = String(req.headers.authorization || "").replace(/^Bearer\\s+/i, "").trim();
+    const firebaseIdToken = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
     if (!firebaseIdToken) {
       return res.status(401).json({ error: "Firebase authentication token is required." });
     }
