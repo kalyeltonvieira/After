@@ -184,6 +184,23 @@ repositoryRouter.get("/pulls", async (req: AuthenticatedRequest, res) => {
   } catch (error) { return handleRouteError(res, error); }
 });
 
+repositoryRouter.post("/pulls", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.body.projectId || ""));
+    const title = String(req.body.title || "").trim();
+    const head = String(req.body.head || "").trim();
+    const base = String(req.body.base || "").trim();
+    const body = String(req.body.body || "");
+    if (!title || !head || !base) return res.status(400).json({ error: "title, head and base are required." });
+    const { body: pull } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/pulls`, token, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, head, base, body }),
+    });
+    return res.status(201).json({ pull });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
 repositoryRouter.get("/issues", async (req: AuthenticatedRequest, res) => {
   try {
     const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
