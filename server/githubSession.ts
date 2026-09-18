@@ -81,6 +81,7 @@ function decryptToken(data: any): string | null {
 }
 
 export async function persistGitHubToken(uid: string, token: string) {
+  if (!process.env.GITHUB_TOKEN_ENCRYPTION_KEY) return false;
   const db = getFirestore(adminApp);
   await db.collection("githubConnections").doc(uid).set({
     uid,
@@ -88,9 +89,11 @@ export async function persistGitHubToken(uid: string, token: string) {
     encryptedToken: encryptToken(token),
     updatedAt: new Date().toISOString(),
   }, { merge: true });
+  return true;
 }
 
 export async function getPersistentGitHubToken(uid: string) {
+  if (!process.env.GITHUB_TOKEN_ENCRYPTION_KEY) return null;
   const db = getFirestore(adminApp);
   const snap = await db.collection("githubConnections").doc(uid).get();
   return snap.exists ? decryptToken(snap.data()?.encryptedToken) : null;
