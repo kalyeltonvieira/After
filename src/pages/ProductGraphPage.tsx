@@ -20,7 +20,14 @@ import { StatusBadge } from "../components/StatusBadge";
 import { EmptyState } from "../components/EmptyState";
 
 export function ProductGraphPage() {
-  const { graphNodes, graphEdges, setSelectedNodeForWhy, currentProject } = useProject();
+  const {
+    graphNodes,
+    graphEdges,
+    setSelectedNodeForWhy,
+    currentProject,
+    setAiContext,
+    setIsAskAfterOpen,
+  } = useProject();
   const { t, language } = useLanguage();
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [filterLayer, setFilterLayer] = useState<string>("all");
@@ -353,7 +360,14 @@ export function ProductGraphPage() {
                   <button
                     id="inspect-node-why-btn"
                     type="button"
-                    onClick={() => setSelectedNodeForWhy(selectedNode)}
+                    onClick={() => {
+                      setAiContext({
+                        type: selectedNode.filePath ? "file" : "node",
+                        label: selectedNode.filePath || selectedNode.label,
+                        path: selectedNode.filePath,
+                      });
+                      setSelectedNodeForWhy(selectedNode);
+                    }}
                     className="w-full py-3 px-4 rounded-xl bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-medium text-xs hover:opacity-90 transition-all shadow-xs flex items-center justify-center space-x-2 cursor-pointer active:scale-98"
                   >
                     <Sparkles className="w-4 h-4" />
@@ -362,6 +376,21 @@ export function ProductGraphPage() {
                         ? "Por que isso existe? (Inspecionar Racional)"
                         : "Why does this exist? (Inspect Rationale)"}
                     </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAiContext({
+                        type: selectedNode.filePath ? "file" : "node",
+                        label: selectedNode.filePath || selectedNode.label,
+                        path: selectedNode.filePath,
+                      });
+                      setIsAskAfterOpen(true);
+                    }}
+                    className="w-full py-2.5 px-4 rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 font-medium text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all flex items-center justify-center space-x-2 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>{language === "pt" ? "Conversar com AFTER sobre este nó" : "Chat with AFTER about this node"}</span>
                   </button>
                   <p className="text-[11px] text-zinc-400 text-center">
                     {language === "pt"
