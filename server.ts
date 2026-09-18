@@ -1,6 +1,7 @@
 import express from "express";
 import cookieParser from "cookie-parser";
 import { githubOAuthCallback } from "./server/routes/projects.ts";
+import { githubLoginStart, githubLoginCallback } from "./server/routes/githubAuth.ts";
 import path from "path";
 import { fileURLToPath } from "url";
 import { apiRouter } from "./server/app.ts";
@@ -13,11 +14,20 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = 3000;
 
-app.post("/api/projects/github-webhook", express.raw({ type: "application/json", limit: "2mb" }), githubWebhookHandler as any);
+app.post(
+  "/api/projects/github-webhook",
+  express.raw({ type: "application/json", limit: "2mb" }),
+  githubWebhookHandler as any
+);
+
 app.use(express.json());
 app.use(cookieParser());
-app.use("/api", apiRouter);
+
+app.get("/auth/github", githubLoginStart);
+app.get("/auth/github/callback", githubLoginCallback);
 app.get("/auth/callback", githubOAuthCallback);
+
+app.use("/api", apiRouter);
 
 // Serve static assets from Vite build in production
 app.use(express.static(path.join(__dirname, "dist")));
