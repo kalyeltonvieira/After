@@ -17,8 +17,6 @@ import {
 import { useProject } from "../context/ProjectContext";
 import { useLanguage } from "../context/LanguageContext";
 import {
-  getGitHubAuthUrl,
-  openGitHubOAuthPopup,
   getConnectedGitHubUser,
   listUserRepositories,
   GitHubUser,
@@ -61,10 +59,6 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
   const [loadingStep, setLoadingStep] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  // GitHub is the primary identity provider; the OAuth session is established at login.
-  const [oauthAvailable, setOauthAvailable] = useState<boolean>(false);
-  const [oauthUrl, setOauthUrl] = useState<string | null>(null);
-
   // Close on Escape key press
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -84,19 +78,6 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
     void loadGitHubUserData();
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    getGitHubAuthUrl()
-      .then((data) => {
-        setOauthAvailable(Boolean(data.configured && data.url));
-        setOauthUrl(data.url || null);
-      })
-      .catch(() => {
-        setOauthAvailable(false);
-        setOauthUrl(null);
-      });
-  }, [isOpen]);
-
   const loadGitHubUserData = async () => {
     setLoadingRepos(true);
     try {
@@ -110,31 +91,6 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
       console.warn("Could not load user repos:", err);
     } finally {
       setLoadingRepos(false);
-    }
-  };
-
-  // Launch OAuth Popup leveraging server/app.ts callback
-  const handleLaunchOAuth = async () => {
-    if (!oauthUrl) return;
-    setError(null);
-    setLoading(true);
-    setLoadingStep("Opening GitHub OAuth window...");
-
-    try {
-      const result = await openGitHubOAuthPopup(oauthUrl);
-      if (result.error && result.error !== "Popup was closed by user") {
-        setError(`GitHub authorization error: ${result.error}`);
-        return;
-      }
-      if (!result.error) {
-        setLoadingStep("Loading your repositories from GitHub...");
-        await loadGitHubUserData();
-      }
-    } catch (err: any) {
-      setError(err.message || "OAuth connection failed");
-    } finally {
-      setLoading(false);
-      setLoadingStep("");
     }
   };
 
@@ -278,114 +234,91 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
           {/* Tab 1: Connect GitHub */}
           {activeTab === "github" && (
             <form onSubmit={handleConnectGitHub} className="space-y-4">
-            {oauthAvailable && (
-              <div className="p-3.5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-850/50 space-y-3">
-                <div className="flex items-center justify-between">
+            <div className="p-3.5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-850/50 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                  <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                    GitHub conectado
+                  </span>
+                </div>
+                {connectedUser && (
                   <div className="flex items-center space-x-2">
-                    <ShieldCheck className="w-4 h-4 text-emerald-500" />
-                    <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-                      GitHub OAuth Integration
+                    <img
+                      src={connectedUser.avatar_url}
+                      alt={connectedUser.login}
+                      className="w-5 h-5 rounded-full border border-zinc-200 dark:border-zinc-700"
+                      referrerPolicy="no-referrer"
+                    />
+                    <span className="text-xs font-mono font-medium text-emerald-600 dark:text-emerald-400">
+                      @{connectedUser.login}
                     </span>
                   </div>
-                  {connectedUser ? (
-                    <div className="flex items-center space-x-2">
-                      <img
-                        src={connectedUser.avatar_url}
-                        alt={connectedUser.login}
-                        className="w-5 h-5 rounded-full border border-zinc-200 dark:border-zinc-700"
-                        referrerPolicy="no-referrer"
-                      />
-                      <span className="text-xs font-mono font-medium text-emerald-600 dark:text-emerald-400">
-                        @{connectedUser.login}
-                      </span>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleLaunchOAuth}
-                      className="px-3 py-1.5 rounded-lg bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 text-xs font-medium hover:opacity-90 transition-opacity flex items-center space-x-1.5 cursor-pointer"
-                    >
-                      <Github className="w-3.5 h-3.5" />
-                      <span>Reauthorize GitHub</span>
-                    </button>
-                  )}
+                )}
+              </div>
+
+              <div className="space-y-2 pt-1 border-t border-zinc-200/60 dark:border-zinc-800/60">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
+                    Repositórios disponíveis ({userRepos.length})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => loadGitHubUserData()}
+                    className="text-[11px] text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 flex items-center space-x-1 cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${loadingRepos ? "animate-spin" : ""}`} />
+                    <span>Atualizar</span>
+                  </button>
                 </div>
 
-                {connectedUser ? (
-                  <div className="space-y-2 pt-1 border-t border-zinc-200/60 dark:border-zinc-800/60">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
-                        Your Repositories ({userRepos.length})
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => loadGitHubUserData()}
-                        className="text-[11px] text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 flex items-center space-x-1 cursor-pointer"
-                      >
-                        <RefreshCw className={`w-3 h-3 ${loadingRepos ? "animate-spin" : ""}`} />
-                        <span>Refresh</span>
-                      </button>
+                {userRepos.length > 0 ? (
+                  <>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Search className="w-3 h-3 text-zinc-400" />
+                      <input
+                        value={repoSearch}
+                        onChange={(e) => setRepoSearch(e.target.value)}
+                        placeholder="Buscar repositórios…"
+                        className="flex-1 bg-transparent text-[11px] outline-none border-b border-zinc-200 dark:border-zinc-700 py-1"
+                      />
+                      <span className="text-[10px] text-zinc-400">{filteredRepos.length}</span>
                     </div>
-
-                    {userRepos.length > 0 ? (
-                      <>
-                        <div className="flex items-center gap-2 mb-2">
-                          <Search className="w-3 h-3 text-zinc-400" />
-                          <input
-                            value={repoSearch}
-                            onChange={(e) => setRepoSearch(e.target.value)}
-                            placeholder="Search repositories…"
-                            className="flex-1 bg-transparent text-[11px] outline-none border-b border-zinc-200 dark:border-zinc-700 py-1"
-                          />
-                          <span className="text-[10px] text-zinc-400">{filteredRepos.length}</span>
-                        </div>
-                        <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
-                          {filteredRepos.map((repo) => (
-                          <button
-                            key={repo.id}
-                            type="button"
-                            onClick={() => handleSelectRepo(repo)}
-                            className={`w-full p-2 text-left rounded-lg text-xs flex items-center justify-between border transition-all cursor-pointer ${
-                              repoInput === repo.full_name
-                                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 border-transparent shadow-xs"
-                                : "bg-white dark:bg-zinc-800/80 border-zinc-200 dark:border-zinc-700/60 hover:border-zinc-400 dark:hover:border-zinc-600 text-zinc-800 dark:text-zinc-200"
-                            }`}
-                          >
-                            <div className="flex items-center space-x-2 truncate">
-                              {repo.private ? (
-                                <Lock className="w-3 h-3 text-amber-500 shrink-0" />
-                              ) : (
-                                <Globe className="w-3 h-3 text-zinc-400 shrink-0" />
-                              )}
-                              <span className="font-mono truncate">{repo.full_name}</span>
-                            </div>
-                            <div className="flex items-center space-x-2 shrink-0 text-[10px] opacity-70">
-                              {repo.language && <span>{repo.language}</span>}
-                              {repo.stargazers_count > 0 && (
-                                <span className="flex items-center space-x-0.5">
-                                  <Star className="w-2.5 h-2.5 fill-current" />
-                                  <span>{repo.stargazers_count}</span>
-                                </span>
-                              )}
-                            </div>
-                          </button>
-                          ))}
-                        </div>
-                      </>
-                    ) : (
-                      <p className="text-[11px] text-zinc-400">
-                        {loadingRepos ? "Loading your repositories..." : "No repositories found for this account."}
-                      </p>
-                    )}
-                  </div>
+                    <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                      {filteredRepos.map((repo) => (
+                        <button
+                          key={repo.id}
+                          type="button"
+                          onClick={() => handleSelectRepo(repo)}
+                          className={`w-full p-2 text-left rounded-lg text-xs flex items-center justify-between border transition-all cursor-pointer ${repoInput === repo.full_name
+                            ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 border-transparent shadow-xs"
+                            : "bg-white dark:bg-zinc-800/80 border-zinc-200 dark:border-zinc-700/60 hover:border-zinc-400 dark:hover:border-zinc-600 text-zinc-800 dark:text-zinc-200"
+                          }`}
+                        >
+                          <div className="flex items-center space-x-2 truncate">
+                            {repo.private ? <Lock className="w-3 h-3 text-amber-500 shrink-0" /> : <Globe className="w-3 h-3 text-zinc-400 shrink-0" />}
+                            <span className="font-mono truncate">{repo.full_name}</span>
+                          </div>
+                          <div className="flex items-center space-x-2 shrink-0 text-[10px] opacity-70">
+                            {repo.language && <span>{repo.language}</span>}
+                            {repo.stargazers_count > 0 && (
+                              <span className="flex items-center space-x-0.5">
+                                <Star className="w-2.5 h-2.5 fill-current" />
+                                <span>{repo.stargazers_count}</span>
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </>
                 ) : (
-                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                    Your GitHub session is used to discover the public and private repositories your account can access.
+                  <p className="text-[11px] text-zinc-400">
+                    {loadingRepos ? "Carregando seus repositórios..." : "Nenhum repositório disponível para esta conta do GitHub."}
                   </p>
                 )}
               </div>
-            )}
-
+            </div>
             <div>
               <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
                 Repository Identifier or URL <span className="text-red-500">*</span>
