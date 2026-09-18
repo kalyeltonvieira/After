@@ -361,7 +361,7 @@ Answer the user's question using the repository evidence above. Keep the answer 
 
 // Endpoint: Change Analysis (evidence extraction + AI interpretation)
 aiRouter.post("/change-analysis", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
-  const { projectId, sha, path, question } = req.body;
+  const { projectId, sha, path, pullRequestNumber, question } = req.body;
   const context = projectId ? await loadProjectContext(String(projectId), req.user!.uid) : null;
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
   if (!sha && !path) return res.status(400).json({ error: "sha or path is required." });
@@ -383,7 +383,37 @@ aiRouter.post("/change-analysis", requireFirebaseUser, async (req: Authenticated
     let files: any[] = [];
     let history: any[] = [];
 
-    if (sha) {
+    if (pullRequestNumber) {
+      const prRes = await fetch(
+        `https://api.github.com/repos/${parsedRepo.owner}/${parsedRepo.repo}/pulls/${encodeURIComponent(String(pullRequestNumber))}`,
+        { headers: ghHeaders }
+      );
+      if (!prRes.ok) {
+        return res.status(prRes.status).json({ error: `GitHub pull request lookup failed (${prRes.status}).` });
+      }
+
+      subject = await prRes.json();
+      const filesRes = await fetch(
+        `https://api.github.com/repos/${parsedRepo.owner}/${parsedRepo.repo}/pulls/${encodeURIComponent(String(pullRequestNumber))}/files?per_page=100`,
+        { headers: ghHeaders }
+      );
+      if (filesRes.ok) {
+        const pullFiles = await filesRes.json();
+        files = Array.isArray(pullFiles)
+          ? pullFiles.map((file: any) => ({
+              path: file.filename,
+              status: file.status,
+              additions: file.additions,
+              deletions: file.deletions,
+              patch: typeof file.patch === "string" ? file.patch.slice(0, 12000) : undefined,
+            }))
+          : [];
+      }
+      history = (context.timeline || []).filter((event: any) =>
+        String(event?.metadata?.url || "").includes(`/pull/${pullRequestNumber}`) ||
+        String(event?.metadata?.pullRequest || "") === String(pullRequestNumber)
+      );
+    } else if (sha) {
       const commitRes = await fetch(
         `https://api.github.com/repos/${parsedRepo.owner}/${parsedRepo.repo}/commits/${encodeURIComponent(String(sha))}`,
         { headers: ghHeaders }
@@ -517,7 +547,7 @@ ${JSON.stringify(evidence, null, 2)}`;
       return res.json({
         evidence,
         analysis: {
-          summary: `The repository evidence for ${sha ? `commit ${sha}` : `file ${path}`} is available, but an AI interpretation could not be generated.`,
+          summary: `The repository evidence for ${pullRequestNumber ? `pull request #${pullRequestNumber}` : sha ? `commit ${sha}` : `file ${path}`} is available, but an AI interpretation could not be generated.`,
           known: [
             ...files.slice(0, 12).map((file) =>
               `${file.path}: ${file.status || "changed"}${typeof file.additions === "number" ? `, +${file.additions}` : ""}${typeof file.deletions === "number" ? ` / -${file.deletions}` : ""}`
