@@ -102,14 +102,6 @@ export function LandingPage({ onOpenAuth }: LandingPageProps) {
             <span>{language === "pt" ? "Conectar um Repositório" : "Connect a Repository"}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
-          <button
-            id="hero-cta-signin-btn"
-            type="button"
-            onClick={() => onOpenAuth("signin")}
-            className="w-full sm:w-auto px-7 py-3.5 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/60 text-zinc-700 dark:text-zinc-300 font-medium text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all cursor-pointer"
-          >
-            {language === "pt" ? "Entrar com Google" : "Sign in with Google"}
-          </button>
         </div>
 
         {/* Evidence loop indicators */}
