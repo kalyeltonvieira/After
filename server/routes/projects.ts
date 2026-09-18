@@ -1,13 +1,11 @@
 import { Router } from "express";
 import type { Response } from "express";
 import { requireFirebaseUser, type AuthenticatedRequest } from "../auth.js";
-import { createGitHubSession, createOAuthState, consumeOAuthState, getGitHubToken, getPersistentGitHubToken, persistGitHubToken } from "../githubSession.js";
+import { createGitHubSession, getGitHubToken, persistGitHubToken } from "../githubSession.js";
 import { loadProjectContext } from "../projectContext.js";
 import { enqueueIncrementalAnalysis } from "../services/incrementalAnalysis.js";
 import {
   parseGitHubRepo,
-  getGitHubOAuthUrl,
-  exchangeOAuthCode,
   getAuthenticatedUser,
   listUserRepositories,
   getRepositoryBranches,
@@ -16,26 +14,6 @@ import {
 
 export const projectsRouter = Router();
 export { parseGitHubRepo };
-
-// Secure OAuth callback: exchange code, store token server-side, and notify the opener without secrets.
-export async function githubOAuthCallback(req: any, res: Response) {
-  const { code, state, error } = req.query;
-  if (error || !code || !state) return res.status(400).send("GitHub authorization was cancelled or invalid.");
-  const stateRecord = consumeOAuthState(String(state));
-  if (!stateRecord) return res.status(400).send("GitHub authorization state expired.");
-  try {
-    const result = await exchangeOAuthCode(String(code));
-    const sessionId = createGitHubSession(stateRecord.uid, result.token);
-    await persistGitHubToken(stateRecord.uid, result.token);
-    res.cookie("after_github_session", sessionId, {
-      httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production",
-      maxAge: 7 * 24 * 60 * 60 * 1000, path: "/"
-    });
-    return res.send(`<script>window.opener?.postMessage({type:"OAUTH_AUTH_SUCCESS"}, window.location.origin);window.close();</script>`);
-  } catch (err: any) {
-    return res.status(400).send(`GitHub authorization failed: ${String(err.message).replace(/[<>]/g, "")}`);
-  }
-}
 
 // Validate username format and reserved names
 projectsRouter.get("/validate-username", (req, res) => {
@@ -59,23 +37,6 @@ projectsRouter.get("/validate-username", (req, res) => {
   }
 
   return res.json({ valid: true, username });
-});
-
-// GitHub OAuth Authorization URL Generator. The state is bound to the Firebase user.
-projectsRouter.get("/github-auth-url", requireFirebaseUser, (req: AuthenticatedRequest, res) => {
-  const originUrl = req.headers.origin || (req.headers.host ? `${req.protocol}://${req.headers.host}` : undefined);
-  const result = getGitHubOAuthUrl(originUrl);
-  if (result.url && req.user) {
-    const state = createOAuthState(req.user.uid);
-    const separator = result.url.includes("?") ? "&" : "?";
-    result.url = `${result.url}${separator}state=${encodeURIComponent(state)}`;
-  }
-  return res.json(result);
-});
-
-// OAuth code exchange is completed by the server callback, never by the browser.
-projectsRouter.post("/github-exchange", (_req, res) => {
-  return res.status(410).json({ error: "OAuth exchange is handled by the secure callback." });
 });
 
 // Establish the AFTER GitHub session from the OAuth credential returned by Firebase Auth.
