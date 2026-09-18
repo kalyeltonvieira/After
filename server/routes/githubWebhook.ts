@@ -225,32 +225,6 @@ export async function githubWebhookHandler(req: WebhookRequest, res: Response) {
       updatedAt: now,
     };
 
-    let incrementalJobId: string | null = null;
-
-    if (eventName === "push") {
-      const branch = normalizeBranchRef(eventPayload.metadata?.ref || "");
-      const removedFiles = Array.isArray(payload?.head_commit?.removed)
-        ? payload.head_commit.removed.filter((file: any) => typeof file === "string")
-        : [];
-
-      if (branch && changedFiles.length + removedFiles.length > 0 && (!project.branch || project.branch === branch)) {
-        try {
-          const queued = await enqueueIncrementalAnalysis({
-            projectId,
-            ownerId,
-            branch,
-            changedFiles,
-            removedFiles,
-            commitSha: String(eventPayload.metadata?.commitSha || ""),
-            deliveryId,
-          });
-          incrementalJobId = queued.jobId;
-        } catch (error: any) {
-          console.warn("Could not enqueue incremental analysis:", error?.message || error);
-        }
-      }
-    }
-
     if (matchedTargets.length > 0) {
       const notificationId = crypto.createHash("sha256")
         .update(`${projectId}:notification:${deliveryId}:${eventName}`)
@@ -264,9 +238,7 @@ export async function githubWebhookHandler(req: WebhookRequest, res: Response) {
         ownerId,
         type: eventName,
         title: eventPayload.event,
-        body: incrementalJobId
-          ? `${eventPayload.reason} Incremental analysis queued (${incrementalJobId}).`
-          : eventPayload.reason,
+        body: eventPayload.reason,
         repository,
         createdAt: now,
         read: false,
@@ -285,10 +257,36 @@ export async function githubWebhookHandler(req: WebhookRequest, res: Response) {
     }
 
     try {
+      // Persist the webhook fact before starting the worker so incremental
+      // analysis always observes the event/memory state that triggered it.
       await projectDoc.ref.set(update, { merge: true });
       projectsUpdated += 1;
     } catch (error: any) {
       console.warn(`Could not persist webhook event for ${projectId}:`, error?.message || error);
+      continue;
+    }
+
+    if (eventName === "push") {
+      const branch = normalizeBranchRef(eventPayload.metadata?.ref || "");
+      const removedFiles = Array.isArray(payload?.head_commit?.removed)
+        ? payload.head_commit.removed.filter((file: any) => typeof file === "string")
+        : [];
+
+      if (branch && changedFiles.length + removedFiles.length > 0 && (!project.branch || project.branch === branch)) {
+        try {
+          await enqueueIncrementalAnalysis({
+            projectId,
+            ownerId,
+            branch,
+            changedFiles,
+            removedFiles,
+            commitSha: String(eventPayload.metadata?.commitSha || ""),
+            deliveryId,
+          });
+        } catch (error: any) {
+          console.warn("Could not enqueue incremental analysis:", error?.message || error);
+        }
+      }
     }
   }
 
