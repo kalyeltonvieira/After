@@ -5,6 +5,7 @@ import {
   GithubAuthProvider,
   onAuthStateChanged,
   setPersistence,
+  signInWithCustomToken,
   signInWithPopup,
   signOut as firebaseSignOut,
   updateProfile as firebaseUpdateProfile,
