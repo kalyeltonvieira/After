@@ -57,6 +57,24 @@ const DEFAULT_PREFERENCES: UserPreferences = {
 };
 
 const GITHUB_LOGIN_ERROR = "GitHub login did not complete.";
+const GITHUB_SESSION_STORAGE_KEY = "after.github.access_token";
+
+function cacheGitHubAccessToken(token: string) {
+  try {
+    sessionStorage.setItem(GITHUB_SESSION_STORAGE_KEY, token);
+  } catch {
+    // Session storage can be unavailable in restricted preview contexts.
+  }
+}
+
+function clearCachedGitHubAccessToken() {
+  try {
+    sessionStorage.removeItem(GITHUB_SESSION_STORAGE_KEY);
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -151,6 +169,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       );
     }
 
+    cacheGitHubAccessToken(githubAccessToken);
     const idToken = await firebaseUser.getIdToken();
     const response = await fetch("/api/projects/github-session", {
       method: "POST",
@@ -185,6 +204,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       );
     }
 
+    cacheGitHubAccessToken(githubAccessToken);
     const idToken = await result.user.getIdToken(true);
     const response = await fetch("/api/projects/github-session", {
       method: "POST",
@@ -210,6 +230,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         method: "POST",
         credentials: "include",
       }).catch(() => undefined);
+      clearCachedGitHubAccessToken();
       await firebaseSignOut(auth);
       setProfile(null);
       setNeedsOnboarding(false);
