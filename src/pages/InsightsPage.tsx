@@ -59,8 +59,8 @@ export function InsightsPage({ onNavigate }: { onNavigate: (view: string) => voi
         control: "Existing architecture without remediation",
         variant: insight.suggestedAction,
         metric: `${insight.category} error rate / latency traces`,
-        expectedResult: `Zero regressions on affected components: ${insight.affectedComponents.join(", ")}`,
-        risk: "Low regression probability if tests pass",
+        expectedResult: "Measure the change against the project baseline; no quantified result is known yet.",
+        risk: "Risk must be validated with tests and observed project telemetry.",
         duration: "7 days",
       });
       onNavigate("experiments");
