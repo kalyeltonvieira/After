@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { getFirestore } from "firebase-admin/firestore";
+import { adminApp } from "./auth.js";
 
 interface GitHubSession {
   uid: string;
@@ -42,4 +44,54 @@ export function getGitHubToken(sessionId: string | undefined, uid: string) {
 
 export function revokeGitHubSession(sessionId: string | undefined) {
   if (sessionId) sessions.delete(sessionId);
+}
+
+
+function encryptionKey(): Buffer {
+  const raw = process.env.GITHUB_TOKEN_ENCRYPTION_KEY || "";
+  if (!/^[0-9a-fA-F]{64}$/.test(raw)) {
+    throw new Error("GITHUB_TOKEN_ENCRYPTION_KEY must be 64 hexadecimal characters.");
+  }
+  return Buffer.from(raw, "hex");
+}
+
+function encryptToken(token: string) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", encryptionKey(), iv);
+  const ciphertext = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
+  return {
+    ciphertext: ciphertext.toString("base64"),
+    iv: iv.toString("base64"),
+    tag: cipher.getAuthTag().toString("base64"),
+  };
+}
+
+function decryptToken(data: any): string | null {
+  try {
+    if (!data?.ciphertext || !data?.iv || !data?.tag) return null;
+    const decipher = crypto.createDecipheriv("aes-256-gcm", encryptionKey(), Buffer.from(data.iv, "base64"));
+    decipher.setAuthTag(Buffer.from(data.tag, "base64"));
+    return Buffer.concat([
+      decipher.update(Buffer.from(data.ciphertext, "base64")),
+      decipher.final(),
+    ]).toString("utf8");
+  } catch {
+    return null;
+  }
+}
+
+export async function persistGitHubToken(uid: string, token: string) {
+  const db = getFirestore(adminApp);
+  await db.collection("githubConnections").doc(uid).set({
+    uid,
+    provider: "github",
+    encryptedToken: encryptToken(token),
+    updatedAt: new Date().toISOString(),
+  }, { merge: true });
+}
+
+export async function getPersistentGitHubToken(uid: string) {
+  const db = getFirestore(adminApp);
+  const snap = await db.collection("githubConnections").doc(uid).get();
+  return snap.exists ? decryptToken(snap.data()?.encryptedToken) : null;
 }
