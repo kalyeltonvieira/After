@@ -56,7 +56,7 @@ export function ExperimentsPage() {
         headers: await authenticatedHeaders(),
         body: JSON.stringify({
           objective: aiObjective,
-          projectContext: currentProject,
+          projectId: currentProject.id,
         }),
       });
       const data = await res.json();
