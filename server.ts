@@ -4,6 +4,7 @@ import { githubOAuthCallback } from "./server/routes/projects.ts";
 import path from "path";
 import { fileURLToPath } from "url";
 import { apiRouter } from "./server/app.ts";
+import { githubWebhookHandler } from "./server/routes/githubWebhook.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,6 +12,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = 3000;
 
+app.post("/api/projects/github-webhook", express.raw({ type: "application/json", limit: "2mb" }), githubWebhookHandler as any);
 app.use(express.json());
 app.use(cookieParser());
 app.use("/api", apiRouter);
