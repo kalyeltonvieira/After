@@ -1,6 +1,17 @@
 import { getAdminFirestore } from "./auth.js";
 
-export async function loadProjectContext(projectId: string, uid: string) {
+export async function loadProjectContext(
+  projectId: string,
+  uid: string
+): Promise<{
+  project: Record<string, any> & { id: string };
+  timeline: any[];
+  insights: any[];
+  experiments: any[];
+  memoryEntries: any[];
+  graphNodes: any[];
+  graphEdges: any[];
+} | null> {
   const db = getAdminFirestore();
   const projectSnap = await db.collection("projects").doc(projectId).get();
   if (!projectSnap.exists || projectSnap.data()?.ownerId !== uid) return null;
