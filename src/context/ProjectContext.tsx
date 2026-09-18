@@ -35,6 +35,7 @@ interface ProjectContextType {
   experiments: ProjectExperiment[];
   graphNodes: GraphNode[];
   graphEdges: GraphEdge[];
+  memoryEntries: SoftwareMemoryEntry[];
   loadingProjects: boolean;
   createProject: (data: {
     name: string;
@@ -95,6 +96,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const [experiments, setExperiments] = useState<ProjectExperiment[]>([]);
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
   const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
+  const [memoryEntries, setMemoryEntries] = useState<SoftwareMemoryEntry[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [selectedNodeForWhy, setSelectedNodeForWhy] = useState<GraphNode | null>(null);
   const [isAskAfterOpen, setIsAskAfterOpen] = useState(false);
@@ -239,10 +241,33 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
+    // D. Software Memory
+    const memoryRef = collection(db, "projects", projectId, "memoryEntries");
+    const unsubMemory = onSnapshot(
+      memoryRef,
+      (snapshot) => {
+        const entries: SoftwareMemoryEntry[] = [];
+        snapshot.forEach((d) => entries.push(d.data() as SoftwareMemoryEntry));
+        entries.sort((a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+        setMemoryEntries(entries);
+      },
+      (error) => {
+        try {
+          handleFirestoreError(error, OperationType.LIST, `projects/${projectId}/memoryEntries`);
+        } catch (e) {
+          // Handled
+        }
+        setMemoryEntries([]);
+      }
+    );
+
     return () => {
       unsubEvents();
       unsubInsights();
       unsubExp();
+      unsubMemory();
     };
   }, [user, currentProject?.id, currentProject?.ownerId]);
 
@@ -251,6 +276,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     if (!currentProject) {
       setGraphNodes([]);
       setGraphEdges([]);
+      setMemoryEntries([]);
       setAiContext(null);
       return;
     }
@@ -671,6 +697,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         experiments,
         graphNodes,
         graphEdges,
+        memoryEntries,
         loadingProjects,
         createProject,
         connectRepository,
