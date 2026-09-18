@@ -23,6 +23,7 @@ import {
   ProjectExperiment,
   GraphNode,
   GraphEdge,
+  SoftwareMemoryEntry,
 } from "../types";
 
 interface ProjectContextType {
@@ -343,7 +344,40 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         });
       }
 
-      // 3. Persist grounded insights into insights subcollection
+      // 3. Persist real repository facts into Software Memory.
+      // Entries are keyed by source identity so the same evidence is not duplicated
+      // if the project is connected again with the same analysis payload.
+      for (const ev of data.events || []) {
+        const sourceId = String(ev.metadata?.fullSha || ev.metadata?.sha || ev.id || Date.now());
+        const memoryId = `commit_${sourceId.replace(/[^A-Za-z0-9_-]/g, "")}`;
+        const memory: SoftwareMemoryEntry = {
+          id: memoryId,
+          projectId,
+          type: "commit",
+          title: ev.event,
+          summary: ev.reason || ev.event,
+          status: "KNOWN",
+          evidence: [
+            ev.metadata?.fullSha ? `Commit ${ev.metadata.fullSha}` : `Recorded commit event ${ev.id}`,
+            ...(Array.isArray(ev.affectedComponents) ? ev.affectedComponents.slice(0, 10) : []),
+          ],
+          source: {
+            kind: "github_commit",
+            id: ev.metadata?.fullSha || ev.metadata?.sha,
+            url: ev.metadata?.url,
+          },
+          relatedFiles: Array.isArray(ev.affectedComponents) ? ev.affectedComponents : [],
+          createdAt: ev.timestamp || now,
+          observedAt: now,
+        };
+        await setDoc(
+          doc(db, "projects", projectId, "memoryEntries", memoryId),
+          { ...memory, ownerId: user.uid },
+          { merge: true }
+        );
+      }
+
+      // 4. Persist grounded insights into insights subcollection
       for (const ins of data.insights || []) {
         const insId = `ins_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
         await setDoc(doc(db, "projects", projectId, "insights", insId), {
