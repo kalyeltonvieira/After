@@ -538,23 +538,35 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
       });
     }
 
-    // F. Detect Real Dependencies from package.json
-    if (packageJson && packageJson.dependencies) {
-      const depEntries = Object.entries(packageJson.dependencies).slice(0, 8);
-      for (const [depName, version] of depEntries) {
-        const nodeId = `dep_${depName.replace(/[^a-zA-Z0-9_]/g, "_")}`;
-        graphNodes.push({
-          id: nodeId,
-          label: `${depName}@${version}`,
-          type: "dependency",
-          category: "external",
-          status: "healthy",
-          changesCount: 1,
-          dependency: depName,
-          filePath: "package.json",
-          description: `Direct production dependency specified in package.json.`,
+    // F. Detect all declared dependencies from package.json.
+    if (packageJson) {
+      const dependencyGroups = [
+        { field: "dependencies", kind: "production" },
+        { field: "devDependencies", kind: "development" },
+        { field: "optionalDependencies", kind: "optional" },
+        { field: "peerDependencies", kind: "peer" },
+      ];
 
-        });
+      const seenDependencyNames = new Set<string>();
+      for (const group of dependencyGroups) {
+        const entries = Object.entries(packageJson[group.field] || {});
+        for (const [depName, version] of entries) {
+          if (seenDependencyNames.has(depName)) continue;
+          seenDependencyNames.add(depName);
+          const nodeId = `dep_${depName.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+          graphNodes.push({
+            id: nodeId,
+            label: `${depName}@${version}`,
+            type: "dependency",
+            category: "external",
+            status: "monitored",
+            changesCount: 0,
+            dependency: depName,
+            filePath: "package.json",
+            configKey: group.kind,
+            description: `${group.kind} dependency declared in package.json.`,
+          });
+        }
       }
     }
 
