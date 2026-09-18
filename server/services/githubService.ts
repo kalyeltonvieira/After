@@ -316,13 +316,13 @@ export async function getRepositoryCommits(
     token?: string;
   }
 ): Promise<any[]> {
-  const branch = options?.sha || undefined;
+  const branch = options?.sha;
   const perPage = options?.per_page || 20;
+  const query = new URLSearchParams({ per_page: String(perPage) });
+  if (branch) query.set("sha", branch);
 
   const res = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/commits?sha=${encodeURIComponent(
-      branch
-    )}&per_page=${perPage}`,
+    `https://api.github.com/repos/${owner}/${repo}/commits?${query.toString()}`,
     {
       headers: getGitHubHeaders(options?.token),
     }
