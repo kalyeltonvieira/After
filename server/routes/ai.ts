@@ -1,11 +1,18 @@
 import { Router } from "express";
 import { generateContentWithFallback } from "../gemini.js";
+import { requireFirebaseUser, type AuthenticatedRequest } from "../auth.js";
+import { loadProjectContext } from "../projectContext.js";
 
 export const aiRouter = Router();
 
 // Endpoint: Why? Engine
-aiRouter.post("/why", async (req, res) => {
-  const { nodeName, nodeType, projectContext, recentEvents, dependencies } = req.body;
+aiRouter.post("/why", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+  const { nodeName, nodeType, projectId } = req.body;
+  const context = projectId ? await loadProjectContext(String(projectId), req.user!.uid) : null;
+  if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
+  const projectContext: any = context.project;
+  const recentEvents = context.timeline;
+  const dependencies = context.graphNodes.filter((node: any) => node.type === "dependency").map((node: any) => node.label);
 
   if (!nodeName) {
     return res.status(400).json({ error: "nodeName is required" });
@@ -88,40 +95,43 @@ Explain WHY "${nodeName}" exists and analyze its architectural impact.`;
       entityName: nodeName,
       summary: `Component '${nodeName}' identified as a core ${nodeType || "module"} within the ${projectContext?.framework || "TypeScript"} application architecture.`,
       whyExists: {
-        status: matchedEvent ? "KNOWN" : "INFERRED",
-        explanation: matchedEvent?.reason || `Maintains architectural responsibility for ${nodeName}, decoupling presentation, data transactions, and external integrations.`
+        status: matchedEvent ? "KNOWN" : "UNKNOWN",
+        explanation: matchedEvent?.reason || "No explicit rationale was found in the recorded project evidence."
       },
       createdContext: {
-        status: matchedEvent ? "KNOWN" : "INFERRED",
+        status: matchedEvent ? "KNOWN" : "UNKNOWN",
         explanation: matchedEvent?.timestamp
           ? `Recorded in project activity '${matchedEvent.event}' (${matchedEvent.timestamp}).`
-          : `Active component in repository branch '${projectContext?.branch || "main"}'.`
+          : "No creation event was found in the recorded project history."
       },
       problemSolved: {
-        status: "INFERRED",
-        explanation: `Provides dedicated functional boundaries for ${nodeName}, preventing code duplication and state coupling.`
+        status: "UNKNOWN",
+        explanation: "No explicit problem statement or rationale was found in the available project evidence."
       },
       dependencies: {
-        status: "KNOWN",
-        dependsOn: safeDeps.length > 0 ? safeDeps : ["Core application runtime"],
-        dependedOnBy: ["Downstream application views and routing layer"]
+        status: safeDeps.length > 0 ? "KNOWN" : "UNKNOWN",
+        dependsOn: safeDeps,
+        dependedOnBy: []
       },
       removalRisks: {
-        status: "KNOWN",
+        status: "UNKNOWN",
         riskLevel: "medium",
-        details: [
-          `Direct deletion will break imports across upstream consumers of ${nodeName}.`,
-          "Requires validation against existing test suites and route boundaries."
-        ]
+        details: ["Impact could not be established from the available recorded evidence."]
       },
-      recommendation: "Preserve component. Run regression verification before any interface changes."
+      recommendation: "Investigate the source graph and commit history before changing this node."
     });
   }
 });
 
 // Endpoint: Ask AFTER (Q&A about project)
-aiRouter.post("/ask", async (req, res) => {
-  const { question, projectContext, timeline, insights, graphNodes } = req.body;
+aiRouter.post("/ask", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+  const { question, projectId } = req.body;
+  const context = projectId ? await loadProjectContext(String(projectId), req.user!.uid) : null;
+  if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
+  const projectContext: any = context.project;
+  const timeline = context.timeline;
+  const insights = context.insights;
+  const graphNodes = context.graphNodes;
 
   if (!question) {
     return res.status(400).json({ error: "question is required" });
@@ -197,8 +207,13 @@ ${JSON.stringify(contextPayload, null, 2)}`;
 });
 
 // Endpoint: Analyze Insights (Continuous detection of anomalies, risks, cost & performance)
-aiRouter.post("/analyze-insights", async (req, res) => {
-  const { project, events, components } = req.body;
+aiRouter.post("/analyze-insights", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+  const { projectId } = req.body;
+  const context = projectId ? await loadProjectContext(String(projectId), req.user!.uid) : null;
+  if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
+  const project = context.project;
+  const events = context.timeline;
+  const components = context.graphNodes;
 
   // If there is no project or topology data, return empty results immediately
   if (!project || (!components?.length && !events?.length)) {
@@ -282,8 +297,11 @@ Perform a deep architectural and evolutionary scan.`;
 });
 
 // Endpoint: Structure Experiment
-aiRouter.post("/structure-experiment", async (req, res) => {
-  const { objective, projectContext } = req.body;
+aiRouter.post("/structure-experiment", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+  const { objective, projectId } = req.body;
+  const context = projectId ? await loadProjectContext(String(projectId), req.user!.uid) : null;
+  if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
+  const projectContext: any = context.project;
 
   if (!objective) {
     return res.status(400).json({ error: "objective is required" });

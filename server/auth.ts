@@ -11,6 +11,8 @@ const adminApp = getApps().length
         : { credential: applicationDefault() }
     );
 
+export { adminApp };
+
 export interface AuthenticatedRequest extends Request {
   user?: { uid: string; email?: string; [key: string]: unknown };
 }

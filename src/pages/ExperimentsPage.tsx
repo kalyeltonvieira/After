@@ -1,3 +1,4 @@
+import { authenticatedHeaders } from "../lib/api";
 import React, { useState } from "react";
 import {
   FlaskConical,
@@ -52,7 +53,7 @@ export function ExperimentsPage() {
     try {
       const res = await fetch("/api/gemini/structure-experiment", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await authenticatedHeaders(),
         body: JSON.stringify({
           objective: aiObjective,
           projectContext: currentProject,
