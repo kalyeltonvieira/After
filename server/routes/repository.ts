@@ -1,8 +1,8 @@
 import { Router } from "express";
 import type { AuthenticatedRequest } from "../auth.js";
 import { requireFirebaseUser } from "../auth.js";
-import { getFirestore } from "firebase-admin/firestore";
-import { adminApp } from "../auth.js";
+import { getAdminFirestore } from "../auth.js";
+
 import { getGitHubToken } from "../githubSession.js";
 import { parseGitHubRepo } from "../services/githubService.js";
 import crypto from "node:crypto";
@@ -40,7 +40,7 @@ async function githubFetch(path: string, token?: string, init?: RequestInit) {
 
 async function getProjectRepository(req: AuthenticatedRequest, projectId: string) {
   if (!projectId) throw Object.assign(new Error("projectId is required."), { status: 400 });
-  const db = getFirestore(adminApp);
+  const db = getAdminFirestore();
   const snap = await db.collection("projects").doc(projectId).get();
   if (!snap.exists || snap.data()?.ownerId !== req.user!.uid) {
     throw Object.assign(new Error("Project not found or not owned by the current user."), { status: 404 });
@@ -345,7 +345,7 @@ repositoryRouter.get("/activity", async (req: AuthenticatedRequest, res) => {
 
 repositoryRouter.get("/global-search", async (req: AuthenticatedRequest, res) => {
   try {
-    const db = getFirestore(adminApp);
+    const db = getAdminFirestore();
     const q = String(req.query.q || "").trim();
     if (q.length < 2) return res.json({ query: q, results: [] });
 
