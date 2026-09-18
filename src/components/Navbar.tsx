@@ -20,6 +20,7 @@ import { useProject } from "../context/ProjectContext";
 import { useTheme } from "../context/ThemeContext";
 import { useLanguage } from "../context/LanguageContext";
 import { getInitialsAvatar } from "../lib/avatar";
+import { authenticatedHeaders } from "../lib/api";
 
 interface NavbarProps {
   onOpenCommandPalette: () => void;
@@ -44,7 +45,7 @@ export function Navbar({
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
 
-  const criticalInsightsCount = insights.filter((i) => i.impact === "critical" || i.impact === "high").length;
+  const unreadNotifications = notifications.filter((n) => !n.read).length;
 
   useEffect(() => {
     if (!currentProject?.id || !user) {
@@ -54,7 +55,7 @@ export function Navbar({
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/repository/notifications?projectId=${encodeURIComponent(currentProject.id)}`, { headers: await (await import("../lib/api")).authenticatedHeaders() });
+        const res = await fetch(`/api/repository/notifications?projectId=${encodeURIComponent(currentProject.id)}`, { headers: await authenticatedHeaders() });
         if (!res.ok) return;
         const data = await res.json();
         if (!cancelled) setNotifications(Array.isArray(data.notifications) ? data.notifications : []);
@@ -208,7 +209,7 @@ export function Navbar({
             className="p-2 text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors relative cursor-pointer"
           >
             <Bell className="w-4 h-4" />
-            {criticalInsightsCount > 0 && (
+            {unreadNotifications > 0 && (
               <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500" />
             )}
           </button>
