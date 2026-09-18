@@ -1,6 +1,5 @@
 import express from "express";
 import cookieParser from "cookie-parser";
-import { githubOAuthCallback } from "./server/routes/projects.ts";
 import path from "path";
 import { fileURLToPath } from "url";
 import { apiRouter } from "./server/app.ts";
@@ -22,7 +21,6 @@ app.post(
 app.use(express.json());
 app.use(cookieParser());
 
-app.get("/auth/callback", githubOAuthCallback);
 
 app.use("/api", apiRouter);
 
