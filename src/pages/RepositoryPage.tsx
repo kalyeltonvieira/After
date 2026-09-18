@@ -327,6 +327,25 @@ export function RepositoryPage() {
     }
   };
 
+  const createPull = async () => {
+    const title = window.prompt("Pull request title");
+    if (!title) return;
+    const body = window.prompt("Pull request description") || "";
+    const head = window.prompt("Head branch", currentProject?.branch || "");
+    if (!head) return;
+    const base = window.prompt("Base branch", currentProject?.defaultBranch || "main");
+    if (!base) return;
+    try {
+      await request("/api/repository/pulls", {
+        method: "POST",
+        body: JSON.stringify({ projectId, title, body, head, base }),
+      });
+      await loadTab();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   const postPullComment = async () => {
     if (!pullDetail?.pull?.number || !pullComment.trim()) return;
     setPullSaving(true);
