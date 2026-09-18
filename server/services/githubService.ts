@@ -316,7 +316,7 @@ export async function getRepositoryCommits(
     token?: string;
   }
 ): Promise<any[]> {
-  const branch = options?.sha || "main";
+  const branch = options?.sha || undefined;
   const perPage = options?.per_page || 20;
 
   const res = await fetch(
