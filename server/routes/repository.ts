@@ -1,0 +1,334 @@
+import { Router } from "express";
+import type { AuthenticatedRequest } from "../auth.js";
+import { requireFirebaseUser } from "../auth.js";
+import { getFirestore } from "firebase-admin/firestore";
+import { adminApp } from "../auth.js";
+import { getGitHubToken } from "../githubSession.js";
+import { parseGitHubRepo } from "../services/githubService.js";
+import crypto from "node:crypto";
+
+export const repositoryRouter = Router();
+
+const ghHeaders = (token?: string): Record<string, string> => ({
+  Accept: "application/vnd.github+json",
+  "X-GitHub-Api-Version": "2022-11-28",
+  "User-Agent": "AFTER-Software-Evolution-Platform",
+  ...(token ? { Authorization: `Bearer ${token.trim()}` } : {}),
+});
+
+function githubError(status: number, statusText: string, body?: any): Error {
+  const detail = body?.message ? `: ${body.message}` : "";
+  const error = new Error(`GitHub API error (${status})${detail || ` ${statusText}`}`);
+  (error as any).status = status;
+  return error;
+}
+
+async function githubFetch(path: string, token?: string, init?: RequestInit) {
+  const response = await fetch(`https://api.github.com${path}`, {
+    ...init,
+    headers: {
+      ...ghHeaders(token),
+      ...(init?.headers || {}),
+    },
+  });
+  const text = await response.text();
+  let body: any = null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+  if (!response.ok) throw githubError(response.status, response.statusText, body);
+  return { response, body };
+}
+
+async function getProjectRepository(req: AuthenticatedRequest, projectId: string) {
+  if (!projectId) throw Object.assign(new Error("projectId is required."), { status: 400 });
+  const db = getFirestore(adminApp);
+  const snap = await db.collection("projects").doc(projectId).get();
+  if (!snap.exists || snap.data()?.ownerId !== req.user!.uid) {
+    throw Object.assign(new Error("Project not found or not owned by the current user."), { status: 404 });
+  }
+  const project = { ...snap.data(), id: projectId } as any;
+  const parsed = parseGitHubRepo(String(project.repository || ""));
+  if (!parsed) {
+    throw Object.assign(new Error("This project is not connected to a valid GitHub repository."), { status: 400 });
+  }
+  const token = getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined;
+  return { db, project, parsed, token };
+}
+
+function handleRouteError(res: any, error: any) {
+  const status = Number(error?.status) || 500;
+  return res.status(status).json({ error: error?.message || "Repository operation failed." });
+}
+
+repositoryRouter.use(requireFirebaseUser);
+
+repositoryRouter.get("/info", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const { body } = await githubFetch(`/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}`, token);
+    return res.json({ repository: body });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.get("/tree", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { project, parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const ref = String(req.query.ref || project.branch || "");
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`, token);
+    const excluded = /(^|\/)(node_modules|\.git|dist|build|coverage|\.cache|venv|__pycache__)($|\/)/;
+    const tree = Array.isArray(body?.tree) ? body.tree.filter((item: any) => !excluded.test(String(item.path || ""))) : [];
+    return res.json({ sha: body?.sha || ref, truncated: Boolean(body?.truncated), tree });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.get("/file", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { project, parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const path = String(req.query.path || "").replace(/^\/+/, "");
+    const ref = String(req.query.ref || project.branch || "");
+    if (!path) return res.status(400).json({ error: "path is required." });
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(ref)}`, token);
+    if (body?.type !== "file" || typeof body?.content !== "string") {
+      return res.status(400).json({ error: "The requested path is not a text file." });
+    }
+    const normalized = body.content.replace(/\n/g, "");
+    const content = Buffer.from(normalized, "base64").toString("utf8");
+    const binary = /\.(png|jpe?g|gif|webp|ico|pdf|zip|gz|woff2?|ttf|mp4|mov|avi|wasm|exe|dmg)$/i.test(path);
+    if (binary) return res.status(415).json({ error: "Binary files are not displayed in the code browser." });
+    if (content.length > 1_000_000) return res.status(413).json({ error: "File is too large for the browser (limit: 1 MB)." });
+    return res.json({ path, ref, size: body.size, sha: body.sha, content });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.get("/file-history", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { project, parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const path = String(req.query.path || "");
+    const ref = String(req.query.ref || project.branch || "");
+    if (!path) return res.status(400).json({ error: "path is required." });
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 20));
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/commits?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(ref)}&page=${page}&per_page=${perPage}`, token);
+    return res.json({ commits: Array.isArray(body) ? body : [] });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.get("/branches", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 100));
+    const { body, response } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/branches?page=${page}&per_page=${perPage}`, token);
+    return res.json({ branches: Array.isArray(body) ? body : [], link: response.headers.get("link") || null });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.post("/branches", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { project, parsed, token } = await getProjectRepository(req, String(req.body.projectId || ""));
+    const name = String(req.body.name || "").trim();
+    const from = String(req.body.from || project.defaultBranch || project.branch || "");
+    if (!/^[A-Za-z0-9._/-]{1,255}$/.test(name) || name.endsWith("/") || name.startsWith("/") || name.includes("..")) {
+      return res.status(400).json({ error: "Invalid branch name." });
+    }
+    if (!from) return res.status(400).json({ error: "Base branch is required." });
+    const { body: refData } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/git/ref/heads/${encodeURIComponent(from)}`, token);
+    const sha = refData?.object?.sha;
+    if (!sha) return res.status(404).json({ error: `Base branch '${from}' was not found.` });
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/git/refs`, token, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ref: `refs/heads/${name}`, sha }),
+    });
+    return res.status(201).json({ ref: body });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.delete("/branches/:name", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { project, parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const name = decodeURIComponent(req.params.name);
+    if (name === project.defaultBranch) return res.status(409).json({ error: "The default branch cannot be deleted." });
+    await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/git/refs/heads/${encodeURIComponent(name)}`, token, { method: "DELETE" });
+    return res.status(204).send();
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.get("/commits", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { project, parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 30));
+    const ref = String(req.query.ref || project.branch || "");
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/commits?sha=${encodeURIComponent(ref)}&page=${page}&per_page=${perPage}`, token);
+    return res.json({ commits: Array.isArray(body) ? body : [] });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.get("/commits/:sha", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const sha = decodeURIComponent(req.params.sha);
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/commits/${encodeURIComponent(sha)}`, token);
+    return res.json({ commit: body });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.get("/pulls", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const state = String(req.query.state || "open");
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 30));
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/pulls?state=${encodeURIComponent(state)}&page=${page}&per_page=${perPage}&sort=updated&direction=desc`, token);
+    return res.json({ pulls: Array.isArray(body) ? body : [] });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.get("/issues", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const state = String(req.query.state || "open");
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 30));
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/issues?state=${encodeURIComponent(state)}&page=${page}&per_page=${perPage}&sort=updated&direction=desc`, token);
+    const issues = Array.isArray(body) ? body.filter((item: any) => !item.pull_request) : [];
+    return res.json({ issues });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.post("/issues", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.body.projectId || ""));
+    const title = String(req.body.title || "").trim();
+    const body = String(req.body.body || "");
+    if (!title) return res.status(400).json({ error: "Issue title is required." });
+    const payload: Record<string, any> = { title, body };
+    if (Array.isArray(req.body.labels) && req.body.labels.length) payload.labels = req.body.labels;
+    if (Array.isArray(req.body.assignees) && req.body.assignees.length) payload.assignees = req.body.assignees;
+    if (req.body.milestone != null && req.body.milestone !== "") payload.milestone = Number(req.body.milestone);
+    const { body: issue } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/issues`, token, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return res.status(201).json({ issue });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.patch("/issues/:number", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.body.projectId || req.query.projectId || ""));
+    const payload: Record<string, any> = {};
+    for (const key of ["title", "body", "state", "milestone", "labels", "assignees"]) {
+      if (req.body[key] !== undefined) payload[key] = req.body[key];
+    }
+    if (!Object.keys(payload).length) return res.status(400).json({ error: "No issue fields to update." });
+    const { body: issue } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/issues/${encodeURIComponent(req.params.number)}`, token, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return res.json({ issue });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.post("/issues/:number/comments", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.body.projectId || ""));
+    const body = String(req.body.body || "").trim();
+    if (!body) return res.status(400).json({ error: "Comment body is required." });
+    const { body: comment } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/issues/${encodeURIComponent(req.params.number)}/comments`, token, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    });
+    return res.status(201).json({ comment });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.get("/releases", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 30));
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/releases?page=${page}&per_page=${perPage}`, token);
+    return res.json({ releases: Array.isArray(body) ? body : [] });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.get("/contributors", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 30));
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/contributors?anon=false&page=${page}&per_page=${perPage}`, token);
+    return res.json({ contributors: Array.isArray(body) ? body : [] });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.get("/search", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const q = String(req.query.q || "").trim();
+    if (!q) return res.json({ results: [] });
+    const { body } = await githubFetch(`/search/code?q=${encodeURIComponent(`${q} repo:${parsed.owner}/${parsed.repo}`)}&per_page=30`, token);
+    return res.json({ results: Array.isArray(body?.items) ? body.items : [], total: Number(body?.total_count || 0) });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.get("/compare", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const base = String(req.query.base || "").trim();
+    const head = String(req.query.head || "").trim();
+    if (!base || !head) return res.status(400).json({ error: "base and head are required." });
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`, token);
+    return res.json({ compare: body });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.get("/watch", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { db } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const snap = await db.collection("projects").doc(String(req.query.projectId)).collection("watchTargets").get();
+    return res.json({ watchTargets: snap.docs.map((d) => d.data()) });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.post("/watch", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { db, project } = await getProjectRepository(req, String(req.body.projectId || ""));
+    const projectId = String(req.body.projectId);
+    const enabled = req.body.enabled !== false;
+    const target = String(req.body.target || project.repository || "");
+    const id = crypto.createHash("sha256").update(`repository:${target}`).digest("hex").slice(0, 20);
+    const ref = db.collection("projects").doc(projectId).collection("watchTargets").doc(id);
+    if (!enabled) {
+      await ref.delete();
+      return res.json({ watching: false });
+    }
+    await ref.set({
+      id, projectId, ownerId: req.user!.uid, type: "repository", target,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    }, { merge: true });
+    return res.json({ watching: true });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.get("/notifications", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { db } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const snap = await db.collection("projects").doc(String(req.query.projectId)).collection("notifications").get();
+    const notifications = snap.docs.map((d) => d.data()).sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 50);
+    return res.json({ notifications });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.post("/notifications/:id/read", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { db } = await getProjectRepository(req, String(req.body.projectId || req.query.projectId || ""));
+    const ref = db.collection("projects").doc(String(req.body.projectId || req.query.projectId)).collection("notifications").doc(String(req.params.id));
+    await ref.set({ read: true, readAt: new Date().toISOString() }, { merge: true });
+    return res.json({ read: true });
+  } catch (error) { return handleRouteError(res, error); }
+});

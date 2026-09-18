@@ -23,6 +23,8 @@ service cloud.firestore {
       match /snapshots/{snapshotId} { allow read, write: if ownsProject(projectId); }
       match /insights/{insightId} { allow read, write: if ownsProject(projectId); }
       match /experiments/{experimentId} { allow read, write: if ownsProject(projectId); }
+      match /watchTargets/{watchId} { allow read, write: if ownsProject(projectId); }
+      match /notifications/{notificationId} { allow read, write: if ownsProject(projectId); }
     }
   }
 }
