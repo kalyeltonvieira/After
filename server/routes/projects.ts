@@ -80,7 +80,16 @@ projectsRouter.post("/github-session", requireFirebaseUser, async (req: Authenti
   try {
     const githubUser = await getAuthenticatedUser(githubAccessToken);
     const sessionId = createGitHubSession(req.user!.uid, githubAccessToken);
-    await persistGitHubToken(req.user!.uid, githubAccessToken);
+
+    try {
+      await persistGitHubToken(req.user!.uid, githubAccessToken);
+    } catch (persistenceError: any) {
+      // GitHub login remains valid even when server-side token persistence is unavailable.
+      console.warn(
+        "GitHub token persistence skipped:",
+        persistenceError?.message || persistenceError
+      );
+    }
 
     res.cookie("after_github_session", sessionId, {
       httpOnly: true,
@@ -148,7 +157,7 @@ projectsRouter.get("/github-branches", requireFirebaseUser, async (req: Authenti
 // Link Repository to AFTER platform
 projectsRouter.post("/github-link", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
   const { repository, branch } = req.body;
-  const token = getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined;
+  const token = (await resolveGitHubToken(req, res)) || undefined;
   const webhookBaseUrl = req.headers.origin || (req.headers.host ? `${req.protocol}://${req.headers.host}` : undefined);
 
   if (!repository) {
