@@ -137,85 +137,135 @@ Explain WHY "${nodeName}" exists and analyze its architectural impact.`;
   }
 });
 
-// Endpoint: Ask AFTER (Q&A about project)
+// Endpoint: Ask AFTER (contextual repository Q&A)
 aiRouter.post("/ask", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
-  const { question, projectId } = req.body;
+  const {
+    question,
+    projectId,
+    context: focusContext,
+    history = [],
+  } = req.body;
+
   const context = projectId ? await loadProjectContext(String(projectId), req.user!.uid) : null;
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
+  if (!question || typeof question !== "string") {
+    return res.status(400).json({ error: "question is required" });
+  }
+
   const projectContext: any = context.project;
   const timeline = context.timeline;
   const insights = context.insights;
   const graphNodes = context.graphNodes;
+  const graphEdges = context.graphEdges;
 
-  if (!question) {
-    return res.status(400).json({ error: "question is required" });
-  }
+  const normalizedFocus = focusContext && typeof focusContext === "object"
+    ? {
+        type: focusContext.type,
+        label: focusContext.label,
+        path: focusContext.path,
+        content: typeof focusContext.content === "string"
+          ? focusContext.content.slice(0, 24000)
+          : undefined,
+      }
+    : null;
 
-  const systemPrompt = `You are AFTER's Project Intelligence Assistant.
-You answer engineering questions about software projects based on their real architecture, timeline changes, dependency records, and detected risks.
+  const focusedNode = normalizedFocus?.path
+    ? graphNodes.find((node: any) => node.filePath === normalizedFocus.path)
+    : null;
 
-Style & Voice:
-- Apple-grade clarity: direct, concise, mathematically and technically grounded.
-- No buzzwords, no fluff, no generic AI optimism.
-- Cite specific evidence from the project state when answering.
-- Clarify whether points are KNOWN from recorded events, INFERRED from architecture, or UNKNOWN.
+  const focusedNodeEdges = focusedNode
+    ? graphEdges.filter((edge: any) => edge.from === focusedNode.id || edge.to === focusedNode.id)
+    : [];
 
-Format your response in JSON:
+  const recentHistory = Array.isArray(history)
+    ? history
+        .filter((item: any) => item && (item.role === "user" || item.role === "assistant"))
+        .slice(-10)
+        .map((item: any) => ({
+          role: item.role,
+          content: String(item.content || "").slice(0, 4000),
+        }))
+    : [];
+
+  const systemPrompt = `You are AFTER, an AI-native software intelligence assistant.
+You are NOT a generic chatbot. You are the reasoning layer over a real software repository.
+
+Your job is to answer engineering questions using the repository model, source code, graph relationships, history, insights, and the currently focused item.
+
+Rules:
+- NEVER invent repository facts, commits, files, dependencies, telemetry, rationale, or causal relationships.
+- Prefer direct evidence over inference.
+- Label important claims as KNOWN, INFERRED, or UNKNOWN.
+- When the evidence is missing, say so plainly.
+- The user may ask follow-up questions. Use the conversation history to maintain continuity.
+- Treat the focused file/node as the primary context when one is provided.
+- Do not claim code will break unless the available evidence supports that conclusion.
+- When useful, cite concrete paths, SHAs, events, graph edges, or other provided evidence.
+- Answer naturally like a technical assistant: conversational, clear, and useful, not as a rigid report.
+- Markdown is allowed in the answer.
+
+Return JSON only:
 {
-  "answer": "Clear markdown explanation directly answering the user's question.",
-  "citedEvidence": [
-    "Evidence item 1 (e.g. 'Dependency @stripe/stripe-js updated to v3.1 in Event #ev-04')",
-    "Evidence item 2"
-  ],
-  "suggestedInvestigation": [
-    "Investigation step 1",
-    "Investigation step 2"
-  ],
+  "answer": "Direct conversational answer in markdown.",
+  "citedEvidence": ["Concrete evidence item 1", "Concrete evidence item 2"],
+  "suggestedInvestigation": ["Useful next investigation 1", "Useful next investigation 2"],
   "confidence": "high" | "medium" | "low"
 }`;
 
   const contextPayload = {
     project: projectContext || {},
+    focus: normalizedFocus,
+    focusGraphNode: focusedNode || null,
+    focusRelationships: focusedNodeEdges,
     timelineEvents: timeline || [],
     activeInsights: insights || [],
     systemComponents: graphNodes || [],
+    systemRelationships: graphEdges || [],
+    conversationHistory: recentHistory,
   };
 
-  const prompt = `User Question: "${question}"
+  const prompt = `User Question:
+${question}
 
-Current Project Data & History:
-${JSON.stringify(contextPayload, null, 2)}`;
+Repository intelligence context:
+${JSON.stringify(contextPayload, null, 2)}
+
+Answer the user's question using the repository evidence above. Keep the answer focused on what can actually be established.`;
 
   try {
     const rawText = await generateContentWithFallback({
       contents: prompt,
       systemInstruction: systemPrompt,
       responseMimeType: "application/json",
-      temperature: 0.3,
+      temperature: 0.25,
     });
 
     const parsed = JSON.parse(rawText || "{}");
     return res.json(parsed);
   } catch (error: any) {
-    console.warn("Gemini unavailable for /api/gemini/ask, synthesizing context answer:", error?.message);
+    console.warn("Gemini unavailable for /api/gemini/ask:", error?.message);
 
-    const relevantEvent = (timeline || []).find((ev: any) =>
-      ev?.event?.toLowerCase().includes(String(question).toLowerCase()) ||
-      ev?.reason?.toLowerCase().includes(String(question).toLowerCase())
-    );
+    const terms = String(question).toLowerCase().split(/\s+/).filter(Boolean);
+    const relevantEvents = (timeline || []).filter((ev: any) => {
+      const haystack = `${ev?.event || ""} ${ev?.reason || ""} ${ev?.metadata?.sha || ""}`.toLowerCase();
+      return terms.some((term) => term.length > 3 && haystack.includes(term));
+    }).slice(0, 3);
+
+    const evidence = [
+      normalizedFocus?.path ? `Focused source file: ${normalizedFocus.path}` : null,
+      focusedNode?.filePath ? `Graph node mapped to ${focusedNode.filePath}` : null,
+      ...relevantEvents.map((ev: any) => `Recorded event: ${ev.event} (${ev.timestamp})`),
+    ].filter(Boolean) as string[];
 
     return res.json({
-      answer: relevantEvent
-        ? `Observed recorded event: "${relevantEvent.event}" (${relevantEvent.timestamp}) by ${relevantEvent.actor}: "${relevantEvent.reason}".`
-        : `No matching records or telemetry found in the ledger for "${question}".`,
-      citedEvidence: relevantEvent
-        ? [`Recorded activity: ${relevantEvent.event} (${relevantEvent.timestamp})`]
-        : [],
-      suggestedInvestigation: [
-        "Inspect the Product Graph to verify dependent component connectivity.",
-        "Check Timeline for recorded commit history."
-      ],
-      confidence: "low"
+      answer: evidence.length
+        ? `I could not reach the AI model right now. I can still ground this conversation in the repository evidence currently available.\\n\\n${evidence.map((item) => `- ${item}`).join("\\n")}\\n\\n**UNKNOWN:** no model-generated interpretation is available for this question yet.`
+        : `I could not reach the AI model right now, and there is not enough matching repository evidence to answer this question safely.\\n\\n**UNKNOWN:** no grounded answer is available yet.`,
+      citedEvidence: evidence,
+      suggestedInvestigation: normalizedFocus?.path
+        ? [`Inspect the focused file: ${normalizedFocus.path}`, "Open its graph relationships and file history."]
+        : ["Inspect the Product Graph.", "Open the Timeline and repository history."],
+      confidence: "low",
     });
   }
 });
