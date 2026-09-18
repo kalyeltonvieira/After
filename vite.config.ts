@@ -29,13 +29,14 @@ export default defineConfig(() => {
     plugins: [react(), tailwindcss(), expressApiPlugin()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname, '.'),
       },
     },
     server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modify—file watching is disabled to prevent flickering during agent edits.
-      hmr: process.env.DISABLE_HMR !== 'true',
+      // AI Studio's preview proxy can drop the Vite HMR websocket and trigger
+      // repeated "server connection lost" polling. The platform rebuilds the
+      // preview when files change, so keep Vite HMR disabled here.
+      hmr: false,
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },
