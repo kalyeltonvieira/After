@@ -189,13 +189,41 @@ export function RepositoryPage() {
             <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-3">
               <div className="font-mono text-xs truncate">{data.file?.path || "Select a file"}</div>
               {data.file?.path && (
-                <button
-                  type="button"
-                  onClick={() => setIsAskAfterOpen(true)}
-                  className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 text-[11px] font-medium hover:opacity-90 transition-opacity cursor-pointer"
-                >
-                  Ask AFTER
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setChangeAnalysisLoading(true);
+                      setChangeAnalysis(null);
+                      try {
+                        const res = await request("/api/gemini/change-analysis", {
+                          method: "POST",
+                          body: JSON.stringify({
+                            projectId,
+                            path: data.file.path,
+                            question: "Analyze this file's current repository state, recent history, related graph relationships, and potential impact of changing it.",
+                          }),
+                        });
+                        setChangeAnalysis(res);
+                      } catch (error) {
+                        setChangeAnalysis({ error: error instanceof Error ? error.message : String(error) });
+                      } finally {
+                        setChangeAnalysisLoading(false);
+                      }
+                    }}
+                    className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 text-[11px] font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    Analyze
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAskAfterOpen(true)}
+                    className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 text-[11px] font-medium hover:opacity-90 transition-opacity cursor-pointer"
+                  >
+                    Ask AFTER
+                  </button>
+                </div>
               )}
             </div>
             <pre className="max-h-[65vh] overflow-auto p-4 text-[11px] leading-relaxed"><code>{data.file?.content || "No file selected."}</code></pre>
@@ -249,7 +277,49 @@ export function RepositoryPage() {
         ))}
       </div>
 
-      {!loading && tab === "pulls" && <div className="space-y-3">{<button onClick={createPull} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900 text-white text-xs"><Plus className="w-3.5 h-3.5" /> Open pull request</button>}{pulls.map((p: any) => <div key={p.id} className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800"><div className="flex justify-between gap-3"><span className="text-sm font-medium">#{p.number} {p.title}</span><span className="text-[10px] uppercase text-zinc-400">{p.state}</span></div><div className="mt-2 text-[11px] text-zinc-400">{p.user?.login} · {p.head?.ref} → {p.base?.ref}</div></div>)}</div>}
+      {!loading && tab === "pulls" && <div className="space-y-3">
+        <button onClick={createPull} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900 text-white text-xs cursor-pointer">
+          <Plus className="w-3.5 h-3.5" /> Open pull request
+        </button>
+        {pulls.map((p: any) => (
+          <div key={p.id} className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium">#{p.number} {p.title}</div>
+                <div className="mt-2 text-[11px] text-zinc-400">{p.user?.login} · {p.head?.ref} → {p.base?.ref}</div>
+              </div>
+              <div className="flex flex-col items-end gap-2">
+                <span className="text-[10px] uppercase text-zinc-400">{p.state}</span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setChangeAnalysisLoading(true);
+                    setChangeAnalysis(null);
+                    try {
+                      const res = await request("/api/gemini/change-analysis", {
+                        method: "POST",
+                        body: JSON.stringify({
+                          projectId,
+                          pullRequestNumber: p.number,
+                          question: "Review this pull request from an architectural, dependency, and potential-impact perspective using only repository evidence.",
+                        }),
+                      });
+                      setChangeAnalysis(res);
+                    } catch (error) {
+                      setChangeAnalysis({ error: error instanceof Error ? error.message : String(error) });
+                    } finally {
+                      setChangeAnalysisLoading(false);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-[10px] font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+                >
+                  <Sparkles className="w-3 h-3" /> AFTER Review
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
 
       {!loading && tab === "issues" && <div className="space-y-3">{<button onClick={createIssue} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900 text-white text-xs"><Plus className="w-3.5 h-3.5" /> Create issue</button>}{issues.map((i: any) => <div key={i.id} className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800"><div className="flex justify-between gap-3"><span className="text-sm font-medium">#{i.number} {i.title}</span><span className="text-[10px] uppercase text-zinc-400">{i.state}</span></div><div className="mt-2 text-[11px] text-zinc-400">{i.user?.login} · {formatDate(i.updated_at)}</div></div>)}</div>}
 
