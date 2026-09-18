@@ -581,26 +581,6 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         setScanStage("architecture");
 
         if (data.graphNodes && data.graphNodes.length > 0) {
-          const now = new Date().toISOString();
-          await setDoc(
-            doc(
-              db,
-              "projects",
-              currentProject.id,
-              "snapshots",
-              `snapshot_${Date.now()}`
-            ),
-            {
-              projectId: currentProject.id,
-              ownerId: user.uid,
-              createdAt: now,
-              branch: currentProject.branch,
-              graphNodes: data.graphNodes,
-              graphEdges: data.graphEdges || [],
-              analysis: data.analysis || null,
-            }
-          );
-
           await updateCurrentProject({
             graphNodes: data.graphNodes,
             graphEdges: data.graphEdges || [],
@@ -609,6 +589,8 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
             stars: data.project.stars,
             openIssues: data.project.openIssues,
           });
+          setGraphNodes(data.graphNodes);
+          setGraphEdges(data.graphEdges || []);
         }
 
         for (const ins of data.insights || []) {
