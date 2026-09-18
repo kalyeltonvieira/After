@@ -9,6 +9,7 @@ import {
   Settings,
   X,
   ExternalLink,
+  Code2,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useProject } from "../context/ProjectContext";
@@ -33,6 +34,7 @@ export function Sidebar({
   const navigationItems = [
     { id: "overview", label: t("nav_overview"), icon: LayoutDashboard },
     { id: "projects", label: t("nav_projects"), icon: FolderGit2 },
+    { id: "repository", label: language === "pt" ? "Repositório" : "Repository", icon: Code2 },
     { id: "graph", label: t("nav_graph"), icon: Network },
     {
       id: "insights",
