@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { getAdminFirestore } from "../auth.js";
 import { getPersistentGitHubToken } from "../githubSession.js";
 import { parseGitHubRepo } from "./githubService.js";
+import { matchingWatchTargets, normalizeBranchRef } from "./observation.js";
 
 type IncrementalInput = {
   projectId: string;
@@ -45,11 +46,31 @@ async function githubGet(url: string, token?: string) {
 
 async function setJob(projectId: string, jobId: string, patch: Record<string, any>) {
   const db = getAdminFirestore();
-  await db.collection("projects").doc(projectId).collection("analysisJobs").doc(jobId).set({
+  const projectRef = db.collection("projects").doc(projectId);
+  const snapshot = await projectRef.get();
+  if (!snapshot.exists) throw new Error("Project no longer exists.");
+
+  const project = snapshot.data() || {};
+  const jobs = Array.isArray(project.analysisJobs) ? project.analysisJobs : [];
+  const existing = jobs.find((job: any) => job.id === jobId) || {
+    id: jobId,
+    projectId,
+  };
+  const nextJob = {
+    ...existing,
+    ...patch,
     id: jobId,
     projectId,
     updatedAt: new Date().toISOString(),
-    ...patch,
+  };
+  const nextJobs = [
+    nextJob,
+    ...jobs.filter((job: any) => job.id !== jobId),
+  ].slice(0, 30);
+
+  await projectRef.set({
+    analysisJobs: nextJobs,
+    updatedAt: nextJob.updatedAt,
   }, { merge: true });
 }
 
@@ -130,13 +151,22 @@ export async function enqueueIncrementalAnalysis(input: IncrementalInput) {
   const db = getAdminFirestore();
   const identity = input.commitSha || input.deliveryId || crypto.randomUUID();
   const jobId = `incremental_${crypto.createHash("sha256").update(`${input.projectId}:${identity}`).digest("hex").slice(0, 24)}`;
-  const jobRef = db.collection("projects").doc(input.projectId).collection("analysisJobs").doc(jobId);
-  const existing = await jobRef.get();
-  if (existing.exists && ["queued", "fetching", "analyzing", "building_graph"].includes(String(existing.data()?.status))) {
+  const projectRef = db.collection("projects").doc(input.projectId);
+  const projectSnapshot = await projectRef.get();
+  if (!projectSnapshot.exists || projectSnapshot.data()?.ownerId !== input.ownerId) {
+    throw new Error("Project no longer exists or is not owned by the event owner.");
+  }
+
+  const existingJobs = Array.isArray(projectSnapshot.data()?.analysisJobs)
+    ? projectSnapshot.data().analysisJobs
+    : [];
+  const existing = existingJobs.find((job: any) => job.id === jobId);
+  if (existing && ["queued", "fetching", "analyzing", "building_graph"].includes(String(existing.status))) {
     return { jobId, queued: false };
   }
 
-  await jobRef.set({
+  const now = new Date().toISOString();
+  const job = {
     id: jobId,
     projectId: input.projectId,
     ownerId: input.ownerId,
@@ -146,8 +176,12 @@ export async function enqueueIncrementalAnalysis(input: IncrementalInput) {
     commitSha: input.commitSha || null,
     changedFiles: [...new Set(input.changedFiles)],
     removedFiles: [...new Set(input.removedFiles || [])],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+  };
+  await projectRef.set({
+    analysisJobs: [job, ...existingJobs.filter((item: any) => item.id !== jobId)].slice(0, 30),
+    updatedAt: now,
   }, { merge: true });
 
   const previous = projectQueues.get(input.projectId) || Promise.resolve();
@@ -308,6 +342,111 @@ async function runIncrementalAnalysis(input: IncrementalInput & { jobId: string 
       updatedAt: now,
     }, { merge: true });
 
+    const changedList = [...changed, ...[...removed]].filter(Boolean).slice(0, 50);
+    const affectedNodeLabels = nodes
+      .filter((node: any) => node.filePath && changed.has(String(node.filePath)))
+      .map((node: any) => String(node.label || node.filePath))
+      .filter(Boolean)
+      .slice(0, 12);
+
+    const insightId = `incremental_insight_${input.jobId}`;
+    const insight = {
+      id: insightId,
+      projectId: input.projectId,
+      ownerId: input.ownerId,
+      title: changed.size
+        ? `Observed change in ${changed.size} file(s)`
+        : `Observed removal of ${removed.size} file(s)`,
+      description: `AFTER observed a real repository change on ${normalizeBranchRef(String(ref || "")) || "the observed branch"} and updated the persisted Product Graph.`,
+      category: "Architecture",
+      impact: "low",
+      confidence: "high",
+      evidence: [
+        input.commitSha ? `GitHub commit ${input.commitSha}` : `Incremental observation job ${input.jobId}`,
+        ...changedList,
+      ].slice(0, 22).join(" • "),
+      affectedComponents: affectedNodeLabels,
+      affectedFiles: changedList,
+      suggestedAction: "Review the changed files and their recorded dependents before drawing conclusions about runtime impact.",
+      createdAt: now,
+    };
+
+    const existingInsights = Array.isArray(project.insights) ? project.insights : [];
+    const nextInsights = [
+      insight,
+      ...existingInsights.filter((item: any) => item.id !== insightId),
+    ].slice(0, 100);
+
+    const existingNotifications = Array.isArray(project.notifications) ? project.notifications : [];
+    const syntheticPushPayload = {
+      ref: `refs/heads/${String(ref || "")}`,
+      head_commit: {
+        modified: [...changed],
+        added: [],
+        removed: [...removed],
+      },
+    };
+    const matchedTargets = matchingWatchTargets(
+      Array.isArray(project.watchTargets) ? project.watchTargets : [],
+      "push",
+      syntheticPushPayload,
+      String(project.repository || ""),
+      project,
+      changedList,
+    );
+
+    const nextNotifications = matchedTargets.length
+      ? [
+          {
+            id: `incremental_notification_${input.jobId}`,
+            projectId: input.projectId,
+            ownerId: input.ownerId,
+            type: "analysis",
+            title: insight.title,
+            body: `${insight.description} Job ${input.jobId} completed.`,
+            repository: String(project.repository || ""),
+            createdAt: now,
+            read: false,
+            evidence: {
+              jobId: input.jobId,
+              commitSha: input.commitSha || null,
+              matchedWatchTargets: matchedTargets.map((watch: any) => ({
+                type: watch.type,
+                target: watch.target,
+              })),
+            },
+          },
+          ...existingNotifications.filter((item: any) => item.id !== `incremental_notification_${input.jobId}`),
+        ].slice(0, 100)
+      : existingNotifications;
+
+    await projectRef.set({
+      insights: nextInsights,
+      notifications: nextNotifications,
+      memoryEntries: [
+        {
+          id: `memory_${insightId}`,
+          projectId: input.projectId,
+          ownerId: input.ownerId,
+          type: "insight",
+          title: insight.title,
+          summary: insight.description,
+          status: "KNOWN",
+          evidence: [
+            input.commitSha ? `Commit: ${input.commitSha}` : `Job: ${input.jobId}`,
+            ...changedList.slice(0, 20),
+          ],
+          source: { kind: "incremental_observation", id: insightId },
+          relatedFiles: changedList,
+          relatedNodes: affectedNodeLabels,
+          createdAt: now,
+          observedAt: now,
+        },
+        ...existingMemory.filter((entry: any) => entry.id !== `memory_${insightId}`),
+      ].slice(0, 250),
+      updatedAt: now,
+    }, { merge: true });
+
     await setJob(input.projectId, input.jobId, {
       status: "completed",
       completedAt: now,
@@ -329,38 +468,44 @@ export async function recoverQueuedIncrementalAnalyses() {
   const db = getAdminFirestore();
   let snapshot;
   try {
-    snapshot = await db.collectionGroup("analysisJobs")
-      .where("status", "==", "queued")
-      .limit(100)
-      .get();
+    snapshot = await db.collection("projects").limit(100).get();
   } catch (error: any) {
     console.warn("Skipping queued analysis recovery because Firestore is unavailable:", error?.message || error);
     return 0;
   }
 
-  for (const job of snapshot.docs) {
-    const data = job.data();
-    if (data.mode !== "incremental" || !data.projectId || !data.ownerId) continue;
-    const input: IncrementalInput & { jobId: string } = {
-      jobId: job.id,
-      projectId: String(data.projectId),
-      ownerId: String(data.ownerId),
-      branch: String(data.branch || ""),
-      changedFiles: Array.isArray(data.changedFiles) ? data.changedFiles.filter((v: any) => typeof v === "string") : [],
-      removedFiles: Array.isArray(data.removedFiles) ? data.removedFiles.filter((v: any) => typeof v === "string") : [],
-      commitSha: typeof data.commitSha === "string" && data.commitSha ? data.commitSha : undefined,
-      deliveryId: job.id,
-    };
-    const previous = projectQueues.get(input.projectId) || Promise.resolve();
-    const task = previous
-      .catch(() => undefined)
-      .then(() => runIncrementalAnalysis(input))
-      .catch((error) => console.warn("Recovered incremental analysis failed:", error?.message));
-    projectQueues.set(input.projectId, task);
-    void task.finally(() => {
-      if (projectQueues.get(input.projectId) === task) projectQueues.delete(input.projectId);
-    });
+  let recovered = 0;
+
+  for (const projectDoc of snapshot.docs) {
+    const project = projectDoc.data();
+    const jobs = Array.isArray(project.analysisJobs) ? project.analysisJobs : [];
+
+    for (const job of jobs) {
+      if (job.mode !== "incremental" || job.status !== "queued" || !job.projectId || !job.ownerId) continue;
+
+      const input: IncrementalInput & { jobId: string } = {
+        jobId: job.id,
+        projectId: String(job.projectId || projectDoc.id),
+        ownerId: String(job.ownerId),
+        branch: String(job.branch || project.branch || project.defaultBranch || ""),
+        changedFiles: Array.isArray(job.changedFiles) ? job.changedFiles.filter((v: any) => typeof v === "string") : [],
+        removedFiles: Array.isArray(job.removedFiles) ? job.removedFiles.filter((v: any) => typeof v === "string") : [],
+        commitSha: typeof job.commitSha === "string" && job.commitSha ? job.commitSha : undefined,
+        deliveryId: job.id,
+      };
+
+      const previous = projectQueues.get(input.projectId) || Promise.resolve();
+      const task = previous
+        .catch(() => undefined)
+        .then(() => runIncrementalAnalysis(input))
+        .catch((error) => console.warn("Recovered incremental analysis failed:", error?.message));
+      projectQueues.set(input.projectId, task);
+      recovered += 1;
+      void task.finally(() => {
+        if (projectQueues.get(input.projectId) === task) projectQueues.delete(input.projectId);
+      });
+    }
   }
 
-  return snapshot.size;
+  return recovered;
 }
