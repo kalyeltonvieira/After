@@ -1,4 +1,7 @@
 import { Router } from "express";
+import type { Response } from "express";
+import { requireFirebaseUser, type AuthenticatedRequest } from "../auth.js";
+import { createGitHubSession, createOAuthState, consumeOAuthState, getGitHubToken } from "../githubSession.js";
 import {
   parseGitHubRepo,
   getGitHubOAuthUrl,
@@ -11,6 +14,25 @@ import {
 
 export const projectsRouter = Router();
 export { parseGitHubRepo };
+
+// Secure OAuth callback: exchange code, store token server-side, and notify the opener without secrets.
+export async function githubOAuthCallback(req: any, res: Response) {
+  const { code, state, error } = req.query;
+  if (error || !code || !state) return res.status(400).send("GitHub authorization was cancelled or invalid.");
+  const stateRecord = consumeOAuthState(String(state));
+  if (!stateRecord) return res.status(400).send("GitHub authorization state expired.");
+  try {
+    const result = await exchangeOAuthCode(String(code));
+    const sessionId = createGitHubSession(stateRecord.uid, result.token);
+    res.cookie("after_github_session", sessionId, {
+      httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production",
+      maxAge: 7 * 24 * 60 * 60 * 1000, path: "/"
+    });
+    return res.send(`<script>window.opener?.postMessage({type:"OAUTH_AUTH_SUCCESS"}, window.location.origin);window.close();</script>`);
+  } catch (err: any) {
+    return res.status(400).send(`GitHub authorization failed: ${String(err.message).replace(/[<>]/g, "")}`);
+  }
+}
 
 // Validate username format and reserved names
 projectsRouter.get("/validate-username", (req, res) => {
@@ -36,37 +58,27 @@ projectsRouter.get("/validate-username", (req, res) => {
   return res.json({ valid: true, username });
 });
 
-// GitHub OAuth Authorization URL Generator (leveraging githubService)
-projectsRouter.get("/github-auth-url", (req, res) => {
+// GitHub OAuth Authorization URL Generator. The state is bound to the Firebase user.
+projectsRouter.get("/github-auth-url", requireFirebaseUser, (req: AuthenticatedRequest, res) => {
   const originUrl = req.headers.origin || (req.headers.host ? `${req.protocol}://${req.headers.host}` : undefined);
   const result = getGitHubOAuthUrl(originUrl);
+  if (result.url && req.user) {
+    const state = createOAuthState(req.user.uid);
+    const separator = result.url.includes("?") ? "&" : "?";
+    result.url = `${result.url}${separator}state=${encodeURIComponent(state)}`;
+  }
   return res.json(result);
 });
 
-// GitHub OAuth Code Exchange (leveraging githubService)
-projectsRouter.post("/github-exchange", async (req, res) => {
-  const { code } = req.body;
-
-  if (!code) {
-    return res.status(400).json({ error: "Authorization code is required" });
-  }
-
-  try {
-    const result = await exchangeOAuthCode(code);
-    return res.json({ token: result.token, scope: result.scope });
-  } catch (err: any) {
-    console.error("Error exchanging GitHub code:", err);
-    return res.status(400).json({ error: err.message || "Failed to exchange GitHub authorization code" });
-  }
+// OAuth code exchange is completed by the server callback, never by the browser.
+projectsRouter.post("/github-exchange", (_req, res) => {
+  return res.status(410).json({ error: "OAuth exchange is handled by the secure callback." });
 });
 
-// Get Authenticated GitHub User Profile
-projectsRouter.get("/github-user", async (req, res) => {
-  const token = (req.headers.authorization?.replace(/^Bearer\s+/i, "") || req.query.token) as string;
-  if (!token) {
-    return res.status(401).json({ error: "GitHub token is required" });
-  }
-
+// Get the GitHub identity associated with the server-side session.
+projectsRouter.get("/github-user", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+  const token = getGitHubToken(req.cookies?.after_github_session, req.user!.uid);
+  if (!token) return res.status(401).json({ error: "Connect GitHub first." });
   try {
     const user = await getAuthenticatedUser(token);
     return res.json({ user });
@@ -75,17 +87,12 @@ projectsRouter.get("/github-user", async (req, res) => {
   }
 });
 
-// List User's GitHub Repositories for Linking
-projectsRouter.get("/github-repos", async (req, res) => {
-  const token = (req.headers.authorization?.replace(/^Bearer\s+/i, "") || req.query.token) as string;
-  if (!token) {
-    return res.status(401).json({ error: "GitHub token is required" });
-  }
-
+// List every accessible repository by following GitHub pagination server-side.
+projectsRouter.get("/github-repos", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+  const token = getGitHubToken(req.cookies?.after_github_session, req.user!.uid);
+  if (!token) return res.status(401).json({ error: "Connect GitHub first." });
   try {
-    const page = Number(req.query.page) || 1;
-    const per_page = Number(req.query.per_page) || 50;
-    const repos = await listUserRepositories(token, { page, per_page });
+    const repos = await listUserRepositories(token, { page: 1, per_page: 100 });
     return res.json({ repos });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
@@ -93,9 +100,9 @@ projectsRouter.get("/github-repos", async (req, res) => {
 });
 
 // List Branches for a repository
-projectsRouter.get("/github-branches", async (req, res) => {
+projectsRouter.get("/github-branches", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
   const repository = req.query.repository as string;
-  const token = (req.headers.authorization?.replace(/^Bearer\s+/i, "") || req.query.token) as string;
+  const token = getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined;
 
   const parsed = parseGitHubRepo(repository);
   if (!parsed) {
@@ -111,8 +118,9 @@ projectsRouter.get("/github-branches", async (req, res) => {
 });
 
 // Link Repository to AFTER platform
-projectsRouter.post("/github-link", async (req, res) => {
-  const { repository, branch, token } = req.body;
+projectsRouter.post("/github-link", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+  const { repository, branch } = req.body;
+  const token = getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined;
   const webhookBaseUrl = req.headers.origin || (req.headers.host ? `${req.protocol}://${req.headers.host}` : undefined);
 
   if (!repository) {
@@ -131,8 +139,9 @@ projectsRouter.post("/github-link", async (req, res) => {
 });
 
 // Real Repository Analysis Engine
-projectsRouter.post("/analyze-repository", async (req, res) => {
-  const { repository, branch: requestedBranch, githubToken } = req.body;
+projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+  const { repository, branch: requestedBranch } = req.body;
+  const githubToken = getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined;
 
   const parsed = parseGitHubRepo(repository);
   if (!parsed) {

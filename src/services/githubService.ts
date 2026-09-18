@@ -1,3 +1,5 @@
+import { authenticatedHeaders } from "../lib/api";
+
 /**
  * Client-side GitHub Service for the AFTER platform
  * Interacts with the backend OAuth setup and GitHub API proxy routes
@@ -51,7 +53,6 @@ export interface OAuthUrlResponse {
 export interface LinkRepositoryPayload {
   repository: string;
   branch?: string;
-  token?: string;
 }
 
 export interface LinkRepositoryResponse {
@@ -68,7 +69,7 @@ export interface LinkRepositoryResponse {
  * Fetch the GitHub OAuth Authorization URL from the AFTER backend
  */
 export async function getGitHubAuthUrl(): Promise<OAuthUrlResponse> {
-  const res = await fetch("/api/projects/github-auth-url");
+  const res = await fetch("/api/projects/github-auth-url", { headers: await authenticatedHeaders() });
   if (!res.ok) {
     throw new Error(`Failed to fetch GitHub auth URL (${res.status})`);
   }
@@ -78,10 +79,10 @@ export async function getGitHubAuthUrl(): Promise<OAuthUrlResponse> {
 /**
  * Exchange GitHub OAuth code for an access token
  */
-export async function exchangeGitHubCode(code: string): Promise<{ token: string; scope?: string }> {
+export async function exchangeGitHubCode(code: string): Promise<{ connected: boolean }> {
   const res = await fetch("/api/projects/github-exchange", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await authenticatedHeaders(),
     body: JSON.stringify({ code }),
   });
 
@@ -90,7 +91,7 @@ export async function exchangeGitHubCode(code: string): Promise<{ token: string;
     throw new Error(data.error || "Failed to exchange GitHub authorization code.");
   }
 
-  return data;
+  return { connected: true };
 }
 
 /**
@@ -152,12 +153,8 @@ export function openGitHubOAuthPopup(authUrl: string): Promise<{ code: string | 
 /**
  * Fetch authenticated GitHub user details
  */
-export async function getConnectedGitHubUser(token: string): Promise<GitHubUser> {
-  const res = await fetch("/api/projects/github-user", {
-    headers: {
-      Authorization: `Bearer ${token.trim()}`,
-    },
-  });
+export async function getConnectedGitHubUser(): Promise<GitHubUser> {
+  const res = await fetch("/api/projects/github-user", { headers: await authenticatedHeaders() });
 
   const data = await res.json();
   if (!res.ok || data.error) {
@@ -170,12 +167,8 @@ export async function getConnectedGitHubUser(token: string): Promise<GitHubUser>
 /**
  * List repositories accessible to the user
  */
-export async function listUserRepositories(token: string): Promise<GitHubRepositoryItem[]> {
-  const res = await fetch("/api/projects/github-repos?per_page=50", {
-    headers: {
-      Authorization: `Bearer ${token.trim()}`,
-    },
-  });
+export async function listUserRepositories(): Promise<GitHubRepositoryItem[]> {
+  const res = await fetch("/api/projects/github-repos", { headers: await authenticatedHeaders() });
 
   const data = await res.json();
   if (!res.ok || data.error) {
@@ -190,12 +183,10 @@ export async function listUserRepositories(token: string): Promise<GitHubReposit
  */
 export async function listRepositoryBranches(
   repository: string,
-  token?: string
 ): Promise<GitHubBranchItem[]> {
   const params = new URLSearchParams({ repository });
-  if (token) params.set("token", token);
 
-  const res = await fetch(`/api/projects/github-branches?${params.toString()}`);
+  const res = await fetch(`/api/projects/github-branches?${params.toString()}`, { headers: await authenticatedHeaders() });
   const data = await res.json();
 
   if (!res.ok || data.error) {
@@ -213,7 +204,7 @@ export async function linkRepositoryToAfter(
 ): Promise<LinkRepositoryResponse> {
   const res = await fetch("/api/projects/github-link", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await authenticatedHeaders(),
     body: JSON.stringify(payload),
   });
 
@@ -230,13 +221,12 @@ export async function linkRepositoryToAfter(
  */
 export async function analyzeRepository(
   repository: string,
-  branch?: string,
-  githubToken?: string
+  branch?: string
 ): Promise<any> {
   const res = await fetch("/api/projects/analyze-repository", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ repository, branch, githubToken }),
+    headers: await authenticatedHeaders(),
+    body: JSON.stringify({ repository, branch }),
   });
 
   const data = await res.json();

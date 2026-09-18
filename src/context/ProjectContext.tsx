@@ -1,3 +1,4 @@
+import { authenticatedHeaders } from "../lib/api";
 import React, { createContext, useContext, useEffect, useState } from "react";
 import {
   collection,
@@ -45,9 +46,7 @@ interface ProjectContextType {
   connectRepository: (data: {
     repository: string;
     branch?: string;
-    githubToken?: string;
   }) => Promise<Project>;
-  createDemoProject: () => Promise<Project>;
   updateCurrentProject: (data: Partial<Project>) => Promise<void>;
   deleteCurrentProject: () => Promise<void>;
   addEvent: (eventData: Omit<ProjectEvent, "id" | "projectId">) => Promise<void>;
@@ -268,11 +267,9 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const connectRepository = async ({
     repository,
     branch,
-    githubToken,
   }: {
     repository: string;
     branch?: string;
-    githubToken?: string;
   }): Promise<Project> => {
     if (!user) throw new Error("Must be signed in to connect a repository");
 
@@ -280,8 +277,8 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     try {
       const res = await fetch("/api/projects/analyze-repository", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repository, branch, githubToken }),
+        headers: await authenticatedHeaders(),
+        body: JSON.stringify({ repository, branch }),
       });
 
       if (!res.ok) {
@@ -398,132 +395,6 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
 
     try {
       await setDoc(doc(db, "projects", projectId), newProject);
-      setCurrentProject(newProject);
-      return newProject;
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, `projects/${projectId}`);
-    }
-  };
-
-  // Instant demo project generator with rich nodes, telemetry, and insights
-  const createDemoProject = async (): Promise<Project> => {
-    if (!user) throw new Error("Must be signed in to create a project");
-
-    const projectId = `proj_demo_${Date.now()}`;
-    const now = new Date().toISOString();
-
-    const demoNodes: GraphNode[] = [
-      {
-        id: "api_gateway",
-        label: "API Gateway (Kong)",
-        type: "api",
-        category: "core",
-        status: "healthy",
-        changesCount: 24,
-        description: "Rotas públicas, autenticação e rate limiting centralizado",
-        lastModified: now,
-      },
-      {
-        id: "auth_service",
-        label: "Auth & Identity Engine",
-        type: "component",
-        category: "auth",
-        status: "healthy",
-        changesCount: 18,
-        description: "Emissão de JWT, gerenciamento de sessões e RBAC",
-        lastModified: now,
-      },
-      {
-        id: "checkout_service",
-        label: "Checkout & Payments",
-        type: "component",
-        category: "payments",
-        status: "warning",
-        changesCount: 42,
-        description: "Processamento de pagamentos, conciliação e webhooks bancários",
-        lastModified: now,
-      },
-      {
-        id: "kafka_bus",
-        label: "Kafka Event Streaming",
-        type: "dependency",
-        category: "infra",
-        status: "healthy",
-        changesCount: 12,
-        description: "Barramento de eventos assíncronos e tópicos de telemetria",
-        lastModified: now,
-      },
-      {
-        id: "main_database",
-        label: "Primary Database (Postgres)",
-        type: "database",
-        category: "storage",
-        status: "monitored",
-        changesCount: 30,
-        description: "Instância de dados transacionais com replicação multi-AZ",
-        lastModified: now,
-      },
-    ];
-
-    const demoEdges: GraphEdge[] = [
-      { from: "api_gateway", to: "auth_service", label: "verify_token" },
-      { from: "api_gateway", to: "checkout_service", label: "route_traffic" },
-      { from: "checkout_service", to: "kafka_bus", label: "publish_orders" },
-      { from: "checkout_service", to: "main_database", label: "read_write" },
-      { from: "auth_service", to: "main_database", label: "read_accounts" },
-    ];
-
-    const newProject: Project = {
-      id: projectId,
-      ownerId: user.uid,
-      name: "Core Commerce Platform (Demo)",
-      description: "Plataforma de comércio distribuída com telemetria arquitetural contínua e rastreamento de hipóteses.",
-      repository: "after-org/core-commerce",
-      branch: "main",
-      framework: "Next.js & Node Microservices",
-      language: "TypeScript",
-      createdAt: now,
-      updatedAt: now,
-      githubConnected: true,
-      telemetryConnected: true,
-      telemetryProvider: "OpenTelemetry",
-      stars: 128,
-      openIssues: 3,
-      graphNodes: demoNodes,
-      graphEdges: demoEdges,
-    };
-
-    try {
-      await setDoc(doc(db, "projects", projectId), newProject);
-
-      const ins1Id = `ins_demo_1`;
-      await setDoc(doc(db, "projects", projectId, "insights", ins1Id), {
-        id: ins1Id,
-        projectId,
-        ownerId: user.uid,
-        title: "Risco de concorrência no Checkout com pool de conexões",
-        description: "Aumento de 18% no tempo de resposta nos nós do Checkout sob carga sustentada.",
-        category: "Performance",
-        evidence: "Picos de latência detectados nas rotas /api/v1/checkout nos últimos 7 dias.",
-        impact: "high",
-        confidence: "high",
-        affectedComponents: ["checkout_service", "main_database"],
-        suggestedAction: "Configurar pooling distribuído e aplicar circuit breaker para falhas temporárias.",
-        createdAt: now,
-      });
-
-      const ev1Id = `ev_demo_1`;
-      await setDoc(doc(db, "projects", projectId, "events", ev1Id), {
-        id: ev1Id,
-        projectId,
-        ownerId: user.uid,
-        event: "Migração para arquitetura orientada a eventos",
-        actor: user.displayName || user.email || "Eng Lead",
-        timestamp: now,
-        affectedComponents: ["checkout_service", "kafka_bus"],
-        reason: "Desacoplamento do pipeline de confirmação de pagamento assíncrono.",
-      });
-
       setCurrentProject(newProject);
       return newProject;
     } catch (error) {
@@ -655,7 +526,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         try {
           const res = await fetch("/api/projects/analyze-repository", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: await authenticatedHeaders(),
             body: JSON.stringify({
               repository: currentProject.repository,
               branch: currentProject.branch,
@@ -699,7 +570,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       setScanStage("insights");
       const res = await fetch("/api/gemini/analyze-insights", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await authenticatedHeaders(),
         body: JSON.stringify({
           project: currentProject,
           events,
@@ -737,7 +608,6 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         graphEdges,
         loadingProjects,
         createProject,
-        createDemoProject,
         connectRepository,
         updateCurrentProject,
         deleteCurrentProject,

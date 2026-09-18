@@ -1,4 +1,6 @@
 import express from "express";
+import cookieParser from "cookie-parser";
+import { githubOAuthCallback } from "./server/routes/projects.ts";
 import path from "path";
 import { fileURLToPath } from "url";
 import { apiRouter } from "./server/app.ts";
@@ -10,10 +12,9 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json());
+app.use(cookieParser());
 app.use("/api", apiRouter);
-app.get("/auth/callback", (req, res, next) => {
-  (apiRouter as any)(req, res, next);
-});
+app.get("/auth/callback", githubOAuthCallback);
 
 // Serve static assets from Vite build in production
 app.use(express.static(path.join(__dirname, "dist")));

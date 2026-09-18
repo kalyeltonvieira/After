@@ -4,11 +4,9 @@ import {
   GitBranch,
   Github,
   Code2,
-  Sparkles,
   FolderPlus,
   ArrowRight,
   ShieldCheck,
-  KeyRound,
   Lock,
   Globe,
   Star,
@@ -20,7 +18,6 @@ import { useProject } from "../context/ProjectContext";
 import { useLanguage } from "../context/LanguageContext";
 import {
   getGitHubAuthUrl,
-  exchangeGitHubCode,
   openGitHubOAuthPopup,
   getConnectedGitHubUser,
   listUserRepositories,
@@ -35,16 +32,14 @@ interface CreateProjectModalProps {
 }
 
 export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProjectModalProps) {
-  const { connectRepository, createProject, createDemoProject } = useProject();
+  const { connectRepository, createProject } = useProject();
   const { t, language } = useLanguage();
 
-  const [activeTab, setActiveTab] = useState<"github" | "manual" | "demo">("github");
+  const [activeTab, setActiveTab] = useState<"github" | "manual">("github");
 
   // GitHub connection fields
   const [repoInput, setRepoInput] = useState("");
   const [repoBranch, setRepoBranch] = useState("");
-  const [githubToken, setGithubToken] = useState("");
-  const [showTokenInput, setShowTokenInput] = useState(false);
 
   // GitHub User & Repositories state
   const [connectedUser, setConnectedUser] = useState<GitHubUser | null>(null);
@@ -93,12 +88,12 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
       .catch(() => setOauthAvailable(false));
   }, [isOpen]);
 
-  const loadGitHubUserData = async (token: string) => {
+  const loadGitHubUserData = async () => {
     setLoadingRepos(true);
     try {
       const [user, repos] = await Promise.all([
-        getConnectedGitHubUser(token).catch(() => null),
-        listUserRepositories(token).catch(() => []),
+        getConnectedGitHubUser().catch(() => null),
+        listUserRepositories().catch(() => []),
       ]);
       if (user) setConnectedUser(user);
       if (repos && repos.length > 0) setUserRepos(repos);
@@ -122,13 +117,9 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
         setError(`GitHub authorization error: ${result.error}`);
         return;
       }
-      if (result.code) {
-        setLoadingStep("Exchanging authorization token...");
-        const { token } = await exchangeGitHubCode(result.code);
-        setGithubToken(token);
-        setShowTokenInput(true);
+      if (!result.error) {
         setLoadingStep("Loading your repositories from GitHub...");
-        await loadGitHubUserData(token);
+        await loadGitHubUserData();
       }
     } catch (err: any) {
       setError(err.message || "OAuth connection failed");
@@ -160,7 +151,6 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
       await connectRepository({
         repository: repoInput.trim(),
         branch: repoBranch.trim() || undefined,
-        githubToken: githubToken.trim() || undefined,
       });
 
       onClose();
@@ -202,25 +192,6 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
     }
   };
 
-  const handleCreateDemo = async () => {
-    setLoading(true);
-    setLoadingStep(
-      language === "pt"
-        ? "Carregando projeto de demonstração com telemetria..."
-        : "Loading demo project with telemetry..."
-    );
-    setError(null);
-    try {
-      await createDemoProject();
-      onClose();
-      if (onSuccess) onSuccess();
-    } catch (err: any) {
-      setError(err?.message || "Failed to create demo project");
-    } finally {
-      setLoading(false);
-      setLoadingStep("");
-    }
-  };
 
   if (!isOpen) return null;
 
@@ -286,21 +257,7 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
               <Code2 className="w-3.5 h-3.5" />
               <span>{language === "pt" ? "Projeto Vazio" : "Empty Project"}</span>
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab("demo");
-                setError(null);
-              }}
-              className={`flex-1 py-2 font-medium rounded-lg transition-colors flex items-center justify-center space-x-1.5 cursor-pointer ${
-                activeTab === "demo"
-                  ? "bg-white dark:bg-zinc-900 text-zinc-950 dark:text-zinc-50 shadow-xs"
-                  : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span>{language === "pt" ? "Demo Exemplo" : "Demo Project"}</span>
-            </button>
+
           </div>
 
           {error && (
@@ -353,7 +310,7 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
                       </span>
                       <button
                         type="button"
-                        onClick={() => githubToken && loadGitHubUserData(githubToken)}
+                        onClick={() => loadGitHubUserData()}
                         className="text-[11px] text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 flex items-center space-x-1 cursor-pointer"
                       >
                         <RefreshCw className={`w-3 h-3 ${loadingRepos ? "animate-spin" : ""}`} />
@@ -438,32 +395,6 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
               />
             </div>
 
-            {/* Optional Personal Access Token */}
-            <div>
-              <button
-                type="button"
-                onClick={() => setShowTokenInput(!showTokenInput)}
-                className="text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 flex items-center space-x-1 cursor-pointer"
-              >
-                <KeyRound className="w-3 h-3" />
-                <span>{showTokenInput ? "Hide Personal Access Token" : "Provide GitHub Personal Access Token (for private repos)"}</span>
-              </button>
-
-              {showTokenInput && (
-                <div className="mt-2">
-                  <input
-                    type="password"
-                    value={githubToken}
-                    onChange={(e) => setGithubToken(e.target.value)}
-                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-750 bg-white dark:bg-zinc-800 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-hidden focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100 font-mono"
-                  />
-                  <p className="text-[11px] text-zinc-400 mt-1">
-                    Used strictly server-side during analysis and never exposed to the client.
-                  </p>
-                </div>
-              )}
-            </div>
 
             {loading && loadingStep && (
               <div className="p-3 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-xs font-mono text-zinc-700 dark:text-zinc-300 flex items-center space-x-2 animate-pulse">
@@ -473,14 +404,7 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
             )}
 
             <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => setActiveTab("demo")}
-                className="text-xs text-zinc-500 hover:text-emerald-600 dark:hover:text-emerald-400 flex items-center space-x-1.5 cursor-pointer self-start sm:self-auto"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                <span>{language === "pt" ? "Ou testar com Projeto Demo" : "Or test with Demo Project"}</span>
-              </button>
+
 
               <div className="flex items-center space-x-2 self-end sm:self-auto">
                 <button
@@ -592,67 +516,6 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
           </form>
         )}
 
-        {/* Tab 3: Instant Demo Project */}
-        {activeTab === "demo" && (
-          <div className="space-y-4 py-1">
-            <div className="p-4 rounded-2xl border border-emerald-200/80 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/20 space-y-3">
-              <div className="flex items-center space-x-2 text-emerald-800 dark:text-emerald-300">
-                <Sparkles className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                <span className="text-sm font-semibold">
-                  {language === "pt" ? "Explorar com Projeto de Demonstração" : "Explore with Demo Project"}
-                </span>
-              </div>
-              <p className="text-xs text-emerald-900/80 dark:text-emerald-300/80 leading-relaxed">
-                {language === "pt"
-                  ? "Não tem um repositório para conectar agora? Inicialize instantaneamente um projeto completo de e-commerce distribuído com microserviços, telemetria OpenTelemetry, grafo de dependências e relatórios arquiteturais prontos."
-                  : "Don't have a repository ready to connect? Instantly initialize a complete distributed e-commerce project with microservices, OpenTelemetry metrics, live dependency graph, and forensic reports."}
-              </p>
-            </div>
-
-            <div className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-850/50 space-y-2 text-xs text-zinc-600 dark:text-zinc-400">
-              <div className="font-semibold text-zinc-900 dark:text-zinc-100 flex items-center space-x-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                <span>{language === "pt" ? "O que será carregado:" : "What will be loaded:"}</span>
-              </div>
-              <ul className="list-disc list-inside space-y-1.5 pl-1">
-                <li>{language === "pt" ? "Grafo de 5 nós (API Gateway, Auth, Checkout, Kafka, Postgres)" : "5-node dependency graph (API Gateway, Auth, Checkout, Kafka, Postgres)"}</li>
-                <li>{language === "pt" ? "Telemetria de saúde contínua e risco de concorrência detectado" : "Continuous evolutionary health telemetry and concurrency risks"}</li>
-                <li>{language === "pt" ? "Rastreamento de hipóteses e experimento ativo de rollback" : "Hypothesis tracking and active rollback experiment"}</li>
-                <li>{language === "pt" ? "Histórico de eventos de evolução de arquitetura" : "Architectural evolution events timeline"}</li>
-              </ul>
-            </div>
-
-            {loading && loadingStep && (
-              <div className="p-3 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-xs font-mono text-zinc-700 dark:text-zinc-300 flex items-center space-x-2 animate-pulse">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span>{loadingStep}</span>
-              </div>
-            )}
-
-            <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-end space-x-3">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
-              >
-                {language === "pt" ? "Fechar / Cancelar" : "Close / Cancel"}
-              </button>
-              <button
-                type="button"
-                onClick={handleCreateDemo}
-                disabled={loading}
-                className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-xs font-medium transition-all flex items-center space-x-2 cursor-pointer shadow-xs disabled:opacity-50"
-              >
-                <Sparkles className="w-4 h-4" />
-                <span>
-                  {loading
-                    ? (language === "pt" ? "Criando Demo..." : "Creating Demo...")
-                    : (language === "pt" ? "Criar Projeto Demo Agora" : "Create Demo Project Now")}
-                </span>
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   </div>

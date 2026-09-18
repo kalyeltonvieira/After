@@ -31,7 +31,6 @@ export function OverviewPage({ onNavigate, onOpenCreateProject }: OverviewPagePr
     graphNodes,
     refreshAnalysis,
     isAnalyzing,
-    createDemoProject,
   } = useProject();
   const { t, language } = useLanguage();
 
@@ -43,8 +42,6 @@ export function OverviewPage({ onNavigate, onOpenCreateProject }: OverviewPagePr
           description={t("empty_no_project_desc")}
           actionLabel={t("empty_no_project_action")}
           onAction={onOpenCreateProject}
-          secondaryActionLabel={language === "pt" ? "⚡ Carregar Projeto de Demonstração" : "⚡ Load Demo Project"}
-          onSecondaryAction={() => createDemoProject()}
         />
       </div>
     );
