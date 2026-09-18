@@ -47,24 +47,88 @@ export function Navbar({
 
   const unreadNotifications = notifications.filter((n) => !n.read).length;
 
-  useEffect(() => {
+  const loadNotifications = async () => {
     if (!currentProject?.id || !user) {
       setNotifications([]);
       return;
     }
+
+    try {
+      const res = await fetch(
+        `/api/repository/notifications?projectId=${encodeURIComponent(currentProject.id)}`,
+        { headers: await authenticatedHeaders() }
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      setNotifications(Array.isArray(data.notifications) ? data.notifications : []);
+    } catch {
+      setNotifications([]);
+    }
+  };
+
+  useEffect(() => {
     let cancelled = false;
-    (async () => {
+    if (!currentProject?.id || !user) {
+      setNotifications([]);
+      return () => { cancelled = true; };
+    }
+
+    const load = async () => {
       try {
-        const res = await fetch(`/api/repository/notifications?projectId=${encodeURIComponent(currentProject.id)}`, { headers: await authenticatedHeaders() });
+        const res = await fetch(
+          `/api/repository/notifications?projectId=${encodeURIComponent(currentProject.id)}`,
+          { headers: await authenticatedHeaders() }
+        );
         if (!res.ok) return;
         const data = await res.json();
         if (!cancelled) setNotifications(Array.isArray(data.notifications) ? data.notifications : []);
       } catch {
         if (!cancelled) setNotifications([]);
       }
-    })();
-    return () => { cancelled = true; };
+    };
+
+    void load();
+    const timer = window.setInterval(() => {
+      void load();
+    }, 10000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, [currentProject?.id, user]);
+
+  const markNotificationRead = async (id: string) => {
+    if (!currentProject?.id) return;
+    try {
+      await fetch(`/api/repository/notifications/${encodeURIComponent(id)}/read`, {
+        method: "POST",
+        headers: await authenticatedHeaders(),
+        body: JSON.stringify({ projectId: currentProject.id }),
+      });
+      setNotifications((current) =>
+        current.map((notification) =>
+          notification.id === id ? { ...notification, read: true } : notification
+        )
+      );
+    } catch {
+      // Leave the local state untouched when the persistence call fails.
+    }
+  };
+
+  const markAllNotificationsRead = async () => {
+    if (!currentProject?.id) return;
+    try {
+      await fetch("/api/repository/notifications/read-all", {
+        method: "POST",
+        headers: await authenticatedHeaders(),
+        body: JSON.stringify({ projectId: currentProject.id }),
+      });
+      setNotifications((current) => current.map((notification) => ({ ...notification, read: true })));
+    } catch {
+      // Leave unread state when persistence fails.
+    }
+  };
 
   return (
     <header className="sticky top-0 z-30 w-full h-14 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md border-b border-zinc-200/70 dark:border-zinc-800/80 px-4 sm:px-6 flex items-center justify-between transition-colors">
@@ -225,9 +289,20 @@ export function Navbar({
                   <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
                     {t("nav_notifications")}
                   </span>
-                  <span className="text-[10px] text-zinc-400 font-mono">
-                    {notifications.filter((n) => !n.read).length} unread
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-zinc-400 font-mono">
+                      {notifications.filter((n) => !n.read).length} unread
+                    </span>
+                    {unreadNotifications > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => void markAllNotificationsRead()}
+                        className="text-[10px] font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+                      >
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="max-h-60 overflow-y-auto py-2 space-y-2">
                   {notifications.length === 0 ? (
@@ -238,10 +313,15 @@ export function Navbar({
                     notifications.slice(0, 4).map((notification) => (
                       <div
                         key={notification.id}
-                        className="p-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/40 text-xs space-y-1 cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                        className={`p-2 rounded-lg text-xs space-y-1 cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors ${
+                          notification.read
+                            ? "bg-zinc-50 dark:bg-zinc-900/40"
+                            : "bg-amber-50/70 dark:bg-amber-950/20"
+                        }`}
                         onClick={() => {
+                          void markNotificationRead(String(notification.id));
                           setIsNotificationsOpen(false);
-                          onNavigate("insights");
+                          onNavigate("repository");
                         }}
                       >
                         <div className="flex items-center justify-between">
