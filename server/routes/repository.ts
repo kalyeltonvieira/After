@@ -115,6 +115,96 @@ repositoryRouter.get("/file-history", async (req: AuthenticatedRequest, res) => 
   } catch (error) { return handleRouteError(res, error); }
 });
 
+repositoryRouter.get("/file-blame", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { project, parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const path = String(req.query.path || "").replace(/^\/+/, "");
+    const ref = String(req.query.ref || project.branch || project.defaultBranch || "");
+    if (!path) return res.status(400).json({ error: "path is required." });
+    if (!token) return res.status(401).json({ error: "GitHub authorization is required for line blame." });
+
+    const response = await fetch("https://api.github.com/graphql", {
+      method: "POST",
+      headers: {
+        ...ghHeaders(token),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: `
+          query FileBlame($owner: String!, $name: String!, $expression: String!, $path: String!) {
+            repository(owner: $owner, name: $name) {
+              object(expression: $expression) {
+                ... on Commit {
+                  blame(path: $path) {
+                    ranges {
+                      startingLine
+                      endingLine
+                      age
+                      commit {
+                        oid
+                        abbreviatedOid
+                        messageHeadline
+                        committedDate
+                        author {
+                          name
+                          user {
+                            login
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        `,
+        variables: {
+          owner: parsed.owner,
+          name: parsed.repo,
+          expression: ref,
+          path,
+        },
+      }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) return res.status(response.status).json({ error: payload?.message || "GitHub GraphQL blame request failed." });
+    if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
+      return res.status(502).json({ error: payload.errors.map((item: any) => item.message).join("; ") });
+    }
+
+    const ranges = payload?.data?.repository?.object?.blame?.ranges;
+    return res.json({
+      path,
+      ref,
+      ranges: Array.isArray(ranges)
+        ? ranges.map((range: any) => ({
+            startingLine: range.startingLine,
+            endingLine: range.endingLine,
+            age: range.age,
+            commit: range.commit
+              ? {
+                  oid: range.commit.oid,
+                  abbreviatedOid: range.commit.abbreviatedOid,
+                  messageHeadline: range.commit.messageHeadline,
+                  committedDate: range.commit.committedDate,
+                  author: range.commit.author
+                    ? {
+                        name: range.commit.author.name,
+                        login: range.commit.author.user?.login || null,
+                      }
+                    : null,
+                }
+              : null,
+          }))
+        : [],
+    });
+  } catch (error) {
+    return handleRouteError(res, error);
+  }
+});
+
 repositoryRouter.get("/branches", async (req: AuthenticatedRequest, res) => {
   try {
     const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
@@ -364,10 +454,26 @@ repositoryRouter.get("/global-search", async (req: AuthenticatedRequest, res) =>
       if (!parsed) return;
       try {
         const [code, commits, issues, pulls] = await Promise.all([
-          githubFetch(`/search/code?q=${encodeURIComponent(`${q} repo:${parsed.owner}/${parsed.repo}`)}&per_page=8`, getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined),
-          githubFetch(`/search/commits?q=${encodeURIComponent(`${q} repo:${parsed.owner}/${parsed.repo}`)}&per_page=8`, getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined),
-          githubFetch(`/search/issues?q=${encodeURIComponent(`${q} repo:${parsed.owner}/${parsed.repo}`)}&per_page=8`, getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined),
-          githubFetch(`/search/issues?q=${encodeURIComponent(`${q} repo:${parsed.owner}/${parsed.repo} is:pr`)}&per_page=8`, getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined),
+          githubFetch(`/search/code?q=${encodeURIComponent(`${q} repo:${parsed.owner}/${parsed.repo}`)}&per_page=8`, (
+          getGitHubToken(req.cookies?.after_github_session, req.user!.uid) ||
+          String(req.headers["x-github-access-token"] || "").trim() ||
+          undefined
+        )),
+          githubFetch(`/search/commits?q=${encodeURIComponent(`${q} repo:${parsed.owner}/${parsed.repo}`)}&per_page=8`, (
+          getGitHubToken(req.cookies?.after_github_session, req.user!.uid) ||
+          String(req.headers["x-github-access-token"] || "").trim() ||
+          undefined
+        )),
+          githubFetch(`/search/issues?q=${encodeURIComponent(`${q} repo:${parsed.owner}/${parsed.repo}`)}&per_page=8`, (
+          getGitHubToken(req.cookies?.after_github_session, req.user!.uid) ||
+          String(req.headers["x-github-access-token"] || "").trim() ||
+          undefined
+        )),
+          githubFetch(`/search/issues?q=${encodeURIComponent(`${q} repo:${parsed.owner}/${parsed.repo} is:pr`)}&per_page=8`, (
+          getGitHubToken(req.cookies?.after_github_session, req.user!.uid) ||
+          String(req.headers["x-github-access-token"] || "").trim() ||
+          undefined
+        )),
         ]);
         for (const item of Array.isArray(code.body?.items) ? code.body.items : []) results.push({ kind: "file", projectId: project.id, projectName: project.name, repository: project.repository, title: item.name, subtitle: item.path, url: item.html_url, path: item.path });
         for (const item of Array.isArray(commits.body?.items) ? commits.body.items : []) results.push({ kind: "commit", projectId: project.id, projectName: project.name, repository: project.repository, title: item.commit?.message?.split("\n")[0] || item.sha?.slice(0, 8), subtitle: item.sha?.slice(0, 10), url: item.html_url, sha: item.sha });
@@ -379,7 +485,11 @@ repositoryRouter.get("/global-search", async (req: AuthenticatedRequest, res) =>
     }));
 
     try {
-      const userSearch = await githubFetch(`/search/users?q=${encodeURIComponent(q)}&per_page=8`, getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined);
+      const userSearch = await githubFetch(`/search/users?q=${encodeURIComponent(q)}&per_page=8`, (
+          getGitHubToken(req.cookies?.after_github_session, req.user!.uid) ||
+          String(req.headers["x-github-access-token"] || "").trim() ||
+          undefined
+        ));
       for (const item of Array.isArray(userSearch.body?.items) ? userSearch.body.items : []) {
         results.push({ kind: "user", title: item.login, subtitle: "GitHub user", url: item.html_url, avatar: item.avatar_url });
       }
@@ -387,14 +497,21 @@ repositoryRouter.get("/global-search", async (req: AuthenticatedRequest, res) =>
       console.warn("Global user search failed:", error);
     }
 
-    const insightSnapshots = await Promise.all(
-      projects.map((project: any) => db.collection("projects").doc(project.id).collection("insights").get())
-    );
-    for (let i = 0; i < insightSnapshots.length; i += 1) {
-      for (const docSnap of insightSnapshots[i].docs) {
-        const insight = docSnap.data() as any;
-        if (String(insight.title || "").toLowerCase().includes(q.toLowerCase()) || String(insight.description || "").toLowerCase().includes(q.toLowerCase())) {
-          results.push({ kind: "insight", projectId: projects[i].id, projectName: projects[i].name, title: insight.title, subtitle: insight.category, url: null });
+    for (const project of projects) {
+      const projectInsights = Array.isArray(project.insights) ? project.insights : [];
+      for (const insight of projectInsights) {
+        if (
+          String(insight.title || "").toLowerCase().includes(q.toLowerCase()) ||
+          String(insight.description || "").toLowerCase().includes(q.toLowerCase())
+        ) {
+          results.push({
+            kind: "insight",
+            projectId: project.id,
+            projectName: project.name,
+            title: insight.title,
+            subtitle: insight.category,
+            url: null,
+          });
         }
       }
     }
