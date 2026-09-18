@@ -1,3 +1,4 @@
+import { authenticatedHeaders } from "../lib/api";
 import React, { useState } from "react";
 import { X, Sparkles, Send, ArrowUpRight, Search, FileText, CheckCircle } from "lucide-react";
 import { useProject } from "../context/ProjectContext";
@@ -26,14 +27,9 @@ export function AskAfterModal() {
     try {
       const res = await fetch("/api/gemini/ask", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question,
-          projectContext: currentProject,
-          timeline: events.slice(0, 10),
-          insights: insights.slice(0, 10),
-          graphNodes: graphNodes.slice(0, 15),
-        }),
+        headers: await authenticatedHeaders(),
+        body: JSON.stringify({ question, projectId: currentProject?.id }),
+
       });
 
       const data = await res.json();

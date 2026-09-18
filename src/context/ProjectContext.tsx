@@ -312,6 +312,10 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
 
       // 1. Save project document in Firestore
       await setDoc(doc(db, "projects", projectId), newProject);
+      await setDoc(doc(db, "projects", projectId, "snapshots", `snapshot_${Date.now()}`), {
+        projectId, ownerId: user.uid, createdAt: now, branch: data.project.branch,
+        graphNodes: data.graphNodes || [], graphEdges: data.graphEdges || [], analysis: data.analysis || null,
+      });
 
       // 2. Persist real commits into events subcollection
       for (const ev of data.events || []) {
@@ -537,6 +541,10 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
             const data = await res.json();
             // Update project nodes and edges if refreshed
             if (data.graphNodes && data.graphNodes.length > 0) {
+              await setDoc(doc(db, "projects", currentProject.id, "snapshots", `snapshot_${Date.now()}`), {
+                projectId: currentProject.id, ownerId: user.uid, createdAt: new Date().toISOString(),
+                branch: currentProject.branch, graphNodes: data.graphNodes, graphEdges: data.graphEdges || [], analysis: data.analysis || null,
+              });
               await updateCurrentProject({
                 graphNodes: data.graphNodes,
                 graphEdges: data.graphEdges || [],
@@ -572,9 +580,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         method: "POST",
         headers: await authenticatedHeaders(),
         body: JSON.stringify({
-          project: currentProject,
-          events,
-          components: graphNodes,
+          projectId: currentProject.id,
         }),
       });
       const data = await res.json();

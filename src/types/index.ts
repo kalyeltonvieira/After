@@ -131,6 +131,7 @@ export interface GraphEdge {
   from: string;
   to: string;
   label?: string;
+  evidence?: string;
 }
 
 export interface WhyAnalysisResult {

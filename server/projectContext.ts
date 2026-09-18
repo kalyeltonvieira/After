@@ -1,0 +1,22 @@
+import { getFirestore } from "firebase-admin/firestore";
+import { adminApp } from "./auth.js";
+
+export async function loadProjectContext(projectId: string, uid: string) {
+  const db = getFirestore(adminApp);
+  const projectSnap = await db.collection("projects").doc(projectId).get();
+  if (!projectSnap.exists || projectSnap.data()?.ownerId !== uid) return null;
+  const [eventsSnap, insightsSnap, experimentsSnap] = await Promise.all([
+    projectSnap.ref.collection("events").get(),
+    projectSnap.ref.collection("insights").get(),
+    projectSnap.ref.collection("experiments").get(),
+  ]);
+  const project = projectSnap.data() || {};
+  return {
+    project: { ...project, id: projectId },
+    timeline: eventsSnap.docs.map((doc) => doc.data()),
+    insights: insightsSnap.docs.map((doc) => doc.data()),
+    experiments: experimentsSnap.docs.map((doc) => doc.data()),
+    graphNodes: project.graphNodes || [],
+    graphEdges: project.graphEdges || [],
+  };
+}

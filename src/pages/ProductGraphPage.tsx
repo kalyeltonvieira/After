@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { authenticatedHeaders } from "../lib/api";
 import {
   Network,
   HelpCircle,
@@ -23,6 +24,8 @@ export function ProductGraphPage() {
   const { t, language } = useLanguage();
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [filterLayer, setFilterLayer] = useState<string>("all");
+  const [impactLoading, setImpactLoading] = useState(false);
+  const [impactResult, setImpactResult] = useState<any>(null);
 
   useEffect(() => {
     if (graphNodes.length > 0 && (!selectedNode || !graphNodes.find((n) => n.id === selectedNode.id))) {
@@ -83,6 +86,18 @@ export function ProductGraphPage() {
 
   const getIncomingEdges = (nodeId: string) => {
     return graphEdges.filter((e) => e.to === nodeId);
+  };
+
+  const inspectImpact = async () => {
+    if (!selectedNode || !currentProject) return;
+    setImpactLoading(true);
+    try {
+      const res = await fetch("/api/projects/impact", { method: "POST", headers: await authenticatedHeaders(), body: JSON.stringify({ projectId: currentProject.id, nodeId: selectedNode.id }) });
+      if (!res.ok) throw new Error("Impact analysis failed");
+      setImpactResult(await res.json());
+    } catch {
+      setImpactResult({ error: "No impact evidence is available for this node." });
+    } finally { setImpactLoading(false); }
   };
 
   return (
@@ -317,8 +332,24 @@ export function ProductGraphPage() {
                   </div>
                 </div>
 
+                {impactResult && (
+                  <div className="mb-4 p-3 rounded-xl bg-sky-50 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-900 text-xs space-y-2">
+                    <span className="font-semibold text-sky-900 dark:text-sky-200">Impact evidence</span>
+                    {impactResult.error ? <p className="text-sky-800 dark:text-sky-300">{impactResult.error}</p> : <p className="text-sky-800 dark:text-sky-300">{impactResult.transitiveDependents?.length || 0} downstream nodes depend on this node through recorded imports.</p>}
+                  </div>
+                )}
+
                 {/* Signature "Why does this exist?" Action Button */}
                 <div className="pt-4 border-t border-zinc-100 dark:border-zinc-850 space-y-2">
+                  <button
+                    type="button"
+                    onClick={inspectImpact}
+                    disabled={impactLoading}
+                    className="w-full py-2.5 px-4 rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 font-medium text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50"
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                    <span>{impactLoading ? "Analyzing impact..." : "What does this affect?"}</span>
+                  </button>
                   <button
                     id="inspect-node-why-btn"
                     type="button"

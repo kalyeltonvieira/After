@@ -1,3 +1,4 @@
+import { authenticatedHeaders } from "../lib/api";
 import React, { useEffect, useState } from "react";
 import { X, Sparkles, AlertCircle, CheckCircle2, HelpCircle, ArrowRight } from "lucide-react";
 import { useProject } from "../context/ProjectContext";
@@ -29,13 +30,11 @@ export function WhyDrawer() {
 
         const res = await fetch("/api/gemini/why", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: await authenticatedHeaders(),
           body: JSON.stringify({
             nodeName: selectedNodeForWhy.label || selectedNodeForWhy.id,
             nodeType: selectedNodeForWhy.type,
-            projectContext: currentProject,
-            recentEvents: events.slice(0, 8),
-            dependencies: realDeps,
+            projectId: currentProject?.id,
           }),
         });
 

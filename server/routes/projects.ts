@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { Response } from "express";
 import { requireFirebaseUser, type AuthenticatedRequest } from "../auth.js";
 import { createGitHubSession, createOAuthState, consumeOAuthState, getGitHubToken } from "../githubSession.js";
+import { loadProjectContext } from "../projectContext.js";
 import {
   parseGitHubRepo,
   getGitHubOAuthUrl,
@@ -136,6 +137,32 @@ projectsRouter.post("/github-link", requireFirebaseUser, async (req: Authenticat
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
+});
+
+// Calculate direct and transitive impact from persisted, evidence-backed graph edges.
+projectsRouter.post("/impact", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+  const { projectId, nodeId } = req.body;
+  if (!projectId || !nodeId) return res.status(400).json({ error: "projectId and nodeId are required." });
+  const context = await loadProjectContext(String(projectId), req.user!.uid);
+  if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
+  const node = context.graphNodes.find((item: any) => item.id === nodeId);
+  if (!node) return res.status(404).json({ error: "Graph node not found." });
+  const incoming = context.graphEdges.filter((edge: any) => edge.to === nodeId);
+  const outgoing = context.graphEdges.filter((edge: any) => edge.from === nodeId);
+  const downstreamIds = new Set<string>();
+  const queue = outgoing.map((edge: any) => edge.to);
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (downstreamIds.has(id) || id === nodeId) continue;
+    downstreamIds.add(id);
+    context.graphEdges.filter((edge: any) => edge.from === id).forEach((edge: any) => queue.push(edge.to));
+  }
+  return res.json({
+    node, directDependents: incoming.map((edge: any) => ({ ...edge, node: context.graphNodes.find((item: any) => item.id === edge.from) || null })),
+    directDependencies: outgoing.map((edge: any) => ({ ...edge, node: context.graphNodes.find((item: any) => item.id === edge.to) || null })),
+    transitiveDependents: [...downstreamIds].map((id) => context.graphNodes.find((item: any) => item.id === id)).filter(Boolean),
+    evidence: [...incoming, ...outgoing].map((edge: any) => edge.evidence).filter(Boolean),
+  });
 });
 
 // Real Repository Analysis Engine
@@ -322,8 +349,24 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
     const graphNodes: any[] = [];
     const graphEdges: any[] = [];
 
-    // Filter file blobs only
+    // Filter file blobs only. Source content is fetched only for bounded, analyzable files.
     const fileBlobs = treeItems.filter((t) => t.type === "blob");
+    const sourceCandidates = fileBlobs.filter((f) => /\.(tsx?|jsx?|vue|py|go|rs)$/.test(f.path.toLowerCase()) && !/(node_modules|vendor|dist|build|coverage)\//.test(f.path)).slice(0, 120);
+    const sourceContents = new Map<string, string>();
+    await Promise.all(sourceCandidates.map(async (file) => {
+      try {
+        const contentUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${file.path}?ref=${encodeURIComponent(branch)}`;
+        const contentRes = await fetch(contentUrl, { headers });
+        if (!contentRes.ok) return;
+        const contentData = await contentRes.json();
+        if (contentData.encoding === "base64" && typeof contentData.content === "string") {
+          const content = Buffer.from(contentData.content.replace(/\n/g, ""), "base64").toString("utf-8");
+          if (content.length <= 250_000) sourceContents.set(file.path, content);
+        }
+      } catch {
+        // An individual unreadable file must not invalidate the repository analysis.
+      }
+    }));
 
     // A. Detect Pages
     const pageFiles = fileBlobs.filter((f) => {
@@ -502,39 +545,50 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
       }
     }
 
-    // Connect realistic edges between mapped entities
-    const pageNodes = graphNodes.filter((n) => n.type === "page");
-    const compNodes = graphNodes.filter((n) => n.type === "component");
-    const apiNodes = graphNodes.filter((n) => n.type === "api");
-    const depNodes = graphNodes.filter((n) => n.type === "dependency");
-    const fnNodes = graphNodes.filter((n) => n.type === "function");
-
-    // Page -> Components
-    pageNodes.forEach((p, idx) => {
-      if (compNodes[idx]) {
-        graphEdges.push({ from: p.id, to: compNodes[idx].id, label: "renders" });
+    // Connect entities using import statements from real source contents.
+    const nodeByPath = new Map<string, any>();
+    for (const node of graphNodes) if (node.filePath) nodeByPath.set(node.filePath, node);
+    for (const file of sourceCandidates) {
+      if (!nodeByPath.has(file.path)) {
+        const node = {
+          id: `file_${file.path.replace(/[^a-zA-Z0-9_]/g, "_")}`,
+          label: file.path.split("/").pop() || file.path,
+          type: "function", category: "source", status: "healthy", changesCount: 1,
+          filePath: file.path, symbol: file.path.split("/").pop()?.replace(/\.[^/.]+$/, ""), line: 1,
+          description: "Source file observed in the repository tree.", lastModified: "Synchronized with repository",
+        };
+        graphNodes.push(node);
+        nodeByPath.set(file.path, node);
       }
-      if (compNodes[idx + 1]) {
-        graphEdges.push({ from: p.id, to: compNodes[idx + 1].id, label: "renders" });
+    }
+    const dependencyByName = new Map(graphNodes.filter((n) => n.type === "dependency").map((n) => [n.dependency, n]));
+    const resolveImport = (fromPath: string, specifier: string) => {
+      if (!specifier.startsWith(".")) return null;
+      const base = fromPath.split("/").slice(0, -1).join("/");
+      const raw = `${base}/${specifier}`.replace(/\/\.\//g, "/").replace(/\/\/+/g, "/");
+      const candidates = [raw, `${raw}.ts`, `${raw}.tsx`, `${raw}.js`, `${raw}.jsx`, `${raw}.vue`, `${raw}/index.ts`, `${raw}/index.tsx`, `${raw}/index.js`];
+      return candidates.find((candidate) => nodeByPath.has(candidate)) || null;
+    };
+    for (const [filePath, content] of sourceContents) {
+      const from = nodeByPath.get(filePath);
+      if (!from) continue;
+      const imports = new Set<string>();
+      const importPatterns = [
+        /(?:import\s+(?:[^;]*?\s+from\s+)?|export\s+[^;]*?\s+from\s+|require\s*\(\s*|from\s+)["']([^"']+)["']/g,
+        /(?:^|\n)\s*(?:from\s+|import\s+)["']([^"']+)["']/g,
+      ];
+      for (const pattern of importPatterns) { let match; while ((match = pattern.exec(content))) imports.add(match[1]); }
+      for (const specifier of imports) {
+        const targetPath = resolveImport(filePath, specifier);
+        if (targetPath) {
+          const target = nodeByPath.get(targetPath);
+          if (target && !graphEdges.some((e) => e.from === from.id && e.to === target.id && e.label === "imports")) graphEdges.push({ from: from.id, to: target.id, label: "imports", evidence: `${filePath} imports ${specifier}` });
+        } else {
+          const dep = dependencyByName.get(specifier.split("/").slice(0, specifier.startsWith("@") ? 2 : 1).join("/"));
+          if (dep && !graphEdges.some((e) => e.from === from.id && e.to === dep.id && e.label === "imports")) graphEdges.push({ from: from.id, to: dep.id, label: "imports", evidence: `${filePath} imports ${specifier}` });
+        }
       }
-    });
-
-    // Component -> Dependencies
-    compNodes.forEach((c, idx) => {
-      if (depNodes[idx % depNodes.length]) {
-        graphEdges.push({ from: c.id, to: depNodes[idx % depNodes.length].id, label: "uses" });
-      }
-    });
-
-    // API -> Function / Dependency
-    apiNodes.forEach((a, idx) => {
-      if (fnNodes[idx]) {
-        graphEdges.push({ from: a.id, to: fnNodes[idx].id, label: "invokes" });
-      }
-      if (depNodes[idx]) {
-        graphEdges.push({ from: a.id, to: depNodes[idx].id, label: "depends on" });
-      }
-    });
+    }
 
     // 7. Grounded Real Insights based strictly on real files
     const realInsights: any[] = [];
@@ -634,6 +688,7 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
       },
       graphNodes,
       graphEdges,
+      analysis: { sourceFilesInspected: sourceContents.size, sourceFilesAvailable: sourceCandidates.length, relationshipEvidence: "imports extracted from repository source content" },
       events: realEvents,
       insights: realInsights,
     });
