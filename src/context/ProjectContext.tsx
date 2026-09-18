@@ -294,7 +294,16 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         projectId,
         createdAt: ins.createdAt || now,
       }));
-      const nextMemoryEntries: SoftwareMemoryEntry[] = [];
+      const nextMemoryEntries: SoftwareMemoryEntry[] = (Array.isArray(data.memoryEntries) ? data.memoryEntries : [])
+        .map((entry: any, index: number) => ({
+          ...entry,
+          id: entry.id || `memory_${index}`,
+          projectId,
+          status: entry.status === "INFERRED" || entry.status === "UNKNOWN" ? entry.status : "KNOWN",
+          evidence: Array.isArray(entry.evidence) ? entry.evidence : [],
+          createdAt: entry.createdAt || now,
+          observedAt: entry.observedAt || now,
+        }));
 
       for (const ev of nextEvents) {
         const sourceId = String(ev.metadata?.fullSha || ev.metadata?.sha || ev.id);
