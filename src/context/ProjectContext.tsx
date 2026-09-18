@@ -522,9 +522,9 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     setIsAnalyzing(true);
     setScanStage("repository");
     try {
-      // 1. If project has a repository, refresh latest tree and commits from GitHub
+      // 1. Refresh latest repository state from GitHub.
       if (currentProject.repository && currentProject.repository.includes("/")) {
-        try {
+        {
           const res = await fetch("/api/projects/analyze-repository", {
             method: "POST",
             headers: await authenticatedHeaders(),
@@ -533,8 +533,8 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
               branch: currentProject.branch,
             }),
           });
-          setScanStage("architecture");
           if (res.ok) {
+            setScanStage("architecture");
             const data = await res.json();
             // Update project nodes and edges if refreshed
             if (data.graphNodes && data.graphNodes.length > 0) {
@@ -552,24 +552,15 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
               });
             }
 
-            setScanStage("dependencies");
-
             // Sync new insights if any
             for (const ins of data.insights || []) {
               await addInsight(ins);
             }
           }
         } catch (repoErr) {
-          console.warn("Could not re-scan remote repository:", repoErr);
+          throw repoErr;
         }
-      } else {
-        setScanStage("architecture");
-        await new Promise((r) => setTimeout(r, 400));
-        setScanStage("dependencies");
       }
-
-      setScanStage("history");
-      await new Promise((r) => setTimeout(r, 400));
 
       // 2. Run Gemini deep forensic scan
       setScanStage("insights");
@@ -587,9 +578,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         }
       }
       setScanStage("completed");
-      setTimeout(() => {
-        setScanStage("idle");
-      }, 3000);
+      setTimeout(() => setScanStage("idle"), 1000);
     } catch (e) {
       console.error("Failed to refresh analysis:", e);
       setScanStage("idle");
