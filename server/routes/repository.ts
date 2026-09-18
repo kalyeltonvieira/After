@@ -620,9 +620,12 @@ repositoryRouter.get("/compare", async (req: AuthenticatedRequest, res) => {
 
 repositoryRouter.get("/watch", async (req: AuthenticatedRequest, res) => {
   try {
-    const { db } = await getProjectRepository(req, String(req.query.projectId || ""));
-    const snap = await db.collection("projects").doc(String(req.query.projectId)).collection("watchTargets").get();
-    return res.json({ watchTargets: snap.docs.map((d) => d.data()) });
+    const { project } = await getProjectRepository(req, String(req.query.projectId || ""));
+    return res.json({
+      repository: project.repository,
+      webhookConfigured: Boolean(project.webhookConfigured),
+      watchTargets: Array.isArray(project.watchTargets) ? project.watchTargets : [],
+    });
   } catch (error) { return handleRouteError(res, error); }
 });
 
@@ -631,35 +634,105 @@ repositoryRouter.post("/watch", async (req: AuthenticatedRequest, res) => {
     const { db, project } = await getProjectRepository(req, String(req.body.projectId || ""));
     const projectId = String(req.body.projectId);
     const enabled = req.body.enabled !== false;
-    const target = String(req.body.target || project.repository || "");
-    const id = crypto.createHash("sha256").update(`repository:${target}`).digest("hex").slice(0, 20);
-    const ref = db.collection("projects").doc(projectId).collection("watchTargets").doc(id);
-    if (!enabled) {
-      await ref.delete();
-      return res.json({ watching: false });
+    const type = String(req.body.type || "repository");
+    const allowedTypes = new Set(["repository", "branch", "file", "component", "dependency", "node"]);
+    const target = String(
+      req.body.target ||
+      (type === "repository" ? project.repository : type === "branch" ? project.branch : "")
+    ).trim();
+
+    if (!allowedTypes.has(type)) return res.status(400).json({ error: "Unsupported watch target type." });
+    if (!target) return res.status(400).json({ error: "A watch target is required." });
+    if (type === "repository" && target !== project.repository) {
+      return res.status(400).json({ error: "Repository watch target must match the connected repository." });
     }
-    await ref.set({
-      id, projectId, ownerId: req.user!.uid, type: "repository", target,
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-    }, { merge: true });
-    return res.json({ watching: true });
+
+    const id = crypto.createHash("sha256").update(`${type}:${target}`).digest("hex").slice(0, 20);
+    const projectRef = db.collection("projects").doc(projectId);
+    const existingTargets = Array.isArray(project.watchTargets) ? project.watchTargets : [];
+
+    if (!enabled) {
+      const next = existingTargets.filter((watch: any) => watch.id !== id);
+      await projectRef.set({ watchTargets: next, updatedAt: new Date().toISOString() }, { merge: true });
+      return res.json({ watching: false, watchTargets: next });
+    }
+
+    const now = new Date().toISOString();
+    const existing = existingTargets.find((watch: any) => watch.id === id);
+    const watchTarget = {
+      id,
+      projectId,
+      ownerId: req.user!.uid,
+      type,
+      target,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+    };
+
+    const next = [
+      watchTarget,
+      ...existingTargets.filter((watch: any) => watch.id !== id),
+    ].slice(0, 100);
+
+    await projectRef.set({ watchTargets: next, updatedAt: now }, { merge: true });
+    return res.json({ watching: true, watchTarget, watchTargets: next });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.delete("/watch/:id", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { db } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const projectId = String(req.query.projectId);
+    const id = String(req.params.id);
+    const projectRef = db.collection("projects").doc(projectId);
+    const snap = await projectRef.get();
+    const current = Array.isArray(snap.data()?.watchTargets) ? snap.data().watchTargets : [];
+    const next = current.filter((watch: any) => watch.id !== id);
+    await projectRef.set({ watchTargets: next, updatedAt: new Date().toISOString() }, { merge: true });
+    return res.json({ watching: false, watchTargets: next });
   } catch (error) { return handleRouteError(res, error); }
 });
 
 repositoryRouter.get("/notifications", async (req: AuthenticatedRequest, res) => {
   try {
-    const { db } = await getProjectRepository(req, String(req.query.projectId || ""));
-    const snap = await db.collection("projects").doc(String(req.query.projectId)).collection("notifications").get();
-    const notifications = snap.docs.map((d) => d.data()).sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 50);
+    const { project } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const notifications = Array.isArray(project.notifications)
+      ? [...project.notifications]
+        .sort((a: any, b: any) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+        .slice(0, 100)
+      : [];
     return res.json({ notifications });
   } catch (error) { return handleRouteError(res, error); }
 });
 
 repositoryRouter.post("/notifications/:id/read", async (req: AuthenticatedRequest, res) => {
   try {
-    const { db } = await getProjectRepository(req, String(req.body.projectId || req.query.projectId || ""));
-    const ref = db.collection("projects").doc(String(req.body.projectId || req.query.projectId)).collection("notifications").doc(String(req.params.id));
-    await ref.set({ read: true, readAt: new Date().toISOString() }, { merge: true });
+    const { db, project } = await getProjectRepository(req, String(req.body.projectId || req.query.projectId || ""));
+    const projectId = String(req.body.projectId || req.query.projectId);
+    const id = String(req.params.id);
+    const notifications = Array.isArray(project.notifications) ? project.notifications : [];
+    const next = notifications.map((notification: any) =>
+      notification.id === id
+        ? { ...notification, read: true, readAt: new Date().toISOString() }
+        : notification
+    );
+    await db.collection("projects").doc(projectId).set({ notifications: next }, { merge: true });
+    return res.json({ read: true });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.post("/notifications/read-all", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { db, project } = await getProjectRepository(req, String(req.body.projectId || req.query.projectId || ""));
+    const projectId = String(req.body.projectId || req.query.projectId);
+    const now = new Date().toISOString();
+    const notifications = Array.isArray(project.notifications) ? project.notifications : [];
+    const next = notifications.map((notification: any) => ({
+      ...notification,
+      read: true,
+      readAt: notification.readAt || now,
+    }));
+    await db.collection("projects").doc(projectId).set({ notifications: next, updatedAt: now }, { merge: true });
     return res.json({ read: true });
   } catch (error) { return handleRouteError(res, error); }
 });
