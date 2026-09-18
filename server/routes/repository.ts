@@ -221,6 +221,23 @@ repositoryRouter.get("/pulls/:number", async (req: AuthenticatedRequest, res) =>
   } catch (error) { return handleRouteError(res, error); }
 });
 
+repositoryRouter.patch("/pulls/:number", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.body.projectId || req.query.projectId || ""));
+    const payload: Record<string, any> = {};
+    for (const key of ["title", "body", "state", "base", "maintainer_can_modify"]) {
+      if (req.body[key] !== undefined) payload[key] = req.body[key];
+    }
+    if (!Object.keys(payload).length) return res.status(400).json({ error: "No pull request fields to update." });
+    const { body: pull } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/pulls/${encodeURIComponent(req.params.number)}`, token, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return res.json({ pull });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
 repositoryRouter.post("/pulls/:number/comments", async (req: AuthenticatedRequest, res) => {
   try {
     const { parsed, token } = await getProjectRepository(req, String(req.body.projectId || ""));
