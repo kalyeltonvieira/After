@@ -298,7 +298,7 @@ GitHub integration must be real.
 The system should support:
 
 ```text
-Google Login
+GitHub Login
       ↓
 Connect GitHub
       ↓
