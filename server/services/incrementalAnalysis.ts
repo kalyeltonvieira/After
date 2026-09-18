@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
-import { getFirestore } from "firebase-admin/firestore";
-import { adminApp } from "../auth.js";
+import { getAdminFirestore } from "../auth.js";
 import { getPersistentGitHubToken } from "../githubSession.js";
 import { parseGitHubRepo } from "./githubService.js";
 
@@ -45,7 +44,7 @@ async function githubGet(url: string, token?: string) {
 }
 
 async function setJob(projectId: string, jobId: string, patch: Record<string, any>) {
-  const db = getFirestore(adminApp);
+  const db = getAdminFirestore();
   await db.collection("projects").doc(projectId).collection("analysisJobs").doc(jobId).set({
     id: jobId,
     projectId,
@@ -128,7 +127,7 @@ function extractSymbols(path: string, content: string, parent: any) {
 }
 
 export async function enqueueIncrementalAnalysis(input: IncrementalInput) {
-  const db = getFirestore(adminApp);
+  const db = getAdminFirestore();
   const identity = input.commitSha || input.deliveryId || crypto.randomUUID();
   const jobId = `incremental_${crypto.createHash("sha256").update(`${input.projectId}:${identity}`).digest("hex").slice(0, 24)}`;
   const jobRef = db.collection("projects").doc(input.projectId).collection("analysisJobs").doc(jobId);
@@ -167,7 +166,7 @@ export async function enqueueIncrementalAnalysis(input: IncrementalInput) {
 }
 
 async function runIncrementalAnalysis(input: IncrementalInput & { jobId: string }) {
-  const db = getFirestore(adminApp);
+  const db = getAdminFirestore();
   const projectRef = db.collection("projects").doc(input.projectId);
   try {
     await setJob(input.projectId, input.jobId, { status: "fetching", startedAt: new Date().toISOString(), error: null });
@@ -333,7 +332,7 @@ async function runIncrementalAnalysis(input: IncrementalInput & { jobId: string 
 
 
 export async function recoverQueuedIncrementalAnalyses() {
-  const db = getFirestore(adminApp);
+  const db = getAdminFirestore();
   const snapshot = await db.collectionGroup("analysisJobs")
     .where("status", "==", "queued")
     .limit(100)
