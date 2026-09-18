@@ -350,7 +350,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     try {
       const res = await fetch("/api/projects/analyze-repository", {
         method: "POST",
-        headers: await authenticatedHeaders(),
+        headers: await authenticatedHeaders({}, true),
         body: JSON.stringify({ repository, branch }),
       });
 
@@ -679,7 +679,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       if (currentProject.repository && currentProject.repository.includes("/")) {
         const res = await fetch("/api/projects/analyze-repository", {
           method: "POST",
-          headers: await authenticatedHeaders(),
+          headers: await authenticatedHeaders({}, true),
           body: JSON.stringify({
             repository: currentProject.repository,
             branch: currentProject.branch,
