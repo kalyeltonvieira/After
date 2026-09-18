@@ -45,6 +45,10 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
   const [connectedUser, setConnectedUser] = useState<GitHubUser | null>(null);
   const [userRepos, setUserRepos] = useState<GitHubRepositoryItem[]>([]);
   const [repoSearch, setRepoSearch] = useState("");
+  const filteredRepos = userRepos.filter((repo) => {
+    const q = repoSearch.trim().toLowerCase();
+    return !q || repo.full_name.toLowerCase().includes(q) || (repo.description || "").toLowerCase().includes(q);
+  });
   const [loadingRepos, setLoadingRepos] = useState(false);
 
   // Manual project fields
@@ -319,8 +323,19 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
                     </div>
 
                     {userRepos.length > 0 ? (
-                      <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
-                        {userRepos.slice(0, 15).map((repo) => (
+                      <>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Search className="w-3 h-3 text-zinc-400" />
+                          <input
+                            value={repoSearch}
+                            onChange={(e) => setRepoSearch(e.target.value)}
+                            placeholder="Search repositories…"
+                            className="flex-1 bg-transparent text-[11px] outline-none border-b border-zinc-200 dark:border-zinc-700 py-1"
+                          />
+                          <span className="text-[10px] text-zinc-400">{filteredRepos.length}</span>
+                        </div>
+                        <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                          {filteredRepos.map((repo) => (
                           <button
                             key={repo.id}
                             type="button"
@@ -349,8 +364,9 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
                               )}
                             </div>
                           </button>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      </>
                     ) : (
                       <p className="text-[11px] text-zinc-400">
                         {loadingRepos ? "Loading your repositories..." : "No repositories found for this account."}
