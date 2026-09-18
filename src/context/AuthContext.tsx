@@ -4,6 +4,7 @@ import {
   GithubAuthProvider,
   onAuthStateChanged,
   signInWithPopup,
+  reauthenticateWithPopup,
   signOut as firebaseSignOut,
   updateProfile as firebaseUpdateProfile,
 } from "firebase/auth";
@@ -33,6 +34,7 @@ interface AuthContextType {
   loading: boolean;
   needsOnboarding: boolean;
   signInWithGitHub: () => Promise<void>;
+  refreshGitHubSession: () => Promise<void>;
   signOut: () => Promise<void>;
   updateUserProfile: (data: Partial<UserProfile>) => Promise<void>;
   completeOnboarding: (data: {
@@ -152,6 +154,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const idToken = await firebaseUser.getIdToken();
     const response = await fetch("/api/projects/github-session", {
       method: "POST",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${idToken}`,
@@ -165,6 +168,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await firebaseSignOut(auth);
       throw new Error(
         data.error || "Não foi possível estabelecer a sessão GitHub do AFTER."
+      );
+    }
+  };
+
+  const refreshGitHubSession = async () => {
+    if (!user) throw new Error("No active Firebase session to refresh.");
+
+    const result = await reauthenticateWithPopup(user, githubProvider);
+    const githubAccessToken =
+      GithubAuthProvider.credentialFromResult(result)?.accessToken || null;
+
+    if (!githubAccessToken) {
+      throw new Error(
+        "O GitHub não retornou uma credencial OAuth válida para renovar a conexão."
+      );
+    }
+
+    const idToken = await result.user.getIdToken(true);
+    const response = await fetch("/api/projects/github-session", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ githubAccessToken }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(
+        data.error || "Não foi possível renovar a sessão GitHub do AFTER."
       );
     }
   };
@@ -325,6 +360,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         needsOnboarding,
         signInWithGitHub,
+        refreshGitHubSession,
         signOut,
         updateUserProfile,
         completeOnboarding,
