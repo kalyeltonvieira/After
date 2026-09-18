@@ -5,6 +5,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { apiRouter } from "./server/app.ts";
 import { githubWebhookHandler } from "./server/routes/githubWebhook.ts";
+import { recoverQueuedIncrementalAnalyses } from "./server/services/incrementalAnalysis.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,4 +29,9 @@ app.get("*", (req, res) => {
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`AFTER server running on http://0.0.0.0:${PORT}`);
+  void recoverQueuedIncrementalAnalyses()
+    .then((count) => {
+      if (count > 0) console.log(`AFTER resumed ${count} queued analysis job(s).`);
+    })
+    .catch((error) => console.warn("Could not recover queued analysis jobs:", error?.message));
 });
