@@ -21,7 +21,7 @@ export function OnboardingModal() {
       const draft = user.email.split("@")[0].toLowerCase().replace(/[^a-z0-9_]/g, "");
       setUsername(draft);
     }
-  }, [user, username]);
+  }, [user]);
 
   // Debounced check for username
   useEffect(() => {
@@ -46,7 +46,7 @@ export function OnboardingModal() {
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [username, checkUsernameAvailable]);
+  }, [username]);
 
   if (!needsOnboarding) return null;
 
