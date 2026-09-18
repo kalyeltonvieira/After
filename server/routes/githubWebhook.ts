@@ -219,7 +219,7 @@ export async function githubWebhookHandler(req: WebhookRequest, res: Response) {
       ...memory.filter((entry: any) => entry.id !== memoryId),
     ].slice(0, 250);
 
-    const update = {
+    const update: Record<string, any> = {
       events: nextEvents,
       memoryEntries: nextMemory,
       updatedAt: now,
