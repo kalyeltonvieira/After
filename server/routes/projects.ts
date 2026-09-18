@@ -102,23 +102,31 @@ projectsRouter.post("/github-session/recover", async (req, res) => {
       getGitHubToken(req.cookies?.after_github_session, uid) ||
       (await getPersistentGitHubToken(uid));
 
+    let githubUser = null;
     if (githubToken) {
-      const githubUser = await getAuthenticatedUser(githubToken);
-      const githubSessionId = createGitHubSession(uid, githubToken);
-      res.cookie("after_github_session", githubSessionId, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-        path: "/",
-      });
-      return res.json({
-        customToken: await getAdminAuth(adminApp).createCustomToken(uid),
-        user: githubUser,
-      });
+      try {
+        githubUser = await getAuthenticatedUser(githubToken);
+        const githubSessionId = createGitHubSession(uid, githubToken);
+        res.cookie("after_github_session", githubSessionId, {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: process.env.NODE_ENV === "production",
+          maxAge: 7 * 24 * 60 * 60 * 1000,
+          path: "/",
+        });
+      } catch (githubError) {
+        console.warn("Stored GitHub token could not be recovered:", githubError);
+      }
     }
 
-    return res.status(401).json({ error: "GitHub connection could not be recovered." });
+    // Firebase identity is independent from the GitHub API credential.
+    // Recover the AFTER account even when the GitHub token is unavailable;
+    // repository operations can report the missing GitHub connection explicitly.
+    return res.json({
+      customToken: await getAdminAuth(adminApp).createCustomToken(uid),
+      user: githubUser,
+      githubConnected: Boolean(githubUser),
+    });
   } catch (err: any) {
     res.clearCookie("after_firebase_session", { path: "/" });
     res.clearCookie("after_github_session", { path: "/" });
