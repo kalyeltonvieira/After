@@ -132,6 +132,7 @@ function MainApp() {
       <AskAfterModal />
       <CommandPalette
         isOpen={isCmdPaletteOpen}
+        onOpen={() => setIsCmdPaletteOpen(true)}
         onClose={() => setIsCmdPaletteOpen(false)}
         onNavigate={(view) => setCurrentView(view)}
         openCreateProject={() => setIsCreateProjectOpen(true)}
