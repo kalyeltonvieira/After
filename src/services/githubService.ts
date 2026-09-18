@@ -225,7 +225,7 @@ export async function linkRepositoryToAfter(
   const res = await fetch("/api/projects/github-link", {
     method: "POST",
     credentials: "include",
-    headers: await authenticatedHeaders(),
+    headers: await authenticatedHeaders({}, true),
     body: JSON.stringify(payload),
   });
 
@@ -246,7 +246,7 @@ export async function analyzeRepository(
 ): Promise<any> {
   const res = await fetch("/api/projects/analyze-repository", {
     method: "POST",
-    headers: await authenticatedHeaders(),
+    headers: await authenticatedHeaders({}, true),
     body: JSON.stringify({ repository, branch }),
   });
 
