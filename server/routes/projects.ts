@@ -22,6 +22,33 @@ import {
 export const projectsRouter = Router();
 export { parseGitHubRepo };
 
+async function resolveGitHubToken(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<string | null> {
+  const uid = req.user!.uid;
+  const liveToken = getGitHubToken(req.cookies?.after_github_session, uid);
+  if (liveToken) return liveToken;
+
+  try {
+    const persistedToken = await getPersistentGitHubToken(uid);
+    if (!persistedToken) return null;
+
+    const sessionId = createGitHubSession(uid, persistedToken);
+    res.cookie("after_github_session", sessionId, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: "/",
+    });
+    return persistedToken;
+  } catch (error: any) {
+    console.warn("Could not restore persisted GitHub token:", error?.message || error);
+    return null;
+  }
+}
+
 // Validate username format and reserved names
 projectsRouter.get("/validate-username", (req, res) => {
   const username = String(req.query.username || "").toLowerCase().trim();
@@ -144,7 +171,7 @@ projectsRouter.post("/github-session/revoke", async (req, res) => {
 
 // Get the GitHub identity associated with the server-side session.
 projectsRouter.get("/github-user", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
-  const token = getGitHubToken(req.cookies?.after_github_session, req.user!.uid);
+  const token = await resolveGitHubToken(req, res);
   if (!token) return res.status(401).json({ error: "Connect GitHub first." });
   try {
     const user = await getAuthenticatedUser(token);
@@ -169,7 +196,7 @@ projectsRouter.get("/github-repos", requireFirebaseUser, async (req: Authenticat
 // List Branches for a repository
 projectsRouter.get("/github-branches", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
   const repository = req.query.repository as string;
-  const token = getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined;
+  const token = (await resolveGitHubToken(req, res)) || undefined;
 
   const parsed = parseGitHubRepo(repository);
   if (!parsed) {
@@ -283,7 +310,7 @@ projectsRouter.post("/impact", requireFirebaseUser, async (req: AuthenticatedReq
 // Real Repository Analysis Engine
 projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
   const { repository, branch: requestedBranch } = req.body;
-  const githubToken = getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined;
+  const githubToken = (await resolveGitHubToken(req, res)) || undefined;
 
   const parsed = parseGitHubRepo(repository);
   if (!parsed) {
