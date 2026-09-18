@@ -209,7 +209,7 @@ projectsRouter.post("/analysis-jobs", requireFirebaseUser, async (req: Authentic
   const files = Array.isArray(changedFiles) ? changedFiles.filter((value: any) => typeof value === "string") : [];
   const removed = Array.isArray(removedFiles) ? removedFiles.filter((value: any) => typeof value === "string") : [];
   if (files.length + removed.length === 0) return res.status(400).json({ error: "changedFiles or removedFiles is required." });
-  const branch = String(context.project.branch || context.project.defaultBranch || "");
+  const branch = String(project.branch || project.defaultBranch || "");
   const queued = await enqueueIncrementalAnalysis({
     projectId: String(projectId),
     ownerId: req.user!.uid,
