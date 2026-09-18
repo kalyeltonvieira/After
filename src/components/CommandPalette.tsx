@@ -16,6 +16,7 @@ import { useTheme } from "../context/ThemeContext";
 
 interface CommandPaletteProps {
   isOpen: boolean;
+  onOpen: () => void;
   onClose: () => void;
   onNavigate: (view: string) => void;
   openCreateProject: () => void;
@@ -23,6 +24,7 @@ interface CommandPaletteProps {
 
 export function CommandPalette({
   isOpen,
+  onOpen,
   onClose,
   onNavigate,
   openCreateProject,
@@ -38,7 +40,7 @@ export function CommandPalette({
         if (isOpen) {
           onClose();
         } else {
-          // Open
+          onOpen();
         }
       }
       if (e.key === "Escape" && isOpen) {
