@@ -26,6 +26,7 @@ service cloud.firestore {
       match /experiments/{experimentId} { allow read, write: if ownsProject(projectId); }
       match /watchTargets/{watchId} { allow read, write: if ownsProject(projectId); }
       match /notifications/{notificationId} { allow read, write: if ownsProject(projectId); }
+      match /analysisJobs/{jobId} { allow read, write: if ownsProject(projectId); }
     }
   }
 }
