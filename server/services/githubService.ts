@@ -409,7 +409,41 @@ export async function registerWebhook(
   secret: string,
   token: string
 ): Promise<{ registered: boolean; id?: number; error?: string }> {
+  const events = ["push", "pull_request", "issues", "release"];
+
   try {
+    const existingRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/hooks?per_page=100`, {
+      headers: getGitHubHeaders(token),
+    });
+
+    if (existingRes.ok) {
+      const hooks = await existingRes.json();
+      if (Array.isArray(hooks)) {
+        const existing = hooks.find((hook: any) => String(hook?.config?.url || "") === webhookUrl);
+        if (existing?.id) {
+          const updateRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/hooks/${existing.id}`, {
+            method: "PATCH",
+            headers: {
+              ...getGitHubHeaders(token),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              active: true,
+              events,
+              config: {
+                url: webhookUrl,
+                content_type: "json",
+                secret,
+                insecure_ssl: "0",
+              },
+            }),
+          });
+
+          if (updateRes.ok) return { registered: true, id: Number(existing.id) };
+        }
+      }
+    }
+
     const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/hooks`, {
       method: "POST",
       headers: {
@@ -419,7 +453,7 @@ export async function registerWebhook(
       body: JSON.stringify({
         name: "web",
         active: true,
-        events: ["push", "pull_request"],
+        events,
         config: {
           url: webhookUrl,
           content_type: "json",
