@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   User,
   Settings,
@@ -13,6 +13,8 @@ import {
   Moon,
   Laptop,
   Globe,
+  Camera,
+  Loader2,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useProject } from "../context/ProjectContext";
@@ -20,6 +22,8 @@ import { useTheme } from "../context/ThemeContext";
 import { useLanguage, Language } from "../context/LanguageContext";
 import { ThemeMode } from "../types";
 import { getInitialsAvatar } from "../lib/avatar";
+import { storage } from "../lib/firebase";
+import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
 
 export function SettingsPage() {
   const { user, profile, updateUserProfile, signOut, deleteUserAccount } = useAuth();
@@ -38,6 +42,8 @@ export function SettingsPage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   // Danger Zone Modals
   const [showDeleteProjectConfirm, setShowDeleteProjectConfirm] = useState(false);
@@ -136,20 +142,92 @@ export function SettingsPage() {
 
           <form onSubmit={handleProfileSave} className="space-y-4">
             <div className="flex items-center space-x-4">
-              <img
-                src={
-                  profile?.photoURL ||
-                  user?.photoURL ||
-                  getInitialsAvatar(username || "user")
-                }
-                alt="Avatar"
-                className="w-14 h-14 rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-100 object-cover"
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (!file || !user) return;
+
+                  if (!file.type.startsWith("image/")) {
+                    setSaveError("Selecione um arquivo de imagem.");
+                    return;
+                  }
+                  if (file.size > 5 * 1024 * 1024) {
+                    setSaveError("A imagem deve ter no máximo 5 MB.");
+                    return;
+                  }
+
+                  setUploadingPhoto(true);
+                  setSaveError(null);
+                  setSaveSuccess(false);
+                  try {
+                    const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
+                    const imageRef = storageRef(
+                      storage,
+                      `profile-images/${user.uid}/${Date.now()}-${crypto.randomUUID()}.${extension}`
+                    );
+                    await uploadBytes(imageRef, file, {
+                      contentType: file.type,
+                      cacheControl: "public,max-age=31536000,immutable",
+                    });
+                    const photoURL = await getDownloadURL(imageRef);
+                    await updateUserProfile({ photoURL });
+                    setSaveSuccess(true);
+                    setTimeout(() => setSaveSuccess(false), 3000);
+                  } catch (err: any) {
+                    console.error("Profile photo upload failed:", err);
+                    setSaveError(err?.message || "Não foi possível atualizar a foto de perfil.");
+                  } finally {
+                    setUploadingPhoto(false);
+                  }
+                }}
               />
+
+              <button
+                type="button"
+                disabled={uploadingPhoto}
+                onClick={() => photoInputRef.current?.click()}
+                className="group relative w-14 h-14 rounded-full cursor-pointer disabled:cursor-wait disabled:opacity-70 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100"
+                title={language === "pt" ? "Alterar foto de perfil" : "Change profile photo"}
+                aria-label={language === "pt" ? "Alterar foto de perfil" : "Change profile photo"}
+              >
+                <img
+                  src={
+                    profile?.photoURL ||
+                    user?.photoURL ||
+                    getInitialsAvatar(username || "user")
+                  }
+                  alt="Avatar"
+                  className="w-14 h-14 rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-100 object-cover"
+                />
+                <span className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  {uploadingPhoto ? (
+                    <Loader2 className="w-4 h-4 text-white animate-spin" />
+                  ) : (
+                    <Camera className="w-4 h-4 text-white" />
+                  )}
+                </span>
+              </button>
+
               <div>
                 <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
                   {profile?.displayName || user?.displayName || "User"}
                 </p>
                 <p className="text-[11px] text-zinc-400 font-mono">{user?.email}</p>
+                <button
+                  type="button"
+                  disabled={uploadingPhoto}
+                  onClick={() => photoInputRef.current?.click()}
+                  className="mt-1 text-[11px] font-medium text-zinc-600 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white cursor-pointer disabled:cursor-wait"
+                >
+                  {uploadingPhoto
+                    ? (language === "pt" ? "Enviando..." : "Uploading...")
+                    : (language === "pt" ? "Alterar foto" : "Change photo")}
+                </button>
               </div>
             </div>
 
