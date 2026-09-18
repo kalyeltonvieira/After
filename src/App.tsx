@@ -12,6 +12,7 @@ import { OverviewPage } from "./pages/OverviewPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { RepositoryPage } from "./pages/RepositoryPage";
 import { ProductGraphPage } from "./pages/ProductGraphPage";
+import { SoftwareMemoryPage } from "./pages/SoftwareMemoryPage";
 import { InsightsPage } from "./pages/InsightsPage";
 import { ExperimentsPage } from "./pages/ExperimentsPage";
 import { TimelinePage } from "./pages/TimelinePage";
@@ -112,6 +113,8 @@ function MainApp() {
               )}
 
               {currentView === "graph" && <ProductGraphPage />}
+
+              {currentView === "memory" && <SoftwareMemoryPage />}
 
               {currentView === "insights" && (
                 <InsightsPage onNavigate={(view) => setCurrentView(view)} />
