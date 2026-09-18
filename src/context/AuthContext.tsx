@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import {
   User,
+  GithubAuthProvider,
   onAuthStateChanged,
-  signInWithCustomToken,
+  signInWithPopup,
   signOut as firebaseSignOut,
   updateProfile as firebaseUpdateProfile,
 } from "firebase/auth";
@@ -17,6 +18,7 @@ import {
 import {
   auth,
   db,
+  githubProvider,
   handleFirestoreError,
   OperationType,
   testConnection,
@@ -113,62 +115,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signInWithGitHub = async () => {
-    await new Promise<void>((resolve, reject) => {
-      const width = 620;
-      const height = 760;
-      const left = window.screenX + (window.outerWidth - width) / 2;
-      const top = window.screenY + (window.outerHeight - height) / 2;
+    const result = await signInWithPopup(auth, githubProvider);
+    const credential = GithubAuthProvider.credentialFromResult(result);
+    const githubAccessToken = credential?.accessToken;
 
-      const popup = window.open(
-        "/auth/github",
-        "after_github_login",
-        `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes`
-      );
+    if (!githubAccessToken) {
+      await firebaseSignOut(auth);
+      throw new Error("O GitHub não retornou a credencial OAuth necessária para acessar seus repositórios.");
+    }
 
-      if (!popup) {
-        reject(new Error("Popup foi bloqueado pelo navegador. Permita popups para este site."));
-        return;
-      }
-
-      let settled = false;
-
-      const cleanup = () => {
-        window.removeEventListener("message", handleMessage);
-        clearInterval(closedCheck);
-      };
-
-      const finish = (callback: () => void) => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        callback();
-      };
-
-      const handleMessage = (event: MessageEvent) => {
-        if (event.origin !== window.location.origin) return;
-        if (event.source !== popup) return;
-
-        if (event.data?.type === "GITHUB_LOGIN_SUCCESS" && event.data?.firebaseToken) {
-          finish(() => {
-            signInWithCustomToken(auth, event.data.firebaseToken)
-              .then(() => resolve())
-              .catch((error) => reject(error));
-          });
-        }
-
-        if (event.data?.type === "GITHUB_LOGIN_ERROR") {
-          finish(() => reject(new Error(event.data.error || GITHUB_LOGIN_ERROR)));
-        }
-      };
-
-      window.addEventListener("message", handleMessage);
-
-      const closedCheck = window.setInterval(() => {
-        if (popup.closed) {
-          finish(() => reject(new Error("Login com GitHub foi cancelado.")));
-        }
-      }, 600);
+    const idToken = await result.user.getIdToken();
+    const response = await fetch("/api/projects/github-session", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ githubAccessToken }),
     });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      await firebaseSignOut(auth);
+      throw new Error(data.error || "Não foi possível estabelecer a sessão GitHub do AFTER.");
+    }
   };
 
   const signOut = async () => {
