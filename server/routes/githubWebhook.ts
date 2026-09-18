@@ -160,6 +160,30 @@ export async function githubWebhookHandler(req: WebhookRequest, res: Response) {
       receivedAt: new Date().toISOString(),
     }, { merge: true });
 
+    // Preserve webhook facts in Software Memory as evidence-backed historical entries.
+    const memoryId = `webhook_${eventId}`;
+    await projectDoc.ref.collection("memoryEntries").doc(memoryId).set({
+      id: memoryId,
+      projectId,
+      ownerId,
+      type: eventName === "pull_request" ? "pull_request" : eventName === "issues" ? "issue" : eventName === "release" ? "release" : "commit",
+      title: eventPayload.event,
+      summary: eventPayload.reason,
+      status: "KNOWN",
+      evidence: [
+        `GitHub webhook event: ${eventName}`,
+        ...(Array.isArray(eventPayload.affectedComponents) ? eventPayload.affectedComponents.slice(0, 10) : []),
+      ],
+      source: {
+        kind: `github_webhook_${eventName}`,
+        id: deliveryId,
+        url: eventPayload.metadata?.url || undefined,
+      },
+      relatedFiles: Array.isArray(eventPayload.affectedComponents) ? eventPayload.affectedComponents : [],
+      createdAt: eventPayload.timestamp,
+      observedAt: new Date().toISOString(),
+    }, { merge: true });
+
     if (isWatched) {
       const notificationId = crypto.createHash("sha256")
         .update(`${projectId}:notification:${deliveryId}:${eventName}`)
