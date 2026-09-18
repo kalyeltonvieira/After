@@ -275,7 +275,7 @@ export function RepositoryPage() {
             </div>
           </div>
         ))}
-      </div>
+      </div>}
 
       {!loading && tab === "pulls" && <div className="space-y-3">
         <button onClick={createPull} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900 text-white text-xs cursor-pointer">
@@ -319,7 +319,7 @@ export function RepositoryPage() {
             </div>
           </div>
         ))}
-      </div>
+      </div>}
 
       {!loading && tab === "issues" && <div className="space-y-3">{<button onClick={createIssue} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900 text-white text-xs"><Plus className="w-3.5 h-3.5" /> Create issue</button>}{issues.map((i: any) => <div key={i.id} className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800"><div className="flex justify-between gap-3"><span className="text-sm font-medium">#{i.number} {i.title}</span><span className="text-[10px] uppercase text-zinc-400">{i.state}</span></div><div className="mt-2 text-[11px] text-zinc-400">{i.user?.login} · {formatDate(i.updated_at)}</div></div>)}</div>}
 
