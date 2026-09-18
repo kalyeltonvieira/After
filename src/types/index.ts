@@ -233,7 +233,7 @@ export interface AnalysisJob {
 
 export interface ChangeAnalysisResult {
   subject: {
-    type: "commit" | "file";
+    type: "commit" | "pull_request" | "file";
     id: string;
     title: string;
   };
