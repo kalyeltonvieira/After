@@ -82,11 +82,12 @@ export function Navbar({
   const markNotificationRead = async (id: string) => {
     if (!currentProject?.id) return;
     try {
-      await fetch(`/api/repository/notifications/${encodeURIComponent(id)}/read`, {
+      const response = await fetch(`/api/repository/notifications/${encodeURIComponent(id)}/read`, {
         method: "POST",
         headers: await authenticatedHeaders(),
         body: JSON.stringify({ projectId: currentProject.id }),
       });
+      if (!response.ok) return;
       setNotifications((current) =>
         current.map((notification) =>
           notification.id === id ? { ...notification, read: true } : notification
