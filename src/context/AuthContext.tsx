@@ -2,6 +2,9 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import {
   User,
   GithubAuthProvider,
+  GoogleAuthProvider,
+  fetchSignInMethodsForEmail,
+  linkWithCredential,
   onAuthStateChanged,
   signInWithPopup,
   signOut as firebaseSignOut,
@@ -115,16 +118,79 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signInWithGitHub = async () => {
-    const result = await signInWithPopup(auth, githubProvider);
-    const credential = GithubAuthProvider.credentialFromResult(result);
-    const githubAccessToken = credential?.accessToken;
+    let githubAccessToken: string | null = null;
+    let firebaseUser = null as User | null;
 
-    if (!githubAccessToken) {
+    try {
+      const result = await signInWithPopup(auth, githubProvider);
+      firebaseUser = result.user;
+      githubAccessToken = GithubAuthProvider.credentialFromResult(result)?.accessToken || null;
+    } catch (error: any) {
+      if (error?.code !== "auth/account-exists-with-different-credential") {
+        throw error;
+      }
+
+      const pendingCredential = error?.credential;
+      const email = error?.customData?.email;
+
+      if (!pendingCredential || !email) {
+        throw new Error(
+          "Seu e-mail já está associado a outra conta do Firebase. Entre pela conta existente para vincular o GitHub."
+        );
+      }
+
+      const signInMethods = await fetchSignInMethodsForEmail(auth, email);
+
+      if (signInMethods.includes("google.com")) {
+        try {
+          const googleResult = await signInWithPopup(auth, new GoogleAuthProvider());
+          const linkedResult = await linkWithCredential(googleResult.user, pendingCredential);
+          firebaseUser = linkedResult.user;
+          githubAccessToken =
+            GithubAuthProvider.credentialFromResult(linkedResult)?.accessToken ||
+            pendingCredential?.accessToken ||
+            null;
+        } catch (linkError: any) {
+          console.error("GitHub account linking failed:", linkError);
+          if (linkError?.code === "auth/popup-closed-by-user") {
+            throw new Error(
+              "A vinculação foi cancelada. Entre com Google nessa etapa para conectar o mesmo usuário ao GitHub."
+            );
+          }
+          if (linkError?.code === "auth/popup-blocked") {
+            throw new Error(
+              "O navegador bloqueou a janela de login. Permita pop-ups para concluir a vinculação com o GitHub."
+            );
+          }
+          if (linkError?.code === "auth/provider-disabled") {
+            throw new Error(
+              "Essa conta foi criada com Google, mas o login Google está desativado no Firebase. Ative o provedor Google temporariamente para concluir a migração para GitHub."
+            );
+          }
+          throw new Error(
+            "Não foi possível vincular o GitHub à conta existente. Tente entrar pela conta Google usada anteriormente."
+          );
+        }
+      } else {
+        const providerName =
+          signInMethods.includes("password")
+            ? "senha/e-mail"
+            : signInMethods.includes("github.com")
+              ? "GitHub"
+              : signInMethods[0]?.replace(".com", "") || "outro provedor";
+
+        throw new Error(
+          `Este e-mail já possui uma conta AFTER usando ${providerName}. Entre com esse método para manter a mesma conta e depois vincular o GitHub.`
+        );
+      }
+    }
+
+    if (!firebaseUser || !githubAccessToken) {
       await firebaseSignOut(auth);
       throw new Error("O GitHub não retornou a credencial OAuth necessária para acessar seus repositórios.");
     }
 
-    const idToken = await result.user.getIdToken();
+    const idToken = await firebaseUser.getIdToken();
     const response = await fetch("/api/projects/github-session", {
       method: "POST",
       headers: {
