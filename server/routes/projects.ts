@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { Response } from "express";
 import { requireFirebaseUser, type AuthenticatedRequest } from "../auth.js";
-import { createGitHubSession, createOAuthState, consumeOAuthState, getGitHubToken, persistGitHubToken } from "../githubSession.js";
+import { createGitHubSession, createOAuthState, consumeOAuthState, getGitHubToken, getPersistentGitHubToken, persistGitHubToken } from "../githubSession.js";
 import { loadProjectContext } from "../projectContext.js";
 import { enqueueIncrementalAnalysis } from "../services/incrementalAnalysis.js";
 import {
@@ -76,6 +76,30 @@ projectsRouter.get("/github-auth-url", requireFirebaseUser, (req: AuthenticatedR
 // OAuth code exchange is completed by the server callback, never by the browser.
 projectsRouter.post("/github-exchange", (_req, res) => {
   return res.status(410).json({ error: "OAuth exchange is handled by the secure callback." });
+});
+
+// Establish the AFTER GitHub session from the OAuth credential returned by Firebase Auth.
+projectsRouter.post("/github-session", requireFirebaseUser, async (req: AuthenticatedRequest, res: Response) => {
+  const githubAccessToken = String(req.body?.githubAccessToken || "").trim();
+  if (!githubAccessToken) return res.status(400).json({ error: "GitHub OAuth credential is required." });
+
+  try {
+    const githubUser = await getAuthenticatedUser(githubAccessToken);
+    const sessionId = createGitHubSession(req.user!.uid, githubAccessToken);
+    await persistGitHubToken(req.user!.uid, githubAccessToken);
+
+    res.cookie("after_github_session", sessionId, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: "/",
+    });
+
+    return res.json({ user: githubUser });
+  } catch (err: any) {
+    return res.status(401).json({ error: err?.message || "Invalid GitHub OAuth credential." });
+  }
 });
 
 // Get the GitHub identity associated with the server-side session.
