@@ -3,7 +3,6 @@ import {
   User,
   GithubAuthProvider,
   onAuthStateChanged,
-  signInWithCustomToken,
   signInWithPopup,
   signOut as firebaseSignOut,
   updateProfile as firebaseUpdateProfile,
@@ -70,34 +69,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let unsubscribeProfile: (() => void) | null = null;
-    const recoveryAttemptedRef = { current: false };
-
-    const recoverFirebaseSession = async () => {
-      if (recoveryAttemptedRef.current) return false;
-      recoveryAttemptedRef.current = true;
-
-      try {
-        const response = await fetch("/api/projects/github-session/recover", {
-          method: "POST",
-          credentials: "include",
-        });
-        if (!response.ok) return false;
-        const data = await response.json();
-        if (!data.customToken) return false;
-        await signInWithCustomToken(auth, data.customToken);
-        return true;
-      } catch (error) {
-        console.warn("AFTER session recovery skipped:", error);
-        return false;
-      }
-    };
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
-      if (!currentUser) {
-        const recovered = await recoverFirebaseSession();
-        if (recovered) return;
-      }
-
       setUser(currentUser);
       if (!currentUser) {
         onboardingCompletedUidRef.current = null;
