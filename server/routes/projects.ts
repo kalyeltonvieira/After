@@ -188,16 +188,59 @@ projectsRouter.post("/github-link", requireFirebaseUser, async (req: Authenticat
   }
 });
 
+// Configure or repair the GitHub webhook used by Continuous Observation.
+projectsRouter.post("/webhook", requireFirebaseUser, async (req: AuthenticatedRequest, res: Response) => {
+  const projectId = String(req.body?.projectId || "");
+  if (!projectId) return res.status(400).json({ error: "projectId is required." });
+  if (!process.env.GITHUB_WEBHOOK_SECRET) {
+    return res.status(503).json({ error: "GITHUB_WEBHOOK_SECRET is not configured." });
+  }
+
+  const context = await loadProjectContext(projectId, req.user!.uid);
+  if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
+
+  const token = (await resolveGitHubToken(req, res)) || undefined;
+  if (!token) return res.status(401).json({ error: "Connect GitHub first." });
+
+  try {
+    const webhookBaseUrl =
+      String(req.headers.origin || "").replace(/\/$/, "") ||
+      `${req.protocol}://${req.get("host")}`;
+    const result = await linkRepositoryToAfter(String(context.project.repository || ""), token, {
+      requestedBranch: String(context.project.branch || context.project.defaultBranch || ""),
+      webhookBaseUrl,
+    });
+
+    await getAdminFirestore().collection("projects").doc(projectId).set({
+      webhookConfigured: Boolean(result.webhookConfigured),
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+
+    if (!result.webhookConfigured) {
+      return res.status(502).json({
+        ...result,
+        error: result.message || "GitHub did not accept the Continuous Observation webhook.",
+      });
+    }
+
+    return res.json(result);
+  } catch (error: any) {
+    return res.status(400).json({ error: error?.message || "Could not configure GitHub webhook." });
+  }
+});
+
 // Persistent analysis job status and explicit incremental re-processing.
 projectsRouter.get("/analysis-jobs/latest", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
   const projectId = String(req.query.projectId || "");
   if (!projectId) return res.status(400).json({ error: "projectId is required." });
   const context = await loadProjectContext(projectId, req.user!.uid);
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
-  const db = getAdminFirestore();
-  const snap = await db.collection("projects").doc(projectId).collection("analysisJobs")
-    .orderBy("createdAt", "desc").limit(10).get();
-  return res.json({ jobs: snap.docs.map((doc) => doc.data()) });
+  const jobs = Array.isArray(context.project.analysisJobs)
+    ? [...context.project.analysisJobs]
+      .sort((a: any, b: any) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+      .slice(0, 20)
+    : [];
+  return res.json({ jobs });
 });
 
 projectsRouter.post("/analysis-jobs", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
@@ -956,6 +999,30 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
       });
     }
 
+    let webhookConfigured = Boolean(
+      (await getAdminFirestore().collection("projects").doc(String(req.body.projectId || "")).get()).data()?.webhookConfigured
+    );
+
+    if (
+      githubToken &&
+      repoData.permissions?.admin &&
+      process.env.GITHUB_WEBHOOK_SECRET
+    ) {
+      try {
+        const webhookBaseUrl =
+          String(req.headers.origin || "").replace(/\/$/, "") ||
+          `${req.protocol}://${req.get("host")}`;
+        const webhookResult = await linkRepositoryToAfter(
+          `${owner}/${repo}`,
+          githubToken,
+          { requestedBranch: branch, webhookBaseUrl }
+        );
+        webhookConfigured = Boolean(webhookResult.webhookConfigured);
+      } catch (error: any) {
+        console.warn("Could not configure GitHub webhook during repository analysis:", error?.message || error);
+      }
+    }
+
     // Return real extracted architecture
     return res.json({
       project: {
@@ -970,6 +1037,7 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
         openIssues: repoData.open_issues_count || 0,
         githubConnected: true,
         telemetryConnected: false,
+        webhookConfigured,
       },
       graphNodes,
       graphEdges,
