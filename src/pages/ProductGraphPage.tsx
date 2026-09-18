@@ -520,7 +520,27 @@ export function ProductGraphPage() {
                 {impactResult && (
                   <div className="mb-4 p-3 rounded-xl bg-sky-50 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-900 text-xs space-y-2">
                     <span className="font-semibold text-sky-900 dark:text-sky-200">Impact evidence</span>
-                    {impactResult.error ? <p className="text-sky-800 dark:text-sky-300">{impactResult.error}</p> : <p className="text-sky-800 dark:text-sky-300">{impactResult.transitiveDependents?.length || 0} downstream nodes depend on this node through recorded imports.</p>}
+                    {impactResult.error ? (
+                      <p className="text-sky-800 dark:text-sky-300">{impactResult.error}</p>
+                    ) : (
+                      <div className="space-y-2 text-sky-800 dark:text-sky-300">
+                        <p>{impactResult.directDependents?.length || 0} direct dependents · {impactResult.transitiveDependents?.length || 0} transitive dependents.</p>
+                        {Array.isArray(impactResult.transitiveDependents) && impactResult.transitiveDependents.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {impactResult.transitiveDependents.slice(0, 18).map((item: any) => (
+                              <span key={item.id} className="px-2 py-1 rounded-lg bg-white/70 dark:bg-zinc-900/70 border border-sky-200 dark:border-sky-900 text-[10px] font-mono">
+                                {item.label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {Array.isArray(impactResult.evidence) && impactResult.evidence.length > 0 && (
+                          <div className="text-[10px] text-sky-700/80 dark:text-sky-300/80">
+                            Evidence: {impactResult.evidence.slice(0, 3).join(" · ")}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
