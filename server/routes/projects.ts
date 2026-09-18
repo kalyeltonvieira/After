@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { Response } from "express";
-import { requireFirebaseUser, type AuthenticatedRequest } from "../auth.js";
+import { getAdminFirestore, requireFirebaseUser, type AuthenticatedRequest } from "../auth.js";
 import {
   createGitHubSession,
   getGitHubToken,
@@ -181,7 +181,7 @@ projectsRouter.get("/analysis-jobs/latest", requireFirebaseUser, async (req: Aut
   if (!projectId) return res.status(400).json({ error: "projectId is required." });
   const context = await loadProjectContext(projectId, req.user!.uid);
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
-  const db = (await import("firebase-admin/firestore")).getFirestore((await import("../auth.js")).adminApp);
+  const db = getAdminFirestore();
   const snap = await db.collection("projects").doc(projectId).collection("analysisJobs")
     .orderBy("createdAt", "desc").limit(10).get();
   return res.json({ jobs: snap.docs.map((doc) => doc.data()) });
