@@ -108,7 +108,12 @@ export type NodeType =
   | "dependency"
   | "user"
   | "config"
-  | "experiment";
+  | "experiment"
+  | "repository"
+  | "directory"
+  | "file"
+  | "class"
+  | "service";
 
 export interface GraphNode {
   id: string;
@@ -197,6 +202,28 @@ export interface SoftwareMemoryEntry {
   relatedNodes?: string[];
   createdAt: string;
   observedAt?: string;
+}
+
+
+
+export type AnalysisJobStatus = "queued" | "fetching" | "analyzing" | "building_graph" | "generating_insights" | "completed" | "failed";
+export type AnalysisJobMode = "full" | "incremental";
+
+export interface AnalysisJob {
+  id: string;
+  projectId: string;
+  ownerId: string;
+  mode: AnalysisJobMode;
+  status: AnalysisJobStatus;
+  branch?: string;
+  commitSha?: string;
+  changedFiles?: string[];
+  startedAt?: string;
+  completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  error?: string;
+  summary?: string;
 }
 
 export interface ChangeAnalysisResult {
