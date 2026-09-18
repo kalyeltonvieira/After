@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import type { Request, Response } from "express";
-import { getFirestore } from "firebase-admin/firestore";
-import { adminApp } from "../auth.js";
+import { getAdminFirestore } from "../auth.js";
 import { enqueueIncrementalAnalysis } from "../services/incrementalAnalysis.js";
 
 type WebhookRequest = Request & { body: Buffer };
@@ -129,7 +128,7 @@ export async function githubWebhookHandler(req: WebhookRequest, res: Response) {
   const repository = normalizeRepository(payload);
   if (!repository) return res.status(202).json({ received: true, ignored: true, reason: "repository missing" });
 
-  const db = getFirestore(adminApp);
+  const db = getAdminFirestore();
   const projectSnap = await db.collection("projects").where("repository", "==", repository).get();
   const eventPayload = buildEventPayload(eventName, payload);
   if (!eventPayload) return res.status(202).json({ received: true, ignored: true });
