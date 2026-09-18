@@ -31,7 +31,7 @@ function branchCandidates(eventName: string, payload: any): string[] {
     return [
       payload?.pull_request?.base?.ref,
       payload?.pull_request?.head?.ref,
-    ].filter((value: any): value is string => typeof value === "string" && value.trim());
+    ].filter((value: any): value is string => typeof value === "string" && Boolean(value.trim()));
   }
 
   return [];
