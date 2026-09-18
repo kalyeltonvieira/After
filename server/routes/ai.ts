@@ -2,6 +2,8 @@ import { Router } from "express";
 import { generateContentWithFallback } from "../gemini.js";
 import { requireFirebaseUser, type AuthenticatedRequest } from "../auth.js";
 import { loadProjectContext } from "../projectContext.js";
+import { getGitHubToken } from "../githubSession.js";
+import { parseGitHubRepo } from "../services/githubService.js";
 
 export const aiRouter = Router();
 
@@ -158,16 +160,45 @@ aiRouter.post("/ask", requireFirebaseUser, async (req: AuthenticatedRequest, res
   const graphNodes = context.graphNodes;
   const graphEdges = context.graphEdges;
 
-  const normalizedFocus = focusContext && typeof focusContext === "object"
+  const requestedFocus = focusContext && typeof focusContext === "object"
     ? {
         type: focusContext.type,
-        label: focusContext.label,
-        path: focusContext.path,
-        content: typeof focusContext.content === "string"
-          ? focusContext.content.slice(0, 24000)
-          : undefined,
+        label: String(focusContext.label || ""),
+        path: focusContext.path ? String(focusContext.path) : undefined,
       }
     : null;
+
+  // The server resolves source content from the connected repository. The client
+  // may identify the focus path, but cannot inject arbitrary source into the AI context.
+  let normalizedFocus: any = requestedFocus;
+  const token = getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined;
+  const parsedRepo = parseGitHubRepo(String(projectContext?.repository || ""));
+  if (requestedFocus?.path && parsedRepo) {
+    try {
+      const ref = String(projectContext?.branch || projectContext?.defaultBranch || "");
+      const url = `https://api.github.com/repos/${parsedRepo.owner}/${parsedRepo.repo}/contents/${requestedFocus.path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(ref)}`;
+      const fileRes = await fetch(url, {
+        headers: {
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "User-Agent": "AFTER-Software-Evolution-Platform",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (fileRes.ok) {
+        const body: any = await fileRes.json();
+        if (typeof body?.content === "string") {
+          normalizedFocus = {
+            ...requestedFocus,
+            content: Buffer.from(body.content.replace(/\n/g, ""), "base64").toString("utf8").slice(0, 24000),
+            sha: body.sha || null,
+          };
+        }
+      }
+    } catch (error: any) {
+      console.warn("Could not resolve focused repository file:", error?.message);
+    }
+  }
 
   const focusedNode = normalizedFocus?.path
     ? graphNodes.find((node: any) => node.filePath === normalizedFocus.path)
@@ -221,6 +252,7 @@ Return JSON only:
     activeInsights: insights || [],
     systemComponents: graphNodes || [],
     systemRelationships: graphEdges || [],
+    softwareMemory: (context as any).memoryEntries || [],
     conversationHistory: recentHistory,
   };
 
