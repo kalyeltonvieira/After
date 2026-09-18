@@ -381,64 +381,6 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
       }
     }));
 
-    // Symbol extraction: build symbol-level entities from real source text.
-    // This is intentionally parser-light so it works across TS/JS/Python/Go/Rust
-    // without inventing symbols when the source cannot be parsed confidently.
-    const symbolPatterns: Array<{ regex: RegExp; type: string }> = [
-      { regex: /(?:export\s+default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g, type: "function" },
-      { regex: /(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/g, type: "function" },
-      { regex: /(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/g, type: "function" },
-      { regex: /\bdef\s+([A-Za-z_][\w]*)\s*\(/g, type: "function" },
-      { regex: /\bclass\s+([A-Za-z_][\w]*)\s*[:(]/g, type: "function" },
-      { regex: /\bfunc\s+(?:\([^)]*\)\s*)?([A-Za-z_][\w]*)\s*\(/g, type: "function" },
-      { regex: /\bfn\s+([A-Za-z_][\w]*)\s*\(/g, type: "function" },
-    ];
-
-    for (const [filePath, source] of sourceContents) {
-      const parentNode = graphNodes.find((node: any) => node.filePath === filePath);
-      if (!parentNode) continue;
-
-      const seenSymbols = new Set<string>();
-      for (const pattern of symbolPatterns) {
-        pattern.regex.lastIndex = 0;
-        let match: RegExpExecArray | null;
-        while ((match = pattern.regex.exec(source)) && seenSymbols.size < 12) {
-          const symbol = match[1];
-          if (!symbol || seenSymbols.has(symbol)) continue;
-          seenSymbols.add(symbol);
-
-          const line = source.slice(0, match.index).split("\n").length;
-          const symbolType = /^[A-Z]/.test(symbol) && /\.(tsx|jsx|vue)$/.test(filePath)
-            ? "component"
-            : pattern.type;
-          const symbolId = `symbol_${filePath.replace(/[^a-zA-Z0-9_]/g, "_")}_${symbol.replace(/[^a-zA-Z0-9_]/g, "_")}`;
-
-          if (graphNodes.some((node: any) => node.id === symbolId)) continue;
-
-          graphNodes.push({
-            id: symbolId,
-            label: symbol,
-            type: symbolType,
-            category: parentNode.category,
-            status: "monitored",
-            changesCount: 0,
-            filePath,
-            symbol,
-            line,
-            parentId: parentNode.id,
-            description: `Symbol ${symbol} observed in ${filePath}.`,
-          });
-
-          graphEdges.push({
-            from: parentNode.id,
-            to: symbolId,
-            label: "contains",
-            evidence: `${filePath} contains symbol ${symbol} at line ${line}.`,
-          });
-        }
-      }
-    }
-
     // A. Detect Pages
     const pageFiles = fileBlobs.filter((f) => {
       const p = f.path.toLowerCase();
@@ -616,9 +558,70 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
       }
     }
 
+    // Symbol extraction: build symbol-level entities from real source text.
+    // This is intentionally parser-light so it works across TS/JS/Python/Go/Rust
+    // without inventing symbols when the source cannot be parsed confidently.
+    const symbolPatterns: Array<{ regex: RegExp; type: string }> = [
+      { regex: /(?:export\s+default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g, type: "function" },
+      { regex: /(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/g, type: "function" },
+      { regex: /(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/g, type: "function" },
+      { regex: /\bdef\s+([A-Za-z_][\w]*)\s*\(/g, type: "function" },
+      { regex: /\bclass\s+([A-Za-z_][\w]*)\s*[:(]/g, type: "function" },
+      { regex: /\bfunc\s+(?:\([^)]*\)\s*)?([A-Za-z_][\w]*)\s*\(/g, type: "function" },
+      { regex: /\bfn\s+([A-Za-z_][\w]*)\s*\(/g, type: "function" },
+    ];
+
+    for (const [filePath, source] of sourceContents) {
+      const parentNode = graphNodes.find((node: any) => node.filePath === filePath);
+      if (!parentNode) continue;
+
+      const seenSymbols = new Set<string>();
+      for (const pattern of symbolPatterns) {
+        pattern.regex.lastIndex = 0;
+        let match: RegExpExecArray | null;
+        while ((match = pattern.regex.exec(source)) && seenSymbols.size < 12) {
+          const symbol = match[1];
+          if (!symbol || seenSymbols.has(symbol)) continue;
+          seenSymbols.add(symbol);
+
+          const line = source.slice(0, match.index).split("\n").length;
+          const symbolType = /^[A-Z]/.test(symbol) && /\.(tsx|jsx|vue)$/.test(filePath)
+            ? "component"
+            : pattern.type;
+          const symbolId = `symbol_${filePath.replace(/[^a-zA-Z0-9_]/g, "_")}_${symbol.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+
+          if (graphNodes.some((node: any) => node.id === symbolId)) continue;
+
+          graphNodes.push({
+            id: symbolId,
+            label: symbol,
+            type: symbolType,
+            category: parentNode.category,
+            status: "monitored",
+            changesCount: 0,
+            filePath,
+            symbol,
+            line,
+            parentId: parentNode.id,
+            description: `Symbol ${symbol} observed in ${filePath}.`,
+          });
+
+          graphEdges.push({
+            from: parentNode.id,
+            to: symbolId,
+            label: "contains",
+            evidence: `${filePath} contains symbol ${symbol} at line ${line}.`,
+          });
+        }
+      }
+    }
+
     // Connect entities using import statements from real source contents.
     const nodeByPath = new Map<string, any>();
-    for (const node of graphNodes) if (node.filePath) nodeByPath.set(node.filePath, node);
+    for (const node of graphNodes) {
+      // Only map file-level nodes here; symbol nodes have parentId and share filePath.
+      if (node.filePath && !node.parentId) nodeByPath.set(node.filePath, node);
+    }
     for (const file of sourceCandidates) {
       if (!nodeByPath.has(file.path)) {
         const node = {
