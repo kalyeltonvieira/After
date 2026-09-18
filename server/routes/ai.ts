@@ -133,7 +133,9 @@ Explain WHY "${nodeName}" exists and analyze its architectural impact.`;
           : ["No recorded dependent relationships were found for this node."]
       },
       recommendation: "Review the cited source path, graph edges, and commit history before changing this element."
-    });});
+    });
+  }
+});
 
 // Endpoint: Ask AFTER (Q&A about project)
 aiRouter.post("/ask", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
@@ -358,4 +360,5 @@ ${JSON.stringify(projectContext || {}, null, 2)}`;
       error: "Experiment structuring is unavailable because the AI service did not return a grounded result.",
       status: "UNKNOWN"
     });
+  }
 });
