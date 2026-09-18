@@ -61,7 +61,7 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
   const [loadingStep, setLoadingStep] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  // Check OAuth availability
+  // GitHub is the primary identity provider; the OAuth session is established at login.
   const [oauthAvailable, setOauthAvailable] = useState<boolean>(false);
   const [oauthUrl, setOauthUrl] = useState<string | null>(null);
 
@@ -80,16 +80,21 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
 
   useEffect(() => {
     if (!isOpen) return;
+    setError(null);
+    void loadGitHubUserData();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
     getGitHubAuthUrl()
       .then((data) => {
-        if (data.configured && data.url) {
-          setOauthAvailable(true);
-          setOauthUrl(data.url);
-        } else {
-          setOauthAvailable(false);
-        }
+        setOauthAvailable(Boolean(data.configured && data.url));
+        setOauthUrl(data.url || null);
       })
-      .catch(() => setOauthAvailable(false));
+      .catch(() => {
+        setOauthAvailable(false);
+        setOauthUrl(null);
+      });
   }, [isOpen]);
 
   const loadGitHubUserData = async () => {
@@ -99,8 +104,8 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
         getConnectedGitHubUser().catch(() => null),
         listUserRepositories().catch(() => []),
       ]);
-      if (user) setConnectedUser(user);
-      if (repos && repos.length > 0) setUserRepos(repos);
+      setConnectedUser(user);
+      setUserRepos(repos);
     } catch (err: any) {
       console.warn("Could not load user repos:", err);
     } finally {
@@ -301,7 +306,7 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
                       className="px-3 py-1.5 rounded-lg bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 text-xs font-medium hover:opacity-90 transition-opacity flex items-center space-x-1.5 cursor-pointer"
                     >
                       <Github className="w-3.5 h-3.5" />
-                      <span>Authorize with GitHub</span>
+                      <span>Reauthorize GitHub</span>
                     </button>
                   )}
                 </div>
@@ -375,7 +380,7 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
                   </div>
                 ) : (
                   <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                    Connect your GitHub account to observe both public and private repositories without rate limits.
+                    Your GitHub session is used to discover the public and private repositories your account can access.
                   </p>
                 )}
               </div>
