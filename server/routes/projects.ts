@@ -1,7 +1,14 @@
 import { Router } from "express";
 import type { Response } from "express";
-import { requireFirebaseUser, type AuthenticatedRequest } from "../auth.js";
-import { createGitHubSession, getGitHubToken, persistGitHubToken } from "../githubSession.js";
+import { getAuth as getAdminAuth } from "firebase-admin/auth";
+import { requireFirebaseUser, type AuthenticatedRequest, adminApp } from "../auth.js";
+import {
+  createGitHubSession,
+  getGitHubToken,
+  getPersistentGitHubToken,
+  persistGitHubToken,
+  revokeGitHubSession,
+} from "../githubSession.js";
 import { loadProjectContext } from "../projectContext.js";
 import { enqueueIncrementalAnalysis } from "../services/incrementalAnalysis.js";
 import {
@@ -49,7 +56,24 @@ projectsRouter.post("/github-session", requireFirebaseUser, async (req: Authenti
     const sessionId = createGitHubSession(req.user!.uid, githubAccessToken);
     await persistGitHubToken(req.user!.uid, githubAccessToken);
 
+    const firebaseIdToken = String(req.headers.authorization || "").replace(/^Bearer\\s+/i, "").trim();
+    if (!firebaseIdToken) {
+      return res.status(401).json({ error: "Firebase authentication token is required." });
+    }
+
+    const firebaseSessionCookie = await getAdminAuth(adminApp).createSessionCookie(
+      firebaseIdToken,
+      { expiresIn: 7 * 24 * 60 * 60 * 1000 }
+    );
+
     res.cookie("after_github_session", sessionId, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: "/",
+    });
+    res.cookie("after_firebase_session", firebaseSessionCookie, {
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
@@ -61,6 +85,50 @@ projectsRouter.post("/github-session", requireFirebaseUser, async (req: Authenti
   } catch (err: any) {
     return res.status(401).json({ error: err?.message || "Invalid GitHub OAuth credential." });
   }
+});
+
+// Recover the Firebase/GitHub session after a preview remount or browser reload.
+projectsRouter.post("/github-session/recover", async (req, res) => {
+  const firebaseSessionCookie = req.cookies?.after_firebase_session;
+  if (!firebaseSessionCookie) {
+    return res.status(401).json({ error: "No recoverable AFTER session." });
+  }
+
+  try {
+    const decoded = await getAdminAuth(adminApp).verifySessionCookie(firebaseSessionCookie, true);
+    const uid = decoded.uid;
+
+    const githubToken = await getPersistentGitHubToken(uid);
+    if (githubToken) {
+      const githubUser = await getAuthenticatedUser(githubToken);
+      const githubSessionId = createGitHubSession(uid, githubToken);
+      res.cookie("after_github_session", githubSessionId, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: "/",
+      });
+      return res.json({
+        customToken: await getAdminAuth(adminApp).createCustomToken(uid),
+        user: githubUser,
+      });
+    }
+
+    return res.status(401).json({ error: "GitHub connection could not be recovered." });
+  } catch (err: any) {
+    res.clearCookie("after_firebase_session", { path: "/" });
+    res.clearCookie("after_github_session", { path: "/" });
+    return res.status(401).json({ error: err?.message || "AFTER session recovery failed." });
+  }
+});
+
+// End both browser sessions without disconnecting the persisted GitHub integration.
+projectsRouter.post("/github-session/revoke", async (req, res) => {
+  revokeGitHubSession(req.cookies?.after_github_session);
+  res.clearCookie("after_github_session", { path: "/" });
+  res.clearCookie("after_firebase_session", { path: "/" });
+  return res.json({ ok: true });
 });
 
 // Get the GitHub identity associated with the server-side session.
