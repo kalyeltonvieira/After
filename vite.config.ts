@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import express from 'express';
 import path from 'path';
 import {defineConfig, Plugin} from 'vite';
+import cookieParser from 'cookie-parser';
 import {apiRouter} from './server/app.ts';
 import { githubOAuthCallback } from './server/routes/projects.ts';
 
@@ -12,14 +13,16 @@ function expressApiPlugin(): Plugin {
     configureServer(server) {
       const app = express();
       app.use(express.json());
+      app.use(cookieParser());
       app.use(apiRouter);
+      app.get('/auth/callback', githubOAuthCallback);
 
       server.middlewares.use('/api', (req, res, next) => {
         (app as any)(req, res, next);
       });
       server.middlewares.use('/auth/callback', (req, res, next) => {
         req.url = '/auth/callback' + (req.url || '');
-        githubOAuthCallback(req, res).catch(next);
+        (app as any)(req, res, next);
       });
     },
   };
