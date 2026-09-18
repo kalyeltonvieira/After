@@ -474,7 +474,6 @@ aiRouter.post("/change-analysis", requireFirebaseUser, async (req: Authenticated
       }
 
       subject = await prRes.json();
-      const files: any[] = [];
       for (let page = 1; page <= 3; page += 1) {
         const filesRes = await fetch(
           `https://api.github.com/repos/${parsedRepo.owner}/${parsedRepo.repo}/pulls/${encodeURIComponent(String(pullRequestNumber))}/files?per_page=100&page=${page}`,
@@ -496,7 +495,7 @@ aiRouter.post("/change-analysis", requireFirebaseUser, async (req: Authenticated
         if (pullFiles.length < 100) break;
       }
 
-      history = (context.timeline || []).filter((event: any) =>((event: any) =>
+      history = (context.timeline || []).filter((event: any) =>
         String(event?.metadata?.url || "").includes(`/pull/${pullRequestNumber}`) ||
         String(event?.metadata?.pullRequest || "") === String(pullRequestNumber)
       );
@@ -594,13 +593,22 @@ aiRouter.post("/change-analysis", requireFirebaseUser, async (req: Authenticated
     const evidence = {
       subject: {
         type: pullRequestNumber ? "pull_request" : sha ? "commit" : "file",
-        id: String(sha || path),
+        id: String(pullRequestNumber || sha || path),
         title: sha ? (subject?.commit?.message?.split("\n")[0] || `Commit ${sha}`) : subject.title,
       },
       commit: sha ? {
         sha: subject?.sha || sha,
         author: subject?.commit?.author?.name || subject?.author?.login || null,
         date: subject?.commit?.author?.date || subject?.commit?.committer?.date || null,
+        url: subject?.html_url || null,
+      } : null,
+      pullRequest: pullRequestNumber ? {
+        number: Number(pullRequestNumber),
+        title: subject?.title || null,
+        state: subject?.state || null,
+        author: subject?.user?.login || subject?.user?.name || null,
+        createdAt: subject?.created_at || null,
+        updatedAt: subject?.updated_at || null,
         url: subject?.html_url || null,
       } : null,
       files,
