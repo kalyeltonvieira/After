@@ -173,20 +173,50 @@ export async function githubLoginCallback(req: Request, res: Response) {
   const { code, state, error } = req.query;
 
   if (error || !code || !state) {
-    return res.status(400).send("GitHub authorization was cancelled or invalid.");
+    const origin = appOrigin(req);
+    return res.status(400).send(`<!doctype html>
+<html><body>GitHub authorization was cancelled.</body>
+<script>
+window.opener?.postMessage(
+  {type:"GITHUB_LOGIN_ERROR", error:"GitHub authorization was cancelled."},
+  ${JSON.stringify(origin)}
+);
+setTimeout(() => window.close(), 120);
+</script>
+</html>`);
   }
 
   const stateValue = String(state);
   const stateCookie = req.cookies?.[OAUTH_STATE_COOKIE];
   if (!stateCookie || stateCookie !== stateValue) {
-    return res.status(400).send("GitHub authorization state is invalid.");
+    const origin = appOrigin(req);
+    return res.status(400).send(`<!doctype html>
+<html><body>GitHub authorization state is invalid.</body>
+<script>
+window.opener?.postMessage(
+  {type:"GITHUB_LOGIN_ERROR", error:"GitHub authorization state is invalid."},
+  ${JSON.stringify(origin)}
+);
+setTimeout(() => window.close(), 120);
+</script>
+</html>`);
   }
 
   const stateRecord = consumeOAuthState(stateValue);
   res.clearCookie(OAUTH_STATE_COOKIE, { path: "/" });
 
   if (!stateRecord || stateRecord.uid !== "github-login") {
-    return res.status(400).send("GitHub authorization state expired.");
+    const origin = appOrigin(req);
+    return res.status(400).send(`<!doctype html>
+<html><body>GitHub authorization state expired.</body>
+<script>
+window.opener?.postMessage(
+  {type:"GITHUB_LOGIN_ERROR", error:"GitHub authorization state expired."},
+  ${JSON.stringify(origin)}
+);
+setTimeout(() => window.close(), 120);
+</script>
+</html>`);
   }
 
   try {
@@ -227,8 +257,17 @@ setTimeout(() => window.close(), 120);
 </html>`
     );
   } catch (error: any) {
-    return res.status(400).send(
-      `GitHub login failed: ${String(error?.message || "Unknown error").replace(/[<>]/g, "")}`
-    );
+    const origin = appOrigin(req);
+    const safeMessage = String(error?.message || "GitHub login failed.").replace(/[<>]/g, "");
+    return res.status(400).send(`<!doctype html>
+<html><body>GitHub login failed.</body>
+<script>
+window.opener?.postMessage(
+  {type:"GITHUB_LOGIN_ERROR", error:${JSON.stringify(safeMessage)}},
+  ${JSON.stringify(origin)}
+);
+setTimeout(() => window.close(), 120);
+</script>
+</html>`);
   }
 }
