@@ -37,12 +37,9 @@ function branchCandidates(eventName: string, payload: any): string[] {
   return [];
 }
 
-function nodeMatchesTarget(node: any, target: string, changedFiles: string[]): boolean {
-  if (!node) return false;
-  if (String(node.id) === target || String(node.label).toLowerCase() === target.toLowerCase()) {
-    return true;
-  }
-  return Boolean(node.filePath && changedFiles.includes(String(node.filePath)));
+function nodeMatchesTarget(node: any, _target: string, changedFiles: string[]): boolean {
+  if (!node?.filePath) return false;
+  return changedFiles.includes(String(node.filePath));
 }
 
 export function watchTargetMatches(
