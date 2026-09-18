@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { getApps, initializeApp, applicationDefault } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
+import { getFirestore } from "firebase-admin/firestore";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,7 +32,28 @@ function resolveFirebaseProjectId(): string | undefined {
   return process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || undefined;
 }
 
+function resolveFirestoreDatabaseId(): string {
+  if (process.env.FIRESTORE_DATABASE_ID?.trim()) {
+    return process.env.FIRESTORE_DATABASE_ID.trim();
+  }
+
+  try {
+    const currentDir = path.dirname(fileURLToPath(import.meta.url));
+    const configPath = path.resolve(currentDir, "../firebase-applet-config.json");
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    if (typeof config.firestoreDatabaseId === "string" && config.firestoreDatabaseId.trim()) {
+      return config.firestoreDatabaseId.trim();
+    }
+  } catch (error) {
+    console.warn("Could not read Firestore database ID from firebase-applet-config.json:", error);
+  }
+
+  return "(default)";
+}
+
 const firebaseProjectId = resolveFirebaseProjectId();
+export const firestoreDatabaseId = resolveFirestoreDatabaseId();
+
 const adminApp = getApps().length
   ? getApps()[0]
   : initializeApp(
@@ -41,6 +63,10 @@ const adminApp = getApps().length
     );
 
 export { adminApp };
+
+export function getAdminFirestore() {
+  return getFirestore(adminApp, firestoreDatabaseId);
+}
 
 export interface AuthenticatedRequest extends Request {
   user?: { uid: string; email?: string; [key: string]: unknown };
