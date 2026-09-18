@@ -5,7 +5,6 @@ import path from 'path';
 import {defineConfig, Plugin} from 'vite';
 import cookieParser from 'cookie-parser';
 import {apiRouter} from './server/app.ts';
-import { githubOAuthCallback } from './server/routes/projects.ts';
 import { githubWebhookHandler } from './server/routes/githubWebhook.ts';
 
 function expressApiPlugin(): Plugin {
@@ -17,13 +16,8 @@ function expressApiPlugin(): Plugin {
       app.use(express.json());
       app.use(cookieParser());
       app.use(apiRouter);
-      app.get('/auth/callback', githubOAuthCallback);
 
       server.middlewares.use('/api', (req, res, next) => {
-        (app as any)(req, res, next);
-      });
-      server.middlewares.use('/auth/callback', (req, res, next) => {
-        req.url = '/auth/callback' + (req.url || '');
         (app as any)(req, res, next);
       });
     },
@@ -40,7 +34,7 @@ export default defineConfig(() => {
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
+      // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
