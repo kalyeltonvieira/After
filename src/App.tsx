@@ -17,6 +17,7 @@ import { InsightsPage } from "./pages/InsightsPage";
 import { ExperimentsPage } from "./pages/ExperimentsPage";
 import { TimelinePage } from "./pages/TimelinePage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { WatchPage } from "./pages/WatchPage";
 import { Navbar } from "./components/Navbar";
 import { Sidebar } from "./components/Sidebar";
 import { WhyDrawer } from "./components/WhyDrawer";
@@ -125,6 +126,8 @@ function MainApp() {
               {currentView === "timeline" && <TimelinePage />}
 
               {currentView === "settings" && <SettingsPage />}
+
+              {currentView === "watch" && <WatchPage />}
             </motion.div>
           </AnimatePresence>
         </main>
