@@ -16,6 +16,7 @@ type IncrementalInput = {
 
 const sourceExtensions = /\.(tsx?|jsx?|vue|py|go|rs)$/i;
 const ignoredPath = /(^|\/)(node_modules|vendor|dist|build|coverage|\.git|\.cache|venv|__pycache__)(\/|$)/;
+const projectQueues = new Map<string, Promise<void>>();
 
 const symbolPatterns: Array<{ regex: RegExp; type: "function" | "class" }> = [
   { regex: /(?:export\s+default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g, type: "function" },
@@ -149,10 +150,16 @@ export async function enqueueIncrementalAnalysis(input: IncrementalInput) {
     updatedAt: new Date().toISOString(),
   }, { merge: true });
 
-  setImmediate(() => {
-    void runIncrementalAnalysis({ ...input, jobId }).catch((error) => {
+  const previous = projectQueues.get(input.projectId) || Promise.resolve();
+  const task = previous
+    .catch(() => undefined)
+    .then(() => runIncrementalAnalysis({ ...input, jobId }))
+    .catch((error) => {
       console.warn("Incremental analysis worker failed:", error?.message);
     });
+  projectQueues.set(input.projectId, task);
+  void task.finally(() => {
+    if (projectQueues.get(input.projectId) === task) projectQueues.delete(input.projectId);
   });
 
   return { jobId, queued: true };
