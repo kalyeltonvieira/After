@@ -1311,72 +1311,40 @@ Unread state must be persisted.
 
 # Authentication
 
-Authentication should support:
+GitHub is the primary authentication and source-control identity for AFTER.
 
-* Google
-* email/password
+The sign-in flow should be:
+
+```text
+USER
+  ↓
+GITHUB OAUTH
+  ↓
+GITHUB IDENTITY + REPOSITORY AUTHORIZATION
+  ↓
+AFTER SESSION
+  ↓
+REPOSITORY DISCOVERY
+```
+
+AFTER should not require a separate Google account or email/password account to enter the product.
+
+GitHub OAuth should request the permissions required to work with the user's repositories. For the current GitHub OAuth flow, this includes access needed to enumerate and analyze private repositories the authenticated user can access.
+
+The application may use Firebase Authentication underneath the GitHub identity to preserve secure client authentication and Firestore security rules. In that architecture, Firebase is infrastructure, while GitHub remains the user's visible identity provider.
 
 User profile:
 
 * display name
-* username
-* email
+* GitHub username
+* email when available from GitHub
 * avatar
 * bio
 * preferences
 
-Username must be unique.
-
 Authentication and authorization must be handled securely.
 
----
-
-# Settings
-
-Settings should include:
-
-## Account
-
-* Profile
-* Username
-* Email
-* Avatar
-
-## Appearance
-
-* Light
-* Dark
-* System
-
-## Notifications
-
-* Insights
-* Repository activity
-* Watch alerts
-* Summaries
-
-## Security
-
-* Authentication methods
-* Sessions
-
-## Integrations
-
-* GitHub
-* GitLab
-* Bitbucket
-
-## AI
-
-* AI preferences
-* analysis settings
-
-## Data
-
-* Export
-* Delete account
-
----
+GitHub OAuth access tokens must remain server-side and be stored encrypted when persistent storage is enabled.
 
 # Backend
 
@@ -1982,8 +1950,7 @@ APPROPRIATE UNCERTAINTY
 
 ## P0 — Core Infrastructure
 
-* Authentication
-* Google login
+* GitHub authentication
 * GitHub OAuth
 * Repository discovery
 * Complete repository pagination
