@@ -65,7 +65,7 @@ export function CommandPalette({
       setSearchLoading(true);
       try {
         const response = await fetch(`/api/repository/global-search?q=${encodeURIComponent(query)}`, {
-          headers: await authenticatedHeaders(),
+          headers: await authenticatedHeaders({}, true),
         });
         const data = await response.json().catch(() => ({}));
         if (!cancelled) setGlobalResults(Array.isArray(data.results) ? data.results : []);
