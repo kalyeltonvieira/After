@@ -352,7 +352,7 @@ export function ProductGraphPage() {
           </section>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left 2 Cols: Visual Nodes Matrix */}
+            {/* Left 2 Cols: Visual Nodes Matrix */}
           <div className="lg:col-span-2 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900/40 p-6 min-h-[480px] flex flex-col justify-between">
             <div className="flex items-center justify-between text-xs text-zinc-400 font-mono pb-4 border-b border-zinc-100 dark:border-zinc-850">
               <span>MAPPED NODES ({filteredNodes.length})</span>
@@ -585,6 +585,7 @@ export function ProductGraphPage() {
               </div>
             )}
           </div>
+        </div>
         </div>
       )}
     </div>
