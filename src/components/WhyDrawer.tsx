@@ -30,7 +30,7 @@ export function WhyDrawer() {
 
         const res = await fetch("/api/gemini/why", {
           method: "POST",
-          headers: await authenticatedHeaders(),
+          headers: await authenticatedHeaders({}, true),
           body: JSON.stringify({
             nodeName: selectedNodeForWhy.label || selectedNodeForWhy.id,
             nodeType: selectedNodeForWhy.type,
