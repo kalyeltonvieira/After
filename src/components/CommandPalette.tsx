@@ -104,17 +104,26 @@ export function CommandPalette({
     [actions, search]
   );
 
-  const keyboardItems = useMemo(
-    () => (search.trim().length >= 2 ? globalResults : []).map((result) => ({
-      type: "search" as const,
-      run: () => { if (result.url) window.open(result.url, "_blank", "noopener,noreferrer"); },
-    })).concat(filteredProjects.map((project) => ({
-      type: "project" as const,
-      run: () => { setCurrentProject(project); onClose(); },
-    }))).concat(filteredActions.map((action) => ({
-      type: "action" as const,
-      run: action.run,
-    }))),
+  const keyboardItems = useMemo<Array<{
+    type: "search" | "project" | "action";
+    run: () => void;
+  }>>(
+    () => [
+      ...(search.trim().length >= 2
+        ? globalResults.map((result) => ({
+            type: "search" as const,
+            run: () => { if (result.url) window.open(result.url, "_blank", "noopener,noreferrer"); },
+          }))
+        : []),
+      ...filteredProjects.map((project) => ({
+        type: "project" as const,
+        run: () => { setCurrentProject(project); onClose(); },
+      })),
+      ...filteredActions.map((action) => ({
+        type: "action" as const,
+        run: action.run,
+      })),
+    ],
     [filteredActions, filteredProjects, globalResults, onClose, search, setCurrentProject]
   );
 
