@@ -227,32 +227,28 @@ export async function listUserRepositories(
     affiliation?: string;
   }
 ): Promise<GitHubRepo[]> {
-  const page = options?.page || 1;
-  const perPage = options?.per_page || 30;
+  const startPage = options?.page || 1;
+  const perPage = Math.min(options?.per_page || 100, 100);
   const sort = options?.sort || "pushed";
   const affiliation = options?.affiliation || "owner,collaborator,organization_member";
+  const allRepos: GitHubRepo[] = [];
 
-  const params = new URLSearchParams({
-    page: String(page),
-    per_page: String(perPage),
-    sort,
-    direction: "desc",
-    affiliation,
-  });
-
-  const res = await fetch(`https://api.github.com/user/repos?${params.toString()}`, {
-    headers: getGitHubHeaders(token),
-  });
-
-  if (!res.ok) {
-    if (res.status === 401) {
-      throw new Error("GitHub token is invalid or expired.");
+  for (let page = startPage; page <= startPage + 100; page += 1) {
+    const params = new URLSearchParams({
+      page: String(page), per_page: String(perPage), sort, direction: "desc", affiliation,
+    });
+    const res = await fetch(`https://api.github.com/user/repos?${params.toString()}`, {
+      headers: getGitHubHeaders(token),
+    });
+    if (!res.ok) {
+      if (res.status === 401) throw new Error("GitHub token is invalid or expired.");
+      throw new Error(`Failed to list GitHub repositories: ${res.statusText}`);
     }
-    throw new Error(`Failed to list GitHub repositories: ${res.statusText}`);
+    const repos = (await res.json()) as GitHubRepo[];
+    allRepos.push(...repos);
+    if (repos.length < perPage) break;
   }
-
-  const repos = (await res.json()) as GitHubRepo[];
-  return repos;
+  return allRepos;
 }
 
 /**
