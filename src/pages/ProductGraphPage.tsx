@@ -111,6 +111,38 @@ export function ProductGraphPage() {
       setImpactResult({ error: "No impact evidence is available for this node." });
     } finally { setImpactLoading(false); }
   };
+  const graphNeighborhood = selectedNode
+    ? new Set([
+        selectedNode.id,
+        ...graphEdges.filter((edge) => edge.from === selectedNode.id).map((edge) => edge.to),
+        ...graphEdges.filter((edge) => edge.to === selectedNode.id).map((edge) => edge.from),
+      ])
+    : new Set<string>();
+
+  const visibleGraphNodes =
+    focusGraph && selectedNode
+      ? filteredNodes.filter((node) => graphNeighborhood.has(node.id))
+      : filteredNodes;
+
+  const graphColumns = Math.max(
+    4,
+    Math.min(10, Math.ceil(Math.sqrt(Math.max(visibleGraphNodes.length, 1))))
+  );
+  const graphCellWidth = 175;
+  const graphCellHeight = 105;
+  const graphCanvasWidth = Math.max(980, graphColumns * graphCellWidth + 60);
+  const graphRows = Math.ceil(visibleGraphNodes.length / graphColumns);
+  const graphCanvasHeight = Math.max(430, graphRows * graphCellHeight + 80);
+  const graphPositions = new Map(
+    visibleGraphNodes.map((node, index) => [
+      node.id,
+      {
+        x: 40 + (index % graphColumns) * graphCellWidth,
+        y: 45 + Math.floor(index / graphColumns) * graphCellHeight,
+      },
+    ])
+  );
+
 
   return (
     <div className="p-6 sm:p-8 max-w-7xl mx-auto space-y-6">
@@ -179,37 +211,7 @@ export function ProductGraphPage() {
       ) : (
         /* Main interactive area: Graph canvas + inspector */
         <div className="space-y-6">
-          {(() => {
-            const neighborhood = selectedNode
-              ? new Set([
-                  selectedNode.id,
-                  ...graphEdges.filter((edge) => edge.from === selectedNode.id).map((edge) => edge.to),
-                  ...graphEdges.filter((edge) => edge.to === selectedNode.id).map((edge) => edge.from),
-                ])
-              : new Set<string>();
-
-            const visibleNodes = focusGraph && selectedNode
-              ? filteredNodes.filter((node) => neighborhood.has(node.id))
-              : filteredNodes;
-
-            const columns = Math.max(4, Math.min(10, Math.ceil(Math.sqrt(Math.max(visibleNodes.length, 1)))));
-            const cellWidth = 175;
-            const cellHeight = 105;
-            const canvasWidth = Math.max(980, columns * cellWidth + 60);
-            const rows = Math.ceil(visibleNodes.length / columns);
-            const canvasHeight = Math.max(430, rows * cellHeight + 80);
-            const positions = new Map(
-              visibleNodes.map((node, index) => [
-                node.id,
-                {
-                  x: 40 + (index % columns) * cellWidth,
-                  y: 45 + Math.floor(index / columns) * cellHeight,
-                },
-              ])
-            );
-
-            return (
-              <section className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900/40 overflow-hidden">
+                        <section className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900/40 overflow-hidden">
                 <div className="px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between gap-3">
                   <div>
                     <div className="text-[10px] uppercase tracking-wider font-semibold text-zinc-400 font-mono">
@@ -218,7 +220,7 @@ export function ProductGraphPage() {
                     <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
                       {focusGraph && selectedNode
                         ? `Focused on ${selectedNode.label} and its recorded neighborhood`
-                        : `${visibleNodes.length} mapped nodes · ${graphEdges.length} recorded relationships`}
+                        : `${visibleGraphNodes.length} mapped nodes · ${graphEdges.length} recorded relationships`}
                     </div>
                   </div>
 
@@ -258,19 +260,19 @@ export function ProductGraphPage() {
                   <div
                     className="origin-top-left"
                     style={{
-                      width: canvasWidth * graphZoom,
-                      minHeight: canvasHeight * graphZoom,
+                      width: graphCanvasWidth * graphZoom,
+                      minHeight: graphCanvasHeight * graphZoom,
                     }}
                   >
                     <svg
-                      width={canvasWidth * graphZoom}
-                      height={canvasHeight * graphZoom}
-                      viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
+                      width={graphCanvasWidth * graphZoom}
+                      height={graphCanvasHeight * graphZoom}
+                      viewBox={`0 0 ${graphCanvasWidth} ${graphCanvasHeight}`}
                       className="overflow-visible"
                     >
                       {graphEdges.map((edge, index) => {
-                        const from = positions.get(edge.from);
-                        const to = positions.get(edge.to);
+                        const from = graphPositions.get(edge.from);
+                        const to = graphPositions.get(edge.to);
                         if (!from || !to) return null;
                         const highlighted = selectedNode
                           ? edge.from === selectedNode.id || edge.to === selectedNode.id
@@ -289,8 +291,8 @@ export function ProductGraphPage() {
                         );
                       })}
 
-                      {visibleNodes.map((node) => {
-                        const pos = positions.get(node.id)!;
+                      {visibleGraphNodes.map((node) => {
+                        const pos = graphPositions.get(node.id)!;
                         const selected = selectedNode?.id === node.id;
                         const connected = selectedNode
                           ? node.id === selectedNode.id ||
@@ -347,9 +349,7 @@ export function ProductGraphPage() {
                     </svg>
                   </div>
                 </div>
-              </section>
-            );
-          })()}
+          </section>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left 2 Cols: Visual Nodes Matrix */}
