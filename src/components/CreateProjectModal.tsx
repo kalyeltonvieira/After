@@ -15,6 +15,7 @@ import {
   Search,
 } from "lucide-react";
 import { useProject } from "../context/ProjectContext";
+import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import {
   getConnectedGitHubUser,
@@ -31,6 +32,7 @@ interface CreateProjectModalProps {
 
 export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProjectModalProps) {
   const { connectRepository, createProject } = useProject();
+  const { refreshGitHubSession } = useAuth();
   const { t, language } = useLanguage();
 
   const [activeTab, setActiveTab] = useState<"github" | "manual">("github");
@@ -80,15 +82,42 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
 
   const loadGitHubUserData = async () => {
     setLoadingRepos(true);
-    try {
+    setError(null);
+
+    const load = async () => {
       const [user, repos] = await Promise.all([
-        getConnectedGitHubUser().catch(() => null),
-        listUserRepositories().catch(() => []),
+        getConnectedGitHubUser(),
+        listUserRepositories(),
       ]);
       setConnectedUser(user);
       setUserRepos(repos);
-    } catch (err: any) {
-      console.warn("Could not load user repos:", err);
+    };
+
+    try {
+      await load();
+    } catch (firstError: any) {
+      const message = String(firstError?.message || "");
+      const shouldRefreshSession =
+        /Connect GitHub first|Invalid or expired Firebase session|Firebase authentication is required|Invalid or expired GitHub access token|GitHub token is invalid or expired/i.test(message);
+
+      if (shouldRefreshSession) {
+        try {
+          await refreshGitHubSession();
+          await load();
+        } catch (refreshError: any) {
+          const refreshMessage = String(refreshError?.message || "");
+          setConnectedUser(null);
+          setUserRepos([]);
+          setError(
+            refreshMessage ||
+              "A conexão com o GitHub expirou. Conecte o GitHub novamente para carregar seus repositórios."
+          );
+        }
+      } else {
+        setConnectedUser(null);
+        setUserRepos([]);
+        setError(message || "Não foi possível carregar seus repositórios do GitHub.");
+      }
     } finally {
       setLoadingRepos(false);
     }
