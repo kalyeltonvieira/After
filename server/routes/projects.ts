@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { Response } from "express";
 import { requireFirebaseUser, type AuthenticatedRequest } from "../auth.js";
-import { createGitHubSession, createOAuthState, consumeOAuthState, getGitHubToken } from "../githubSession.js";
+import { createGitHubSession, createOAuthState, consumeOAuthState, getGitHubToken, persistGitHubToken } from "../githubSession.js";
 import { loadProjectContext } from "../projectContext.js";
 import {
   parseGitHubRepo,
@@ -25,6 +25,7 @@ export async function githubOAuthCallback(req: any, res: Response) {
   try {
     const result = await exchangeOAuthCode(String(code));
     const sessionId = createGitHubSession(stateRecord.uid, result.token);
+    await persistGitHubToken(stateRecord.uid, result.token);
     res.cookie("after_github_session", sessionId, {
       httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production",
       maxAge: 7 * 24 * 60 * 60 * 1000, path: "/"
