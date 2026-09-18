@@ -282,21 +282,8 @@ async function runIncrementalAnalysis(input: IncrementalInput & { jobId: string 
       updatedAt: now,
     };
     await projectRef.set(update, { merge: true });
-    await projectRef.collection("snapshots").doc(`incremental_${input.jobId}`).set({
-      projectId: input.projectId,
-      ownerId: input.ownerId,
-      createdAt: now,
-      branch: ref,
-      commitSha: input.commitSha || null,
-      changedFiles: [...changed],
-      graphNodes: nodes,
-      graphEdges: normalizedEdges,
-      mode: "incremental",
-    }, { merge: true });
-
-    const memoryId = `analysis_${input.jobId}`;
-    await projectRef.collection("memoryEntries").doc(memoryId).set({
-      id: memoryId,
+    const memoryEntry = {
+      id: `analysis_${input.jobId}`,
       projectId: input.projectId,
       ownerId: input.ownerId,
       type: "commit",
@@ -312,6 +299,13 @@ async function runIncrementalAnalysis(input: IncrementalInput & { jobId: string 
       relatedFiles: [...changed].slice(0, 50),
       createdAt: now,
       observedAt: now,
+    };
+    const existingMemory = Array.isArray(project.memoryEntries) ? project.memoryEntries : [];
+    await projectRef.set({
+      graphNodes: nodes,
+      graphEdges: normalizedEdges,
+      memoryEntries: [memoryEntry, ...existingMemory.filter((entry: any) => entry.id !== memoryEntry.id)].slice(0, 200),
+      updatedAt: now,
     }, { merge: true });
 
     await setJob(input.projectId, input.jobId, {
