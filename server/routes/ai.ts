@@ -82,46 +82,58 @@ Explain WHY "${nodeName}" exists and analyze its architectural impact.`;
     const parsed = JSON.parse(rawText || "{}");
     return res.json(parsed);
   } catch (error: any) {
-    console.warn("Gemini unavailable for /api/gemini/why, providing grounded architectural synthesis:", error?.message);
+    console.warn("Gemini unavailable for /api/gemini/why:", error?.message);
 
-    // Provide grounded, high-value forensic analysis from current project telemetry
-    const matchedEvent = (recentEvents || []).find((ev: any) =>
-      ev?.affectedComponents?.some((c: string) => c.toLowerCase().includes(String(nodeName).toLowerCase()))
+    const node = context.graphNodes.find((item: any) =>
+      item?.id === nodeName || item?.label?.toLowerCase() === String(nodeName).toLowerCase()
     );
-
-    const safeDeps = (dependencies || []).filter((d: string) => d !== nodeName);
+    const nodeId = node?.id;
+    const outgoing = nodeId
+      ? context.graphEdges.filter((edge: any) => edge.from === nodeId)
+      : [];
+    const incoming = nodeId
+      ? context.graphEdges.filter((edge: any) => edge.to === nodeId)
+      : [];
+    const directDependencies = outgoing
+      .map((edge: any) => context.graphNodes.find((item: any) => item.id === edge.to))
+      .filter(Boolean)
+      .map((item: any) => item.label);
+    const directDependents = incoming
+      .map((edge: any) => context.graphNodes.find((item: any) => item.id === edge.from))
+      .filter(Boolean)
+      .map((item: any) => item.label);
 
     return res.json({
-      entityName: nodeName,
-      summary: `Component '${nodeName}' identified as a core ${nodeType || "module"} within the ${projectContext?.framework || "TypeScript"} application architecture.`,
+      entityName: node?.label || nodeName,
+      summary: node?.filePath
+        ? `Repository evidence maps "${node?.label || nodeName}" to ${node.filePath}.`
+        : "No model-generated rationale is available for this entity.",
       whyExists: {
-        status: matchedEvent ? "KNOWN" : "UNKNOWN",
-        explanation: matchedEvent?.reason || "No explicit rationale was found in the recorded project evidence."
+        status: "UNKNOWN",
+        explanation: "No explicit rationale was found in the available repository evidence."
       },
       createdContext: {
-        status: matchedEvent ? "KNOWN" : "UNKNOWN",
-        explanation: matchedEvent?.timestamp
-          ? `Recorded in project activity '${matchedEvent.event}' (${matchedEvent.timestamp}).`
-          : "No creation event was found in the recorded project history."
+        status: "UNKNOWN",
+        explanation: "The available project ledger does not establish when or why this element was introduced."
       },
       problemSolved: {
         status: "UNKNOWN",
-        explanation: "No explicit problem statement or rationale was found in the available project evidence."
+        explanation: "No explicit problem statement was found in the available repository evidence."
       },
       dependencies: {
-        status: safeDeps.length > 0 ? "KNOWN" : "UNKNOWN",
-        dependsOn: safeDeps,
-        dependedOnBy: []
+        status: nodeId && (directDependencies.length || directDependents.length) ? "KNOWN" : "UNKNOWN",
+        dependsOn: directDependencies,
+        dependedOnBy: directDependents
       },
       removalRisks: {
-        status: "UNKNOWN",
-        riskLevel: "medium",
-        details: ["Impact could not be established from the available recorded evidence."]
+        status: nodeId && directDependents.length ? "INFERRED" : "UNKNOWN",
+        riskLevel: directDependents.length >= 5 ? "high" : directDependents.length > 0 ? "medium" : "low",
+        details: directDependents.length
+          ? [`${directDependents.length} recorded graph dependents would need review before removal.`]
+          : ["No recorded dependent relationships were found for this node."]
       },
-      recommendation: "Investigate the source graph and commit history before changing this node."
-    });
-  }
-});
+      recommendation: "Review the cited source path, graph edges, and commit history before changing this element."
+    });});
 
 // Endpoint: Ask AFTER (Q&A about project)
 aiRouter.post("/ask", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
@@ -342,18 +354,8 @@ ${JSON.stringify(projectContext || {}, null, 2)}`;
     return res.json(parsed);
   } catch (error: any) {
     console.warn("Gemini unavailable for /api/gemini/structure-experiment:", error?.message);
-
-    return res.json({
-      title: `Experiment: ${objective.slice(0, 50)}`,
-      hypothesis: `If we implement the proposed change for "${objective}", then baseline efficiency and performance metrics will improve without triggering architectural regressions.`,
-      control: "Current stable baseline architecture.",
-      variant: `Targeted implementation addressing "${objective}".`,
-      metric: "Observed error/regression rate",
-      expectedResult: "Observable stabilization with 0% critical errors.",
-      risk: "Low-to-medium regression risk; guarded by isolated deployment.",
-      duration: "7 days",
-      requiresProductionApproval: true
+    return res.status(503).json({
+      error: "Experiment structuring is unavailable because the AI service did not return a grounded result.",
+      status: "UNKNOWN"
     });
-  }
 });
-
