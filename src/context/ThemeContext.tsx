@@ -52,8 +52,35 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [theme]);
 
   const setTheme = (mode: ThemeMode) => {
-    setThemeState(mode);
+    const root = document.documentElement;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
     localStorage.setItem("after_theme", mode);
+
+    const updateTheme = () => {
+      setThemeState(mode);
+    };
+
+    // Use the browser View Transitions API when available for a smooth,
+    // immediate cross-fade of the whole interface during theme changes.
+    const startViewTransition = (document as Document & {
+      startViewTransition?: (callback: () => void) => { finished: Promise<void> };
+    }).startViewTransition;
+
+    if (startViewTransition && !reducedMotion) {
+      startViewTransition.call(document, updateTheme);
+      return;
+    }
+
+    // Fallback for browsers without View Transitions.
+    // The temporary class enables color interpolation for the existing
+    // Tailwind theme tokens without delaying the actual theme change.
+    if (!reducedMotion) {
+      root.classList.add("theme-transitioning");
+      window.setTimeout(() => root.classList.remove("theme-transitioning"), 320);
+    }
+
+    updateTheme();
   };
 
   return (
