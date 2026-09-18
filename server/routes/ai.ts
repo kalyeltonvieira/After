@@ -665,7 +665,7 @@ ${JSON.stringify(evidence, null, 2)}`;
             ),
             ...affectedNodes.slice(0, 12).map((node: any) => `Mapped node: ${node.label}${node.filePath ? ` (${node.filePath})` : ""}`),
           ],
-          inferred: potentialImpact.map((item) => `The recorded graph relationship may make this path relevant to the change: ${item}`),
+          inferred: potentialImpact.map((item: string) => `The recorded graph relationship may make this path relevant to the change: ${item}`),
           unknown: ["The available repository evidence does not establish runtime regression impact or original business rationale."],
           potentialImpact,
           nextInvestigations: [
