@@ -368,13 +368,10 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   }): Promise<Project> => {
     if (!user) throw new Error("Must be signed in to create a project");
 
-    // If repository name or URL has an owner/repo structure, attempt automatic analysis
+    // A repository identifier is an explicit request for a real connection.
+    // Never silently downgrade a failed analysis into a fake/empty connected project.
     if (repository && repository.includes("/")) {
-      try {
-        return await connectRepository({ repository, branch });
-      } catch (err: any) {
-        console.warn("Direct analysis failed, proceeding with clean project:", err?.message);
-      }
+      return await connectRepository({ repository, branch });
     }
 
     const projectId = `proj_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;

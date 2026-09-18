@@ -1,6 +1,7 @@
 import express, { Router } from "express";
 import { aiRouter } from "./routes/ai.js";
 import { projectsRouter } from "./routes/projects.js";
+import { repositoryRouter } from "./routes/repository.js";
 
 export const apiRouter = Router();
 
@@ -19,3 +20,4 @@ apiRouter.get("/health", (req, res) => {
 // Mount AI and Project sub-routers
 apiRouter.use("/gemini", aiRouter);
 apiRouter.use("/projects", projectsRouter);
+apiRouter.use("/repository", repositoryRouter);
