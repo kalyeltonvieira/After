@@ -2,10 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import {
   User,
   onAuthStateChanged,
-  signInWithPopup,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  sendPasswordResetEmail,
+  signInWithCustomToken,
   signOut as firebaseSignOut,
   updateProfile as firebaseUpdateProfile,
 } from "firebase/auth";
@@ -20,7 +17,6 @@ import {
 import {
   auth,
   db,
-  googleProvider,
   handleFirestoreError,
   OperationType,
   testConnection,
@@ -33,10 +29,7 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   needsOnboarding: boolean;
-  signInWithGoogle: () => Promise<void>;
-  signInWithEmail: (email: string, pass: string) => Promise<void>;
-  signUpWithEmail: (email: string, pass: string, name: string) => Promise<void>;
-  sendPasswordReset: (email: string) => Promise<void>;
+  signInWithGitHub: () => Promise<void>;
   signOut: () => Promise<void>;
   updateUserProfile: (data: Partial<UserProfile>) => Promise<void>;
   completeOnboarding: (data: {
@@ -58,28 +51,32 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   experimentalFeatures: false,
 };
 
+const GITHUB_LOGIN_ERROR = "GitHub login did not complete.";
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
-  // Test Firestore connection on initial boot
   useEffect(() => {
     testConnection();
   }, []);
 
-  // Listen to Auth state changes
   useEffect(() => {
     let unsubscribeProfile: (() => void) | null = null;
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
 
+      if (unsubscribeProfile) {
+        unsubscribeProfile();
+        unsubscribeProfile = null;
+      }
+
       if (currentUser) {
         const userDocRef = doc(db, "users", currentUser.uid);
 
-        // Subscribe to live updates for the user profile
         unsubscribeProfile = onSnapshot(
           userDocRef,
           (snapshot) => {
@@ -103,10 +100,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         );
       } else {
-        if (unsubscribeProfile) {
-          unsubscribeProfile();
-          unsubscribeProfile = null;
-        }
         setProfile(null);
         setNeedsOnboarding(false);
         setLoading(false);
@@ -115,56 +108,69 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       unsubscribeAuth();
-      if (unsubscribeProfile) {
-        unsubscribeProfile();
-      }
+      if (unsubscribeProfile) unsubscribeProfile();
     };
   }, []);
 
-  // Google Sign In via popup
-  const signInWithGoogle = async () => {
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (error: any) {
-      console.error("Google sign in error:", error);
-      throw error;
-    }
-  };
+  const signInWithGitHub = async () => {
+    await new Promise<void>((resolve, reject) => {
+      const width = 620;
+      const height = 760;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
 
-  // Email & Password Sign In
-  const signInWithEmail = async (email: string, pass: string) => {
-    try {
-      await signInWithEmailAndPassword(auth, email, pass);
-    } catch (error: any) {
-      console.error("Email sign in error:", error);
-      throw error;
-    }
-  };
+      const popup = window.open(
+        "/auth/github",
+        "after_github_login",
+        `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes`
+      );
 
-  // Sign Up with Email
-  const signUpWithEmail = async (email: string, pass: string, name: string) => {
-    try {
-      const cred = await createUserWithEmailAndPassword(auth, email, pass);
-      if (cred.user) {
-        await firebaseUpdateProfile(cred.user, { displayName: name });
+      if (!popup) {
+        reject(new Error("Popup foi bloqueado pelo navegador. Permita popups para este site."));
+        return;
       }
-    } catch (error: any) {
-      console.error("Email sign up error:", error);
-      throw error;
-    }
+
+      let settled = false;
+
+      const cleanup = () => {
+        window.removeEventListener("message", handleMessage);
+        clearInterval(closedCheck);
+      };
+
+      const finish = (callback: () => void) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        callback();
+      };
+
+      const handleMessage = (event: MessageEvent) => {
+        if (event.origin !== window.location.origin) return;
+        if (event.source !== popup) return;
+
+        if (event.data?.type === "GITHUB_LOGIN_SUCCESS" && event.data?.firebaseToken) {
+          finish(() => {
+            signInWithCustomToken(auth, event.data.firebaseToken)
+              .then(() => resolve())
+              .catch((error) => reject(error));
+          });
+        }
+
+        if (event.data?.type === "GITHUB_LOGIN_ERROR") {
+          finish(() => reject(new Error(event.data.error || GITHUB_LOGIN_ERROR)));
+        }
+      };
+
+      window.addEventListener("message", handleMessage);
+
+      const closedCheck = window.setInterval(() => {
+        if (popup.closed) {
+          finish(() => reject(new Error("Login com GitHub foi cancelado.")));
+        }
+      }, 600);
+    });
   };
 
-  // Send Password Reset
-  const sendPasswordReset = async (email: string) => {
-    try {
-      await sendPasswordResetEmail(auth, email);
-    } catch (error: any) {
-      console.error("Password reset error:", error);
-      throw error;
-    }
-  };
-
-  // Sign Out
   const signOut = async () => {
     try {
       await firebaseSignOut(auth);
@@ -176,18 +182,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Check username availability in Firestore /usernames/{username}
   const checkUsernameAvailable = async (username: string): Promise<boolean> => {
     const clean = username.toLowerCase().trim();
     if (!clean || clean.length < 3) return false;
 
-    // Validate with server route first
     try {
-      const res = await fetch(`/api/projects/validate-username?username=${encodeURIComponent(clean)}`);
+      const res = await fetch(
+        `/api/projects/validate-username?username=${encodeURIComponent(clean)}`
+      );
       const data = await res.json();
       if (!data.valid) return false;
     } catch {
-      // fallback to client validation
       if (!/^[a-z0-9_]{3,30}$/.test(clean)) return false;
     }
 
@@ -196,7 +201,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!usernameDoc.exists()) {
         return true;
       }
-      // If document exists, check if it's currently owned by the logged-in user
       return usernameDoc.data()?.uid === user?.uid;
     } catch (error) {
       console.warn(`Could not verify username "${clean}":`, error);
@@ -204,7 +208,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Complete onboarding for first time user
   const completeOnboarding = async ({
     username,
     displayName,
@@ -230,20 +233,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       username: cleanUsername,
       photoURL: user.photoURL || getInitialsAvatar(cleanUsername),
       bio: bio.trim(),
-      createdAt: now,
+      createdAt: profile?.createdAt || now,
       updatedAt: now,
-      preferences: DEFAULT_PREFERENCES,
+      preferences: profile?.preferences || DEFAULT_PREFERENCES,
     };
 
     try {
-      // 1. Reserve username
       await setDoc(doc(db, "usernames", cleanUsername), {
         uid: user.uid,
         username: cleanUsername,
         createdAt: now,
       });
 
-      // 2. Write profile document
       await setDoc(doc(db, "users", user.uid), newProfile);
       setProfile(newProfile);
       setNeedsOnboarding(false);
@@ -252,7 +253,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Update existing user profile
   const updateUserProfile = async (data: Partial<UserProfile>) => {
     if (!user || !profile) throw new Error("No active profile to update");
 
@@ -261,7 +261,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updatedAt: new Date().toISOString(),
     };
 
-    // If username is changing, handle the username reservation release and reassignment
     if (data.username && data.username.toLowerCase() !== profile.username) {
       const newUsername = data.username.toLowerCase().trim();
       const isAvailable = await checkUsernameAvailable(newUsername);
@@ -270,13 +269,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        // Reserve new username
         await setDoc(doc(db, "usernames", newUsername), {
           uid: user.uid,
           username: newUsername,
           createdAt: new Date().toISOString(),
         });
-        // Release old username
         if (profile.username) {
           await deleteDoc(doc(db, "usernames", profile.username));
         }
@@ -293,7 +290,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Delete account (Danger Zone)
   const deleteUserAccount = async () => {
     if (!user) throw new Error("No user to delete");
     try {
@@ -302,7 +298,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       await deleteDoc(doc(db, "users", user.uid));
       await user.delete();
-      await signOut();
+      await firebaseSignOut(auth);
+      setProfile(null);
+      setNeedsOnboarding(false);
     } catch (error) {
       console.error("Failed to delete account:", error);
       throw error;
@@ -316,10 +314,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         profile,
         loading,
         needsOnboarding,
-        signInWithGoogle,
-        signInWithEmail,
-        signUpWithEmail,
-        sendPasswordReset,
+        signInWithGitHub,
         signOut,
         updateUserProfile,
         completeOnboarding,
