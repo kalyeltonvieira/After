@@ -524,18 +524,20 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     try {
       // 1. Refresh latest repository state from GitHub.
       if (currentProject.repository && currentProject.repository.includes("/")) {
-        {
-          const res = await fetch("/api/projects/analyze-repository", {
-            method: "POST",
-            headers: await authenticatedHeaders(),
-            body: JSON.stringify({
-              repository: currentProject.repository,
-              branch: currentProject.branch,
-            }),
-          });
-          if (res.ok) {
-            setScanStage("architecture");
-            const data = await res.json();
+        const res = await fetch("/api/projects/analyze-repository", {
+          method: "POST",
+          headers: await authenticatedHeaders(),
+          body: JSON.stringify({
+            repository: currentProject.repository,
+            branch: currentProject.branch,
+          }),
+        });
+        if (!res.ok) {
+          const errorBody = await res.json().catch(() => ({}));
+          throw new Error(errorBody.error || `Repository analysis failed (${res.status}).`);
+        }
+        setScanStage("architecture");
+        const data = await res.json();
             // Update project nodes and edges if refreshed
             if (data.graphNodes && data.graphNodes.length > 0) {
               await setDoc(doc(db, "projects", currentProject.id, "snapshots", `snapshot_${Date.now()}`), {
