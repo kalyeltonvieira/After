@@ -1,0 +1,6 @@
+{
+  "name": "AFTER",
+  "description": "Software that doesn't age alone. Continuous software evolution, architecture analysis, and intelligence platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

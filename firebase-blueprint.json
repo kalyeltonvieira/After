@@ -1,0 +1,307 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile document storing personal details and preferences",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique Firebase Authentication UID"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "User email address"
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Full name or preferred display name"
+        },
+        "username": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]{3,30}$",
+          "maxLength": 30,
+          "description": "Unique handle for the user"
+        },
+        "photoURL": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "Profile picture URL or avatar"
+        },
+        "bio": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Short bio or role description"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp of account creation"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update"
+        },
+        "preferences": {
+          "type": "object",
+          "description": "User appearance and notification preferences"
+        }
+      },
+      "required": ["id", "email", "username", "createdAt"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "A software project monitored by AFTER",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the project"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the user who owns this project"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Project title"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Project summary or purpose"
+        },
+        "repository": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Repository identifier (e.g. org/repo)"
+        },
+        "branch": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Default tracking branch"
+        },
+        "framework": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Detected framework"
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Primary language"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Last activity timestamp"
+        }
+      },
+      "required": ["id", "ownerId", "name", "createdAt"]
+    },
+    "ProjectEvent": {
+      "title": "ProjectEvent",
+      "description": "Timeline change event detected in the software",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique event ID"
+        },
+        "projectId": {
+          "type": "string",
+          "description": "Associated project ID"
+        },
+        "event": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Headline of the event"
+        },
+        "actor": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Who or what performed the change"
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "When the event occurred"
+        },
+        "affectedComponents": {
+          "type": "array",
+          "description": "List of system components influenced"
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Explanation or intent behind the change"
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional event context or telemetry"
+        }
+      },
+      "required": ["id", "projectId", "event", "timestamp"]
+    },
+    "ProjectInsight": {
+      "title": "ProjectInsight",
+      "description": "Observation, risk, or opportunity detected in the software",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique insight ID"
+        },
+        "projectId": {
+          "type": "string",
+          "description": "Associated project ID"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Insight title"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Detailed explanation"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["Bug risk", "Security", "Performance", "UX", "Cost", "Dependency", "Architecture", "Opportunity"],
+          "description": "Classification category"
+        },
+        "evidence": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Observed evidence supporting the insight"
+        },
+        "impact": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "critical"],
+          "description": "Estimated business or technical impact"
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "Confidence level of detection"
+        },
+        "affectedComponents": {
+          "type": "array",
+          "description": "Components involved"
+        },
+        "suggestedAction": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Actionable recommendation"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Detection timestamp"
+        }
+      },
+      "required": ["id", "projectId", "title", "category", "evidence", "createdAt"]
+    },
+    "ProjectExperiment": {
+      "title": "ProjectExperiment",
+      "description": "A controlled experiment proposal with hypothesis and metrics",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique experiment ID"
+        },
+        "projectId": {
+          "type": "string",
+          "description": "Associated project ID"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Experiment title"
+        },
+        "hypothesis": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Core hypothesis"
+        },
+        "control": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Control behavior"
+        },
+        "variant": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Variant / proposed intervention"
+        },
+        "metric": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Key metric measured"
+        },
+        "expectedResult": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Anticipated outcome"
+        },
+        "risk": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Assessed risk"
+        },
+        "duration": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Estimated duration"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "running", "completed", "cancelled"],
+          "description": "Experiment status"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Update timestamp"
+        }
+      },
+      "required": ["id", "projectId", "title", "hypothesis", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Private user account profile and settings"
+    },
+    "/usernames/{username}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Username registration mapping for uniqueness check"
+    },
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Top-level software projects owned by users"
+    },
+    "/projects/{projectId}/events/{eventId}": {
+      "schema": "ProjectEvent",
+      "description": "Timeline change events in the project"
+    },
+    "/projects/{projectId}/insights/{insightId}": {
+      "schema": "ProjectInsight",
+      "description": "Architectural and operational insights for the project"
+    },
+    "/projects/{projectId}/experiments/{experimentId}": {
+      "schema": "ProjectExperiment",
+      "description": "Controlled software experiments"
+    }
+  }
+}
