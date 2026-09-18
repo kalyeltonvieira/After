@@ -4,6 +4,7 @@ import express from 'express';
 import path from 'path';
 import {defineConfig, Plugin} from 'vite';
 import {apiRouter} from './server/app.ts';
+import { githubOAuthCallback } from './server/routes/projects.ts';
 
 function expressApiPlugin(): Plugin {
   return {
@@ -18,7 +19,7 @@ function expressApiPlugin(): Plugin {
       });
       server.middlewares.use('/auth/callback', (req, res, next) => {
         req.url = '/auth/callback' + (req.url || '');
-        (app as any)(req, res, next);
+        githubOAuthCallback(req, res).catch(next);
       });
     },
   };
