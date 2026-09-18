@@ -201,6 +201,40 @@ repositoryRouter.post("/pulls", async (req: AuthenticatedRequest, res) => {
   } catch (error) { return handleRouteError(res, error); }
 });
 
+
+repositoryRouter.get("/pulls/:number", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const number = encodeURIComponent(req.params.number);
+    const [pullResult, filesResult, reviewsResult, commitsResult] = await Promise.all([
+      githubFetch(`/repos/${parsed.owner}/${parsed.repo}/pulls/${number}`, token),
+      githubFetch(`/repos/${parsed.owner}/${parsed.repo}/pulls/${number}/files?per_page=100`, token),
+      githubFetch(`/repos/${parsed.owner}/${parsed.repo}/pulls/${number}/reviews?per_page=100`, token),
+      githubFetch(`/repos/${parsed.owner}/${parsed.repo}/pulls/${number}/commits?per_page=100`, token),
+    ]);
+    return res.json({
+      pull: pullResult.body,
+      files: Array.isArray(filesResult.body) ? filesResult.body : [],
+      reviews: Array.isArray(reviewsResult.body) ? reviewsResult.body : [],
+      commits: Array.isArray(commitsResult.body) ? commitsResult.body : [],
+    });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.post("/pulls/:number/comments", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.body.projectId || ""));
+    const body = String(req.body.body || "").trim();
+    if (!body) return res.status(400).json({ error: "Comment body is required." });
+    const { body: comment } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/issues/${encodeURIComponent(req.params.number)}/comments`, token, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    });
+    return res.status(201).json({ comment });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
 repositoryRouter.get("/issues", async (req: AuthenticatedRequest, res) => {
   try {
     const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
@@ -210,6 +244,149 @@ repositoryRouter.get("/issues", async (req: AuthenticatedRequest, res) => {
     const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/issues?state=${encodeURIComponent(state)}&page=${page}&per_page=${perPage}&sort=updated&direction=desc`, token);
     const issues = Array.isArray(body) ? body.filter((item: any) => !item.pull_request) : [];
     return res.json({ issues });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+
+
+repositoryRouter.get("/issues/:number", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const number = encodeURIComponent(req.params.number);
+    const [issueResult, commentsResult] = await Promise.all([
+      githubFetch(`/repos/${parsed.owner}/${parsed.repo}/issues/${number}`, token),
+      githubFetch(`/repos/${parsed.owner}/${parsed.repo}/issues/${number}/comments?per_page=100`, token),
+    ]);
+    return res.json({
+      issue: issueResult.body,
+      comments: Array.isArray(commentsResult.body) ? commentsResult.body : [],
+    });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.get("/labels", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/labels?per_page=100`, token);
+    return res.json({ labels: Array.isArray(body) ? body : [] });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.get("/milestones", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/milestones?state=all&per_page=100`, token);
+    return res.json({ milestones: Array.isArray(body) ? body : [] });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.get("/tags", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 50));
+    const { body, response } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/tags?page=${page}&per_page=${perPage}`, token);
+    return res.json({ tags: Array.isArray(body) ? body : [], link: response.headers.get("link") || null });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.get("/activity", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const perPage = Math.min(30, Math.max(1, Number(req.query.per_page) || 20));
+    const [commits, pulls, issues, releases] = await Promise.all([
+      githubFetch(`/repos/${parsed.owner}/${parsed.repo}/commits?per_page=${perPage}`, token),
+      githubFetch(`/repos/${parsed.owner}/${parsed.repo}/pulls?state=all&sort=updated&direction=desc&per_page=${perPage}`, token),
+      githubFetch(`/repos/${parsed.owner}/${parsed.repo}/issues?state=all&sort=updated&direction=desc&per_page=${perPage}`, token),
+      githubFetch(`/repos/${parsed.owner}/${parsed.repo}/releases?per_page=${perPage}`, token),
+    ]);
+    const events = [
+      ...(Array.isArray(commits.body) ? commits.body.map((item: any) => ({
+        id: `commit:${item.sha}`, type: "commit", timestamp: item.commit?.author?.date || item.commit?.committer?.date || item.committer?.date,
+        actor: item.author?.login || item.commit?.author?.name || "Unknown", title: item.commit?.message?.split("\n")[0] || item.sha,
+        url: item.html_url, sha: item.sha,
+      })) : []),
+      ...(Array.isArray(pulls.body) ? pulls.body.map((item: any) => ({
+        id: `pull:${item.id}`, type: "pull_request", timestamp: item.updated_at || item.created_at,
+        actor: item.user?.login || "Unknown", title: `#${item.number} ${item.title}`,
+        url: item.html_url, state: item.state,
+      })) : []),
+      ...(Array.isArray(issues.body) ? issues.body.filter((item: any) => !item.pull_request).map((item: any) => ({
+        id: `issue:${item.id}`, type: "issue", timestamp: item.updated_at || item.created_at,
+        actor: item.user?.login || "Unknown", title: `#${item.number} ${item.title}`,
+        url: item.html_url, state: item.state,
+      })) : []),
+      ...(Array.isArray(releases.body) ? releases.body.map((item: any) => ({
+        id: `release:${item.id}`, type: "release", timestamp: item.published_at || item.created_at,
+        actor: item.author?.login || "Unknown", title: item.name || item.tag_name,
+        url: item.html_url, tag: item.tag_name,
+      })) : []),
+    ].filter((event: any) => event.timestamp).sort((a: any, b: any) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, 100);
+    return res.json({ events });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.get("/global-search", async (req: AuthenticatedRequest, res) => {
+  try {
+    const db = getFirestore(adminApp);
+    const q = String(req.query.q || "").trim();
+    if (q.length < 2) return res.json({ query: q, results: [] });
+
+    const projectSnap = await db.collection("projects").where("ownerId", "==", req.user!.uid).get();
+    const projects = projectSnap.docs
+      .map((d) => ({ id: d.id, ...d.data() }) as any)
+      .filter((project: any) => parseGitHubRepo(String(project.repository || "")))
+      .slice(0, 20);
+
+    const results: any[] = [];
+    await Promise.all(projects.map(async (project: any) => {
+      const parsed = parseGitHubRepo(String(project.repository || ""));
+      if (!parsed) return;
+      try {
+        const [code, commits, issues, pulls] = await Promise.all([
+          githubFetch(`/search/code?q=${encodeURIComponent(`${q} repo:${parsed.owner}/${parsed.repo}`)}&per_page=8`, getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined),
+          githubFetch(`/search/commits?q=${encodeURIComponent(`${q} repo:${parsed.owner}/${parsed.repo}`)}&per_page=8`, getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined),
+          githubFetch(`/search/issues?q=${encodeURIComponent(`${q} repo:${parsed.owner}/${parsed.repo}`)}&per_page=8`, getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined),
+          githubFetch(`/search/issues?q=${encodeURIComponent(`${q} repo:${parsed.owner}/${parsed.repo} is:pr`)}&per_page=8`, getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined),
+        ]);
+        for (const item of Array.isArray(code.body?.items) ? code.body.items : []) results.push({ kind: "file", projectId: project.id, projectName: project.name, repository: project.repository, title: item.name, subtitle: item.path, url: item.html_url, path: item.path });
+        for (const item of Array.isArray(commits.body?.items) ? commits.body.items : []) results.push({ kind: "commit", projectId: project.id, projectName: project.name, repository: project.repository, title: item.commit?.message?.split("\n")[0] || item.sha?.slice(0, 8), subtitle: item.sha?.slice(0, 10), url: item.html_url, sha: item.sha });
+        for (const item of Array.isArray(issues.body?.items) ? issues.body.items.filter((x: any) => !x.pull_request) : []) results.push({ kind: "issue", projectId: project.id, projectName: project.name, repository: project.repository, title: `#${item.number} ${item.title}`, subtitle: item.state, url: item.html_url, number: item.number });
+        for (const item of Array.isArray(pulls.body?.items) ? pulls.body.items : []) results.push({ kind: "pull_request", projectId: project.id, projectName: project.name, repository: project.repository, title: `#${item.number} ${item.title}`, subtitle: item.state, url: item.html_url, number: item.number });
+      } catch (error) {
+        console.warn("Global search project failed:", project.repository, error);
+      }
+    }));
+
+    try {
+      const userSearch = await githubFetch(`/search/users?q=${encodeURIComponent(q)}&per_page=8`, getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined);
+      for (const item of Array.isArray(userSearch.body?.items) ? userSearch.body.items : []) {
+        results.push({ kind: "user", title: item.login, subtitle: "GitHub user", url: item.html_url, avatar: item.avatar_url });
+      }
+    } catch (error) {
+      console.warn("Global user search failed:", error);
+    }
+
+    const insightSnapshots = await Promise.all(
+      projects.map((project: any) => db.collection("projects").doc(project.id).collection("insights").get())
+    );
+    for (let i = 0; i < insightSnapshots.length; i += 1) {
+      for (const docSnap of insightSnapshots[i].docs) {
+        const insight = docSnap.data() as any;
+        if (String(insight.title || "").toLowerCase().includes(q.toLowerCase()) || String(insight.description || "").toLowerCase().includes(q.toLowerCase())) {
+          results.push({ kind: "insight", projectId: projects[i].id, projectName: projects[i].name, title: insight.title, subtitle: insight.category, url: null });
+        }
+      }
+    }
+
+    const seen = new Set<string>();
+    const deduped = results.filter((item) => {
+      const key = `${item.kind}:${item.url || item.projectId + ":" + item.title}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 60);
+    return res.json({ query: q, results: deduped });
   } catch (error) { return handleRouteError(res, error); }
 });
 
