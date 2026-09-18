@@ -168,3 +168,63 @@ export interface AskAfterResult {
   suggestedInvestigation: string[];
   confidence: ConfidenceLevel;
 }
+
+
+export type KnowledgeStatus = "KNOWN" | "INFERRED" | "UNKNOWN";
+export type MemoryEntryType =
+  | "commit"
+  | "pull_request"
+  | "issue"
+  | "release"
+  | "decision"
+  | "dependency"
+  | "insight";
+
+export interface SoftwareMemoryEntry {
+  id: string;
+  projectId: string;
+  type: MemoryEntryType;
+  title: string;
+  summary: string;
+  status: KnowledgeStatus;
+  evidence: string[];
+  source?: {
+    kind: string;
+    id?: string;
+    url?: string;
+  };
+  relatedFiles?: string[];
+  relatedNodes?: string[];
+  createdAt: string;
+  observedAt?: string;
+}
+
+export interface ChangeAnalysisResult {
+  subject: {
+    type: "commit" | "file";
+    id: string;
+    title: string;
+  };
+  changes: Array<{
+    path: string;
+    status?: string;
+    additions?: number;
+    deletions?: number;
+    patch?: string;
+  }>;
+  affectedNodes: Array<{
+    id: string;
+    label: string;
+    filePath?: string;
+    relationship?: string;
+  }>;
+  dependencies: Array<{
+    from: string;
+    to: string;
+    evidence?: string;
+  }>;
+  historicalEvidence: string[];
+  potentialImpact: string[];
+  confidence: ConfidenceLevel;
+  unknowns: string[];
+}
