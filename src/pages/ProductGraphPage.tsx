@@ -263,8 +263,8 @@ export function ProductGraphPage() {
                     }}
                   >
                     <svg
-                      width={canvasWidth}
-                      height={canvasHeight}
+                      width={canvasWidth * graphZoom}
+                      height={canvasHeight * graphZoom}
                       viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
                       className="overflow-visible"
                     >
