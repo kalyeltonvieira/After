@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { getAdminFirestore } from "./auth.js";
 interface GitHubSession {
   uid: string;
   token: string;
@@ -77,12 +78,32 @@ function decryptToken(data: any): string | null {
   }
 }
 
-export async function persistGitHubToken(_uid: string, _token: string) {
-  // Firestore persistence is optional. The browser session cache is the
-  // source of truth in AI Studio, where server IAM may not allow Firestore.
-  return false;
+export async function persistGitHubToken(uid: string, token: string) {
+  if (!uid || !token.trim()) return false;
+
+  try {
+    const encrypted = encryptToken(token.trim());
+    await getAdminFirestore().collection("users").doc(uid).set({
+      githubIntegration: {
+        accessToken: encrypted,
+        updatedAt: new Date().toISOString(),
+      },
+    }, { merge: true });
+    return true;
+  } catch (error: any) {
+    console.warn("Could not persist GitHub token:", error?.message || error);
+    return false;
+  }
 }
 
-export async function getPersistentGitHubToken(_uid: string) {
-  return null;
+export async function getPersistentGitHubToken(uid: string) {
+  if (!uid) return null;
+
+  try {
+    const snapshot = await getAdminFirestore().collection("users").doc(uid).get();
+    return decryptToken(snapshot.data()?.githubIntegration?.accessToken);
+  } catch (error: any) {
+    console.warn("Could not restore GitHub token:", error?.message || error);
+    return null;
+  }
 }
