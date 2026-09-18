@@ -93,7 +93,7 @@ export async function persistGitHubToken(uid: string, token: string) {
 
 export async function getPersistentGitHubToken(uid: string) {
   if (!process.env.GITHUB_TOKEN_ENCRYPTION_KEY) return null;
-  const db = getFirestore(adminApp);
+  const db = getAdminFirestore();
   const snap = await db.collection("githubConnections").doc(uid).get();
   return snap.exists ? decryptToken(snap.data()?.encryptedToken) : null;
 }
