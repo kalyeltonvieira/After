@@ -98,7 +98,10 @@ projectsRouter.post("/github-session/recover", async (req, res) => {
     const decoded = await getAdminAuth(adminApp).verifySessionCookie(firebaseSessionCookie, true);
     const uid = decoded.uid;
 
-    const githubToken = await getPersistentGitHubToken(uid);
+    const githubToken =
+      getGitHubToken(req.cookies?.after_github_session, uid) ||
+      (await getPersistentGitHubToken(uid));
+
     if (githubToken) {
       const githubUser = await getAuthenticatedUser(githubToken);
       const githubSessionId = createGitHubSession(uid, githubToken);
