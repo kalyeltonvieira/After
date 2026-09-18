@@ -466,13 +466,13 @@ export async function linkRepositoryToAfter(
   const defaultBranch = options?.requestedBranch || repository.default_branch || "main";
 
   let webhookConfigured = false;
-  if (options?.webhookBaseUrl && token && repository.permissions?.admin) {
+  if (options?.webhookBaseUrl && token && repository.permissions?.admin && process.env.GITHUB_WEBHOOK_SECRET) {
     const webhookUrl = `${options.webhookBaseUrl.replace(/\/$/, "")}/api/projects/github-webhook`;
     const webhookResult = await registerWebhook(
       owner,
       repo,
       webhookUrl,
-      process.env.GITHUB_WEBHOOK_SECRET || "after_platform_secret",
+      process.env.GITHUB_WEBHOOK_SECRET,
       token
     );
     webhookConfigured = webhookResult.registered;
