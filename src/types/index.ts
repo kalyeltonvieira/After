@@ -21,6 +21,32 @@ export interface UserProfile {
   preferences: UserPreferences;
 }
 
+export type WatchTargetType = "repository" | "branch" | "file" | "component" | "dependency" | "node";
+
+export interface WatchTarget {
+  id: string;
+  projectId: string;
+  ownerId: string;
+  type: WatchTargetType;
+  target: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectNotification {
+  id: string;
+  projectId: string;
+  ownerId: string;
+  type: string;
+  title: string;
+  body: string;
+  repository: string;
+  createdAt: string;
+  read: boolean;
+  readAt?: string;
+  evidence?: Record<string, any>;
+}
+
 export interface Project {
   id: string;
   ownerId: string;
@@ -44,6 +70,10 @@ export interface Project {
   insights?: ProjectInsight[];
   experiments?: ProjectExperiment[];
   memoryEntries?: SoftwareMemoryEntry[];
+  watchTargets?: WatchTarget[];
+  notifications?: ProjectNotification[];
+  analysisJobs?: AnalysisJob[];
+  webhookConfigured?: boolean;
 }
 
 export interface ProjectEvent {
