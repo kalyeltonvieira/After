@@ -287,6 +287,24 @@ export function RepositoryPage() {
     }
   };
 
+  const togglePullState = async () => {
+    if (!pullDetail?.pull?.number) return;
+    setPullSaving(true);
+    try {
+      const nextState = pullDetail.pull.state === "open" ? "closed" : "open";
+      const body = await request(`/api/repository/pulls/${pullDetail.pull.number}`, {
+        method: "PATCH",
+        body: JSON.stringify({ projectId, state: nextState }),
+      });
+      setPullDetail((prev: any) => ({ ...prev, pull: body.pull }));
+      await loadTab();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPullSaving(false);
+    }
+  };
+
   const postPullComment = async () => {
     if (!pullDetail?.pull?.number || !pullComment.trim()) return;
     setPullSaving(true);
@@ -597,7 +615,12 @@ export function RepositoryPage() {
             <div><div className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">Changed files ({pullDetail.files?.length || 0})</div><div className="mt-2 space-y-1">{(pullDetail.files || []).slice(0, 100).map((file: any) => <div key={file.filename} className="rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-[10px] font-mono flex justify-between gap-2"><span className="truncate">{file.filename}</span><span className="shrink-0 text-zinc-400">+{file.additions || 0} / -{file.deletions || 0}</span></div>)}</div></div>
             <div><div className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">Reviews</div><div className="mt-2 space-y-1">{(pullDetail.reviews || []).map((review: any) => <div key={review.id} className="rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-xs"><span className="font-medium">{review.user?.login}</span> · {review.state}<div className="mt-1 text-[10px] text-zinc-400 whitespace-pre-wrap">{review.body || "No review body."}</div></div>)}{pullDetail.reviews?.length === 0 && <div className="text-xs text-zinc-400">No reviews returned.</div>}</div></div>
             <div><div className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">Conversation</div><div className="mt-3 flex gap-2"><textarea value={pullComment} onChange={(e) => setPullComment(e.target.value)} rows={2} placeholder="Comment on this pull request…" className="flex-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-transparent px-3 py-2 text-xs resize-none" /><button onClick={() => void postPullComment()} disabled={pullSaving || !pullComment.trim()} className="self-end px-3 py-2 rounded-xl bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 text-xs disabled:opacity-50">Comment</button></div></div>
-            <button type="button" onClick={() => void analyzeChange({ pullRequestNumber: pullDetail.pull?.number, question: "Review this pull request from an architectural, dependency, and potential-impact perspective using only repository evidence." })} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs"><Sparkles className="w-3.5 h-3.5" /> AFTER Review</button>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => void togglePullState()} disabled={pullSaving} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs disabled:opacity-50">
+                {pullDetail.pull?.state === "open" ? "Close pull request" : "Reopen pull request"}
+              </button>
+              <button type="button" onClick={() => void analyzeChange({ pullRequestNumber: pullDetail.pull?.number, question: "Review this pull request from an architectural, dependency, and potential-impact perspective using only repository evidence." })} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs"><Sparkles className="w-3.5 h-3.5" /> AFTER Review</button>
+            </div>
           </div>
         </div>
       )}
