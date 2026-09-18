@@ -177,6 +177,19 @@ export function RepositoryPage() {
     }
   };
 
+  const toggleWatch = async () => {
+    try {
+      const existing = await request(`/api/repository/watch?projectId=${encodeURIComponent(projectId!)}`);
+      const watching = Array.isArray(existing.watchTargets) && existing.watchTargets.length > 0;
+      await request("/api/repository/watch", {
+        method: "POST",
+        body: JSON.stringify({ projectId, enabled: !watching }),
+      });
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   const createIssue = async () => {
     const title = window.prompt("Issue title");
     if (!title) return;
