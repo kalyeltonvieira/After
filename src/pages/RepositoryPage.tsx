@@ -15,6 +15,28 @@ function formatDate(value: string) {
   return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
 }
 
+function highlightLine(line: string, language: string) {
+  const tokenPattern = /(\/\/.*$|#.*$)|([\"'`][^\"'`]*[\"'`])|(\b(?:const|let|var|function|return|import|from|export|default|class|if|else|for|while|async|await|new|throw|try|catch|interface|type|extends|implements|public|private|protected|def|func|fn|pub|struct|impl|package|use)\b)|(\b\d+(?:\.\d+)?\b)/g;
+  const nodes: React.ReactNode[] = [];
+  let last = 0;
+  for (const match of line.matchAll(tokenPattern)) {
+    const index = match.index ?? 0;
+    if (index > last) nodes.push(line.slice(last, index));
+    const value = match[0];
+    const tokenClass = match[1]
+      ? "text-zinc-500"
+      : match[2]
+      ? "text-amber-300"
+      : match[3]
+      ? "text-sky-300"
+      : "text-fuchsia-300";
+    nodes.push(<span key={`${index}-${language}`} className={tokenClass}>{value}</span>);
+    last = index + value.length;
+  }
+  if (last < line.length) nodes.push(line.slice(last));
+  return nodes.length ? nodes : line || " ";
+}
+
 function languageFromPath(path: string) {
   const ext = path.split(".").pop()?.toLowerCase();
   if (ext === "tsx" || ext === "jsx") return "typescript-react";
@@ -29,7 +51,7 @@ function languageFromPath(path: string) {
 }
 
 export function RepositoryPage() {
-  const { currentProject, setAiContext, setIsAskAfterOpen, updateCurrentProject } = useProject();
+  const { currentProject, setAiContext, setIsAskAfterOpen, updateCurrentProject, graphNodes, graphEdges } = useProject();
   const [tab, setTab] = useState<Tab>("code");
   const [data, setData] = useState<any>({});
   const [branches, setBranches] = useState<any[]>([]);
@@ -360,6 +382,28 @@ export function RepositoryPage() {
   const contributors = data.contributors || [];
   const activity = data.events || [];
   const lineCount = String(data.file?.content || "").split("\n").length;
+  const selectedNodeIds = useMemo(
+    () => new Set((graphNodes || []).filter((node: any) => node.filePath === data.file?.path).map((node: any) => node.id)),
+    [graphNodes, data.file?.path]
+  );
+  const fileSymbols = useMemo(
+    () => (graphNodes || []).filter((node: any) => node.filePath === data.file?.path && node.symbol && node.parentId).slice(0, 40),
+    [graphNodes, data.file?.path]
+  );
+  const fileDependencies = useMemo(
+    () => (graphEdges || [])
+      .filter((edge: any) => selectedNodeIds.has(edge.from) && edge.label === "imports")
+      .map((edge: any) => (graphNodes || []).find((node: any) => node.id === edge.to))
+      .filter(Boolean),
+    [graphEdges, graphNodes, selectedNodeIds]
+  );
+  const fileDependents = useMemo(
+    () => (graphEdges || [])
+      .filter((edge: any) => selectedNodeIds.has(edge.to) && edge.label === "imports")
+      .map((edge: any) => (graphNodes || []).find((node: any) => node.id === edge.from))
+      .filter(Boolean),
+    [graphEdges, graphNodes, selectedNodeIds]
+  );
   const compare = data.compare;
 
   return (
@@ -431,7 +475,14 @@ export function RepositoryPage() {
               <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="font-mono text-xs truncate">{data.file?.path || "Select a file"}</div>
-                  {data.file?.path && <div className="text-[10px] text-zinc-400 mt-1">{languageFromPath(data.file.path)} · {lineCount} lines · {data.file.size ?? "?"} bytes</div>}
+                  {data.file?.path && (
+                    <>
+                      <div className="flex flex-wrap items-center gap-1 mt-1">
+                        {data.file.path.split("/").map((part: string, index: number) => <React.Fragment key={`${part}-${index}`}><span className="font-mono text-[10px] text-zinc-500">{part}</span>{index < data.file.path.split("/").length - 1 && <ChevronRight className="w-3 h-3 text-zinc-600" />}</React.Fragment>)}
+                      </div>
+                      <div className="text-[10px] text-zinc-400 mt-1">{languageFromPath(data.file.path)} · {lineCount} lines · {data.file.size ?? "?"} bytes</div>
+                    </>
+                  )}
                 </div>
                 {data.file?.path && (
                   <div className="flex items-center gap-1.5">
@@ -451,15 +502,42 @@ export function RepositoryPage() {
                 {data.file?.content ? (
                   <div className="min-w-max font-mono text-[11px] leading-relaxed text-zinc-100">
                     {data.file.content.split("\n").map((line: string, index: number) => (
-                      <div key={index} className="flex">
+                      <div key={index} id={`code-line-${index + 1}`} className="flex scroll-mt-24">
                         <span className="select-none w-12 shrink-0 text-right pr-3 text-zinc-600">{index + 1}</span>
-                        <code className="whitespace-pre px-3">{line || " "}</code>
+                        <code className="whitespace-pre px-3">{highlightLine(line, languageFromPath(data.file.path))}</code>
                       </div>
                     ))}
                   </div>
                 ) : <div className="p-8 text-xs text-zinc-500">No file selected.</div>}
               </div>
             </div>
+
+            {data.file?.path && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-3">
+                  <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">Symbols</div>
+                  <div className="mt-2 space-y-1 max-h-36 overflow-auto">
+                    {fileSymbols.length ? fileSymbols.map((symbol: any) => (
+                      <button key={symbol.id} type="button" onClick={() => document.getElementById(`code-line-${symbol.line || 1}`)?.scrollIntoView({ behavior: "smooth", block: "center" })} className="w-full text-left rounded-lg px-2 py-1 text-[10px] font-mono hover:bg-zinc-100 dark:hover:bg-zinc-900">
+                        {symbol.symbol} <span className="text-zinc-400">L{symbol.line || 1}</span>
+                      </button>
+                    )) : <div className="text-xs text-zinc-400">No symbol-level evidence for this file.</div>}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-3">
+                  <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">Dependencies</div>
+                  <div className="mt-2 space-y-1 max-h-36 overflow-auto">
+                    {fileDependencies.length ? fileDependencies.map((node: any) => <button key={node.id} type="button" onClick={() => setAiContext({ type: "node", label: node.label, path: node.filePath })} className="w-full text-left rounded-lg px-2 py-1 text-[10px] font-mono hover:bg-zinc-100 dark:hover:bg-zinc-900 truncate">{node.label}</button>) : <div className="text-xs text-zinc-400">No recorded import relationship.</div>}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-3">
+                  <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">Dependents</div>
+                  <div className="mt-2 space-y-1 max-h-36 overflow-auto">
+                    {fileDependents.length ? fileDependents.map((node: any) => <button key={node.id} type="button" onClick={() => setAiContext({ type: "node", label: node.label, path: node.filePath })} className="w-full text-left rounded-lg px-2 py-1 text-[10px] font-mono hover:bg-zinc-100 dark:hover:bg-zinc-900 truncate">{node.label}</button>) : <div className="text-xs text-zinc-400">No recorded dependent relationship.</div>}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {data.fileHistory?.length > 0 && (
               <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4">
