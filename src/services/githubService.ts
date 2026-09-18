@@ -6,6 +6,26 @@ import { authenticatedHeaders } from "../lib/api";
  * to allow users to link their repositories seamlessly.
  */
 
+
+const GITHUB_SESSION_STORAGE_KEY = "after.github.access_token";
+
+function getCachedGitHubAccessToken(): string | null {
+  try {
+    return sessionStorage.getItem(GITHUB_SESSION_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+async function githubRequest(path: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+  const authHeaders = await authenticatedHeaders();
+  Object.entries(authHeaders).forEach(([key, value]) => headers.set(key, value));
+  const cachedToken = getCachedGitHubAccessToken();
+  if (cachedToken) headers.set("X-GitHub-Access-Token", cachedToken);
+  return fetch(path, { ...init, credentials: "include", headers });
+}
+
 export interface GitHubUser {
   id: number;
   login: string;
@@ -154,7 +174,7 @@ export function openGitHubOAuthPopup(authUrl: string): Promise<{ code: string | 
  * Fetch authenticated GitHub user details
  */
 export async function getConnectedGitHubUser(): Promise<GitHubUser> {
-  const res = await fetch("/api/projects/github-user", { credentials: "include", headers: await authenticatedHeaders() });
+  const res = await githubRequest("/api/projects/github-user");
 
   const data = await res.json();
   if (!res.ok || data.error) {
@@ -168,7 +188,7 @@ export async function getConnectedGitHubUser(): Promise<GitHubUser> {
  * List repositories accessible to the user
  */
 export async function listUserRepositories(): Promise<GitHubRepositoryItem[]> {
-  const res = await fetch("/api/projects/github-repos", { credentials: "include", headers: await authenticatedHeaders() });
+  const res = await githubRequest("/api/projects/github-repos");
 
   const data = await res.json();
   if (!res.ok || data.error) {
@@ -186,7 +206,7 @@ export async function listRepositoryBranches(
 ): Promise<GitHubBranchItem[]> {
   const params = new URLSearchParams({ repository });
 
-  const res = await fetch(`/api/projects/github-branches?${params.toString()}`, { credentials: "include", headers: await authenticatedHeaders() });
+  const res = await githubRequest(`/api/projects/github-branches?${params.toString()}`);
   const data = await res.json();
 
   if (!res.ok || data.error) {
