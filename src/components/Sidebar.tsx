@@ -11,6 +11,7 @@ import {
   ExternalLink,
   Code2,
   Brain,
+  Eye,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useProject } from "../context/ProjectContext";
@@ -51,6 +52,7 @@ export function Sidebar({
       badge: experiments.filter((e) => e.status === "running").length || undefined,
     },
     { id: "timeline", label: t("nav_timeline"), icon: History },
+    { id: "watch", label: language === "pt" ? "Observar" : "Watch", icon: Eye },
     { id: "settings", label: t("nav_settings"), icon: Settings },
   ];
 
