@@ -4,7 +4,7 @@ export async function loadProjectContext(projectId: string, uid: string) {
   const db = getAdminFirestore();
   const projectSnap = await db.collection("projects").doc(projectId).get();
   if (!projectSnap.exists || projectSnap.data()?.ownerId !== uid) return null;
-  const project = projectSnap.data() || {};
+  const project = (projectSnap.data() || {}) as Record<string, any>;
   const results = await Promise.allSettled([
     projectSnap.ref.collection("events").get(),
     projectSnap.ref.collection("insights").get(),
