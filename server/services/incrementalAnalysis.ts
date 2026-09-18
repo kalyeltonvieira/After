@@ -146,6 +146,7 @@ export async function enqueueIncrementalAnalysis(input: IncrementalInput) {
     branch: input.branch,
     commitSha: input.commitSha || null,
     changedFiles: [...new Set(input.changedFiles)],
+    removedFiles: [...new Set(input.removedFiles || [])],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }, { merge: true });
@@ -328,4 +329,39 @@ async function runIncrementalAnalysis(input: IncrementalInput & { jobId: string 
     });
     throw error;
   }
+}
+
+
+export async function recoverQueuedIncrementalAnalyses() {
+  const db = getFirestore(adminApp);
+  const snapshot = await db.collectionGroup("analysisJobs")
+    .where("status", "==", "queued")
+    .limit(100)
+    .get();
+
+  for (const job of snapshot.docs) {
+    const data = job.data();
+    if (data.mode !== "incremental" || !data.projectId || !data.ownerId) continue;
+    const input: IncrementalInput & { jobId: string } = {
+      jobId: job.id,
+      projectId: String(data.projectId),
+      ownerId: String(data.ownerId),
+      branch: String(data.branch || ""),
+      changedFiles: Array.isArray(data.changedFiles) ? data.changedFiles.filter((v: any) => typeof v === "string") : [],
+      removedFiles: Array.isArray(data.removedFiles) ? data.removedFiles.filter((v: any) => typeof v === "string") : [],
+      commitSha: typeof data.commitSha === "string" && data.commitSha ? data.commitSha : undefined,
+      deliveryId: job.id,
+    };
+    const previous = projectQueues.get(input.projectId) || Promise.resolve();
+    const task = previous
+      .catch(() => undefined)
+      .then(() => runIncrementalAnalysis(input))
+      .catch((error) => console.warn("Recovered incremental analysis failed:", error?.message));
+    projectQueues.set(input.projectId, task);
+    void task.finally(() => {
+      if (projectQueues.get(input.projectId) === task) projectQueues.delete(input.projectId);
+    });
+  }
+
+  return snapshot.size;
 }
