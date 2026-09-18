@@ -7,6 +7,15 @@ import { parseGitHubRepo } from "../services/githubService.js";
 
 export const aiRouter = Router();
 
+function resolveRequestGitHubToken(req: AuthenticatedRequest): string | undefined {
+  const sessionToken = getGitHubToken(req.cookies?.after_github_session, req.user!.uid);
+  if (sessionToken) return sessionToken;
+
+  const headerToken = String(req.headers["x-github-access-token"] || "").trim();
+  return headerToken || undefined;
+}
+
+
 // Endpoint: Why? Engine
 aiRouter.post("/why", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
   const { nodeName, nodeType, projectId } = req.body;
@@ -28,7 +37,7 @@ aiRouter.post("/why", requireFirebaseUser, async (req: AuthenticatedRequest, res
   let focusedFileContent = "";
   if (node?.filePath) {
     const parsedRepo = parseGitHubRepo(String(projectContext?.repository || ""));
-    const token = getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined;
+    const token = resolveRequestGitHubToken(req);
     const headers: Record<string, string> = {
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
@@ -228,7 +237,7 @@ aiRouter.post("/ask", requireFirebaseUser, async (req: AuthenticatedRequest, res
   // The server resolves source content from the connected repository. The client
   // may identify the focus path, but cannot inject arbitrary source into the AI context.
   let normalizedFocus: any = requestedFocus;
-  const token = getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined;
+  const token = resolveRequestGitHubToken(req);
   const parsedRepo = parseGitHubRepo(String(projectContext?.repository || ""));
   if (requestedFocus?.path && parsedRepo) {
     try {
@@ -300,16 +309,88 @@ Return JSON only:
   "confidence": "high" | "medium" | "low"
 }`;
 
+  const focusNodeIds = new Set<string>(
+    focusedNode
+      ? [
+          focusedNode.id,
+          ...focusedNodeEdges.map((edge: any) => edge.from),
+          ...focusedNodeEdges.map((edge: any) => edge.to),
+        ]
+      : []
+  );
+
+  const relevantGraphNodes = graphNodes
+    .filter((node: any) => !focusNodeIds.size || focusNodeIds.has(node.id))
+    .slice(0, 60);
+
+  const relevantGraphNodeIds = new Set(relevantGraphNodes.map((node: any) => node.id));
+  const relevantGraphEdges = graphEdges
+    .filter((edge: any) => relevantGraphNodeIds.has(edge.from) || relevantGraphNodeIds.has(edge.to))
+    .slice(0, 100);
+
+  const focusTerms = [
+    normalizedFocus?.label,
+    normalizedFocus?.path,
+    focusedNode?.label,
+    ...(focusedNode?.filePath ? [focusedNode.filePath] : []),
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+
+  const relevanceScore = (value: any) => {
+    const haystack = [
+      value?.title,
+      value?.summary,
+      value?.event,
+      value?.reason,
+      ...(Array.isArray(value?.evidence) ? value.evidence : []),
+      ...(Array.isArray(value?.affectedComponents) ? value.affectedComponents : []),
+      ...(Array.isArray(value?.relatedFiles) ? value.relatedFiles : []),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return focusTerms.reduce((score, term) => score + (term && haystack.includes(term) ? 1 : 0), 0);
+  };
+
+  const relevantTimeline = [...(timeline || [])]
+    .sort((a: any, b: any) => relevanceScore(b) - relevanceScore(a))
+    .slice(0, 16);
+
+  const relevantInsights = [...(insights || [])]
+    .sort((a: any, b: any) => relevanceScore(b) - relevanceScore(a))
+    .slice(0, 10);
+
+  const relevantMemory = [...((context as any).memoryEntries || [])]
+    .sort((a: any, b: any) => relevanceScore(b) - relevanceScore(a))
+    .slice(0, 16);
+
+  const projectContextForAI = {
+    id: projectContext?.id,
+    name: projectContext?.name,
+    repository: projectContext?.repository,
+    branch: projectContext?.branch,
+    defaultBranch: projectContext?.defaultBranch,
+    framework: projectContext?.framework,
+    language: projectContext?.language,
+  };
+
   const contextPayload = {
-    project: projectContext || {},
-    focus: normalizedFocus,
-    focusGraphNode: focusedNode || null,
-    focusRelationships: focusedNodeEdges,
-    timelineEvents: timeline || [],
-    activeInsights: insights || [],
-    systemComponents: graphNodes || [],
-    systemRelationships: graphEdges || [],
-    softwareMemory: (context as any).memoryEntries || [],
+    project: projectContextForAI,
+    focus: normalizedFocus ? {
+      type: normalizedFocus.type,
+      label: normalizedFocus.label,
+      path: normalizedFocus.path,
+      sha: normalizedFocus.sha,
+      content: normalizedFocus.content ? String(normalizedFocus.content).slice(0, 24000) : undefined,
+    } : null,
+    focusGraphNode: focusedNode,
+    focusRelationships: focusedNodeEdges.slice(0, 40),
+    timelineEvents: relevantTimeline,
+    activeInsights: relevantInsights,
+    systemComponents: relevantGraphNodes,
+    systemRelationships: relevantGraphEdges,
+    softwareMemory: relevantMemory,
     conversationHistory: recentHistory,
   };
 
@@ -370,7 +451,7 @@ aiRouter.post("/change-analysis", requireFirebaseUser, async (req: Authenticated
   const parsedRepo = parseGitHubRepo(String(project.repository || ""));
   if (!parsedRepo) return res.status(400).json({ error: "Project repository is not a valid GitHub repository." });
 
-  const token = getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined;
+  const token = resolveRequestGitHubToken(req);
   const ghHeaders: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
@@ -393,23 +474,29 @@ aiRouter.post("/change-analysis", requireFirebaseUser, async (req: Authenticated
       }
 
       subject = await prRes.json();
-      const filesRes = await fetch(
-        `https://api.github.com/repos/${parsedRepo.owner}/${parsedRepo.repo}/pulls/${encodeURIComponent(String(pullRequestNumber))}/files?per_page=100`,
-        { headers: ghHeaders }
-      );
-      if (filesRes.ok) {
+      const files: any[] = [];
+      for (let page = 1; page <= 3; page += 1) {
+        const filesRes = await fetch(
+          `https://api.github.com/repos/${parsedRepo.owner}/${parsedRepo.repo}/pulls/${encodeURIComponent(String(pullRequestNumber))}/files?per_page=100&page=${page}`,
+          { headers: ghHeaders }
+        );
+        if (!filesRes.ok) break;
+
         const pullFiles = await filesRes.json();
-        files = Array.isArray(pullFiles)
-          ? pullFiles.map((file: any) => ({
-              path: file.filename,
-              status: file.status,
-              additions: file.additions,
-              deletions: file.deletions,
-              patch: typeof file.patch === "string" ? file.patch.slice(0, 12000) : undefined,
-            }))
-          : [];
+        if (!Array.isArray(pullFiles) || pullFiles.length === 0) break;
+
+        files.push(...pullFiles.map((file: any) => ({
+          path: file.filename,
+          status: file.status,
+          additions: file.additions,
+          deletions: file.deletions,
+          patch: typeof file.patch === "string" ? file.patch.slice(0, 12000) : undefined,
+        })));
+
+        if (pullFiles.length < 100) break;
       }
-      history = (context.timeline || []).filter((event: any) =>
+
+      history = (context.timeline || []).filter((event: any) =>((event: any) =>
         String(event?.metadata?.url || "").includes(`/pull/${pullRequestNumber}`) ||
         String(event?.metadata?.pullRequest || "") === String(pullRequestNumber)
       );
@@ -465,9 +552,24 @@ aiRouter.post("/change-analysis", requireFirebaseUser, async (req: Authenticated
     }
 
     const changedPaths = new Set<string>(files.map((file) => file.path).filter(Boolean));
-    const affectedNodeIds = new Set<string>();
+    const directlyAffectedNodeIds = new Set<string>();
+
     for (const node of context.graphNodes || []) {
-      if (node.filePath && changedPaths.has(node.filePath)) affectedNodeIds.add(node.id);
+      if (node.filePath && changedPaths.has(node.filePath)) directlyAffectedNodeIds.add(node.id);
+    }
+
+    const affectedNodeIds = new Set<string>(directlyAffectedNodeIds);
+    const impactQueue = [...directlyAffectedNodeIds];
+
+    while (impactQueue.length && affectedNodeIds.size < 60) {
+      const currentId = impactQueue.shift()!;
+      for (const edge of context.graphEdges || []) {
+        if (edge.to !== currentId) continue;
+        if (affectedNodeIds.has(edge.from)) continue;
+        affectedNodeIds.add(edge.from);
+        impactQueue.push(edge.from);
+        if (affectedNodeIds.size >= 60) break;
+      }
     }
 
     const affectedNodes = (context.graphNodes || [])
@@ -476,13 +578,14 @@ aiRouter.post("/change-analysis", requireFirebaseUser, async (req: Authenticated
         id: node.id,
         label: node.label,
         filePath: node.filePath,
+        relationship: directlyAffectedNodeIds.has(node.id) ? "directly_changed" : "transitively_dependent",
       }));
 
     const relationshipEdges = (context.graphEdges || []).filter((edge: any) =>
       affectedNodeIds.has(edge.from) || affectedNodeIds.has(edge.to)
     );
 
-    const potentialImpact = relationshipEdges.slice(0, 25).map((edge: any) => {
+    const potentialImpact = relationshipEdges.slice(0, 40).map((edge: any) => {
       const from = (context.graphNodes || []).find((node: any) => node.id === edge.from)?.label || edge.from;
       const to = (context.graphNodes || []).find((node: any) => node.id === edge.to)?.label || edge.to;
       return `${from} → ${to}${edge.label ? ` (${edge.label})` : ""}`;
@@ -490,7 +593,7 @@ aiRouter.post("/change-analysis", requireFirebaseUser, async (req: Authenticated
 
     const evidence = {
       subject: {
-        type: sha ? "commit" : "file",
+        type: pullRequestNumber ? "pull_request" : sha ? "commit" : "file",
         id: String(sha || path),
         title: sha ? (subject?.commit?.message?.split("\n")[0] || `Commit ${sha}`) : subject.title,
       },
