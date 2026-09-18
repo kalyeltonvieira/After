@@ -65,8 +65,8 @@ export function TimelinePage() {
       await addEvent({
         event: eventTitle,
         actor,
-        timestamp: "Just now",
-        affectedComponents: compList.length > 0 ? compList : ["Core System"],
+        timestamp: new Date().toISOString(),
+        affectedComponents: compList,
         reason,
         metadata: commitHash ? { commit: commitHash } : {},
       });
