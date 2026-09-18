@@ -205,6 +205,7 @@ projectsRouter.post("/analysis-jobs", requireFirebaseUser, async (req: Authentic
   if (!projectId) return res.status(400).json({ error: "projectId is required." });
   const context = await loadProjectContext(String(projectId), req.user!.uid);
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
+  const project: any = context.project;
   const files = Array.isArray(changedFiles) ? changedFiles.filter((value: any) => typeof value === "string") : [];
   const removed = Array.isArray(removedFiles) ? removedFiles.filter((value: any) => typeof value === "string") : [];
   if (files.length + removed.length === 0) return res.status(400).json({ error: "changedFiles or removedFiles is required." });
