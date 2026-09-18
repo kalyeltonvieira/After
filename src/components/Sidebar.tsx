@@ -10,6 +10,7 @@ import {
   X,
   ExternalLink,
   Code2,
+  Brain,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useProject } from "../context/ProjectContext";
@@ -36,6 +37,7 @@ export function Sidebar({
     { id: "projects", label: t("nav_projects"), icon: FolderGit2 },
     { id: "repository", label: language === "pt" ? "Repositório" : "Repository", icon: Code2 },
     { id: "graph", label: t("nav_graph"), icon: Network },
+    { id: "memory", label: language === "pt" ? "Memória" : "Memory", icon: Brain },
     {
       id: "insights",
       label: t("nav_insights"),
