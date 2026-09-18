@@ -117,7 +117,8 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       setExperiments([]);
       setGraphNodes([]);
       setGraphEdges([]);
-      setMemoryEntries([]);      setAnalysisJobs([]);
+      setMemoryEntries([]);
+      setAnalysisJobs([]);
       setAiContext(null);
       setLoadingProjects(false);
       return;
@@ -236,7 +237,8 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     const nodes: GraphNode[] = [...(currentProject.graphNodes || [])];
     const edges: GraphEdge[] = [...(currentProject.graphEdges || [])];
 
-    // Append dynamic experiment nodes if any exist    experiments.forEach((exp) => {
+    // Append dynamic experiment nodes if any exist
+    experiments.forEach((exp) => {
       const expNodeId = `exp_${exp.id}`;
       if (!nodes.some((n) => n.id === expNodeId)) {
         nodes.push({
@@ -359,7 +361,8 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
           status: "KNOWN",
           evidence: [dependency.filePath || "repository dependency metadata"],
           source: { kind: "repository_dependency", id: dependency.dependency || dependency.id },
-          relatedFiles: dependency.filePath ? [dependency.filePath] : [],          relatedNodes: [dependency.id],
+          relatedFiles: dependency.filePath ? [dependency.filePath] : [],
+          relatedNodes: [dependency.id],
           createdAt: now,
           observedAt: now,
         });
@@ -478,7 +481,8 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     if (!user || !currentProject) return;
     const projectId = currentProject.id;
     try {
-      await deleteDoc(doc(db, "projects", projectId));      setCurrentProject(null);
+      await deleteDoc(doc(db, "projects", projectId));
+      setCurrentProject(null);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `projects/${projectId}`);
     }
@@ -597,7 +601,8 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
             language: data.project.language,
             stars: data.project.stars,
             openIssues: data.project.openIssues,
-          });          setGraphNodes(data.graphNodes);
+          });
+          setGraphNodes(data.graphNodes);
           setGraphEdges(data.graphEdges || []);
         }
 
