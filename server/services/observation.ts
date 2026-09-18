@@ -18,7 +18,7 @@ export function changedFilesFromPush(payload: any): string[] {
     ...(Array.isArray(payload?.head_commit?.modified) ? payload.head_commit.modified : []),
     ...(Array.isArray(payload?.head_commit?.added) ? payload.head_commit.added : []),
     ...(Array.isArray(payload?.head_commit?.removed) ? payload.head_commit.removed : []),
-  ].filter((value: any) => typeof value === "string" && value.trim()))];
+  ].filter((value: any) => typeof value === "string" && Boolean(value.trim()))];
 }
 
 function branchCandidates(eventName: string, payload: any): string[] {
