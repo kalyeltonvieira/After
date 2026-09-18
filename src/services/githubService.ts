@@ -102,7 +102,7 @@ export async function getGitHubAuthUrl(): Promise<OAuthUrlResponse> {
 export async function exchangeGitHubCode(code: string): Promise<{ connected: boolean }> {
   const res = await fetch("/api/projects/github-exchange", {
     method: "POST",
-    headers: await authenticatedHeaders(),
+    headers: await authenticatedHeaders({}, true),
     body: JSON.stringify({ code }),
   });
 
