@@ -686,7 +686,8 @@ repositoryRouter.delete("/watch/:id", async (req: AuthenticatedRequest, res) => 
     const id = String(req.params.id);
     const projectRef = db.collection("projects").doc(projectId);
     const snap = await projectRef.get();
-    const current = Array.isArray(snap.data()?.watchTargets) ? snap.data().watchTargets : [];
+    const data = snap.data() || {};
+    const current = Array.isArray(data.watchTargets) ? data.watchTargets : [];
     const next = current.filter((watch: any) => watch.id !== id);
     await projectRef.set({ watchTargets: next, updatedAt: new Date().toISOString() }, { merge: true });
     return res.json({ watching: false, watchTargets: next });
