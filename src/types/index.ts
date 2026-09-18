@@ -40,6 +40,10 @@ export interface Project {
   telemetryProvider?: string;
   graphNodes?: GraphNode[];
   graphEdges?: GraphEdge[];
+  events?: ProjectEvent[];
+  insights?: ProjectInsight[];
+  experiments?: ProjectExperiment[];
+  memoryEntries?: SoftwareMemoryEntry[];
 }
 
 export interface ProjectEvent {
