@@ -147,21 +147,38 @@ projectsRouter.post("/impact", requireFirebaseUser, async (req: AuthenticatedReq
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
   const node = context.graphNodes.find((item: any) => item.id === nodeId);
   if (!node) return res.status(404).json({ error: "Graph node not found." });
-  const incoming = context.graphEdges.filter((edge: any) => edge.to === nodeId);
-  const outgoing = context.graphEdges.filter((edge: any) => edge.from === nodeId);
-  const downstreamIds = new Set<string>();
-  const queue = outgoing.map((edge: any) => edge.to);
+  // Graph edge convention: A -> B means "A imports/depends on B".
+  // Impact must therefore traverse incoming edges: who depends on the selected node?
+  const directDependentEdges = context.graphEdges.filter((edge: any) => edge.to === nodeId);
+  const directDependencyEdges = context.graphEdges.filter((edge: any) => edge.from === nodeId);
+  const transitiveDependentIds = new Set<string>();
+  const queue = directDependentEdges.map((edge: any) => edge.from);
+
   while (queue.length) {
     const id = queue.shift()!;
-    if (downstreamIds.has(id) || id === nodeId) continue;
-    downstreamIds.add(id);
-    context.graphEdges.filter((edge: any) => edge.from === id).forEach((edge: any) => queue.push(edge.to));
+    if (transitiveDependentIds.has(id) || id === nodeId) continue;
+    transitiveDependentIds.add(id);
+    context.graphEdges
+      .filter((edge: any) => edge.to === id)
+      .forEach((edge: any) => queue.push(edge.from));
   }
+
   return res.json({
-    node, directDependents: incoming.map((edge: any) => ({ ...edge, node: context.graphNodes.find((item: any) => item.id === edge.from) || null })),
-    directDependencies: outgoing.map((edge: any) => ({ ...edge, node: context.graphNodes.find((item: any) => item.id === edge.to) || null })),
-    transitiveDependents: [...downstreamIds].map((id) => context.graphNodes.find((item: any) => item.id === id)).filter(Boolean),
-    evidence: [...incoming, ...outgoing].map((edge: any) => edge.evidence).filter(Boolean),
+    node,
+    directDependents: directDependentEdges.map((edge: any) => ({
+      ...edge,
+      node: context.graphNodes.find((item: any) => item.id === edge.from) || null,
+    })),
+    directDependencies: directDependencyEdges.map((edge: any) => ({
+      ...edge,
+      node: context.graphNodes.find((item: any) => item.id === edge.to) || null,
+    })),
+    transitiveDependents: [...transitiveDependentIds]
+      .map((id) => context.graphNodes.find((item: any) => item.id === id))
+      .filter(Boolean),
+    evidence: [...directDependentEdges, ...directDependencyEdges]
+      .map((edge: any) => edge.evidence)
+      .filter(Boolean),
   });
 });
 
