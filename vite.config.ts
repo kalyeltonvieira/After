@@ -6,12 +6,14 @@ import {defineConfig, Plugin} from 'vite';
 import cookieParser from 'cookie-parser';
 import {apiRouter} from './server/app.ts';
 import { githubOAuthCallback } from './server/routes/projects.ts';
+import { githubWebhookHandler } from './server/routes/githubWebhook.ts';
 
 function expressApiPlugin(): Plugin {
   return {
     name: 'express-api-plugin',
     configureServer(server) {
       const app = express();
+      app.post('/projects/github-webhook', express.raw({ type: 'application/json', limit: '2mb' }), githubWebhookHandler as any);
       app.use(express.json());
       app.use(cookieParser());
       app.use(apiRouter);
