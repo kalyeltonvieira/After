@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Sparkles,
   Search,
@@ -42,10 +42,28 @@ export function Navbar({
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
 
-  const criticalInsightsCount = insights.filter(
-    (i) => i.impact === "critical" || i.impact === "high"
-  ).length;
+  const criticalInsightsCount = insights.filter((i) => i.impact === "critical" || i.impact === "high").length;
+
+  useEffect(() => {
+    if (!currentProject?.id || !user) {
+      setNotifications([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/repository/notifications?projectId=${encodeURIComponent(currentProject.id)}`, { headers: await (await import("../lib/api")).authenticatedHeaders() });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setNotifications(Array.isArray(data.notifications) ? data.notifications : []);
+      } catch {
+        if (!cancelled) setNotifications([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentProject?.id, user]);
 
   return (
     <header className="sticky top-0 z-30 w-full h-14 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md border-b border-zinc-200/70 dark:border-zinc-800/80 px-4 sm:px-6 flex items-center justify-between transition-colors">
@@ -207,18 +225,18 @@ export function Navbar({
                     {t("nav_notifications")}
                   </span>
                   <span className="text-[10px] text-zinc-400 font-mono">
-                    {insights.length} active
+                    {notifications.filter((n) => !n.read).length} unread
                   </span>
                 </div>
                 <div className="max-h-60 overflow-y-auto py-2 space-y-2">
-                  {insights.length === 0 ? (
+                  {notifications.length === 0 ? (
                     <p className="text-xs text-zinc-500 py-3 text-center">
                       {t("nav_notifications_empty")}
                     </p>
                   ) : (
-                    insights.slice(0, 4).map((ins) => (
+                    notifications.slice(0, 4).map((notification) => (
                       <div
-                        key={ins.id}
+                        key={notification.id}
                         className="p-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/40 text-xs space-y-1 cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                         onClick={() => {
                           setIsNotificationsOpen(false);
@@ -227,14 +245,14 @@ export function Navbar({
                       >
                         <div className="flex items-center justify-between">
                           <span className="font-semibold text-zinc-900 dark:text-zinc-100 truncate">
-                            {ins.title}
+                            {notification.title}
                           </span>
                           <span className="text-[10px] uppercase font-mono px-1 rounded bg-zinc-200 dark:bg-zinc-700">
-                            {ins.category}
+                            {notification.type || "repository"}
                           </span>
                         </div>
                         <p className="text-[11px] text-zinc-500 dark:text-zinc-400 line-clamp-2">
-                          {ins.evidence}
+                          {notification.body || notification.evidence || "Repository event recorded."}
                         </p>
                       </div>
                     ))
