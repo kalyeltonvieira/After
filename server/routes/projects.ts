@@ -344,6 +344,123 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
       console.warn("Could not fetch commits:", commitErr);
     }
 
+    // Observe recent PRs, issues, and releases as first-class Software Memory evidence.
+    const observedRecords: { pullRequests: any[]; issues: any[]; releases: any[] } = {
+      pullRequests: [],
+      issues: [],
+      releases: [],
+    };
+
+    await Promise.all([
+      (async () => {
+        try {
+          const response = await fetch(
+            "https://api.github.com/repos/" + owner + "/" + repo + "/pulls?state=all&sort=updated&direction=desc&per_page=20",
+            { headers }
+          );
+          if (response.ok) {
+            const data = await response.json();
+            if (Array.isArray(data)) observedRecords.pullRequests = data;
+          }
+        } catch (error) {
+          console.warn("Could not fetch pull requests for Software Memory:", error);
+        }
+      })(),
+      (async () => {
+        try {
+          const response = await fetch(
+            "https://api.github.com/repos/" + owner + "/" + repo + "/issues?state=all&sort=updated&direction=desc&per_page=20",
+            { headers }
+          );
+          if (response.ok) {
+            const data = await response.json();
+            if (Array.isArray(data)) observedRecords.issues = data.filter((item: any) => !item.pull_request);
+          }
+        } catch (error) {
+          console.warn("Could not fetch issues for Software Memory:", error);
+        }
+      })(),
+      (async () => {
+        try {
+          const response = await fetch(
+            "https://api.github.com/repos/" + owner + "/" + repo + "/releases?per_page=20",
+            { headers }
+          );
+          if (response.ok) {
+            const data = await response.json();
+            if (Array.isArray(data)) observedRecords.releases = data;
+          }
+        } catch (error) {
+          console.warn("Could not fetch releases for Software Memory:", error);
+        }
+      })(),
+    ]);
+
+    realEvents = [
+      ...realEvents,
+      ...observedRecords.pullRequests.slice(0, 12).map((pr: any) => ({
+        id: "pull_" + pr.id,
+        event: "PR #" + pr.number + ": " + pr.title,
+        actor: pr.user?.login || pr.user?.name || "Unknown",
+        timestamp: new Date(pr.updated_at || pr.created_at).toISOString(),
+        affectedComponents: [],
+        reason: "Pull request #" + pr.number + " was observed in GitHub.",
+        metadata: {
+          type: "pull_request",
+          pullRequest: pr.number,
+          url: pr.html_url,
+        },
+      })),
+      ...observedRecords.issues.slice(0, 12).map((issue: any) => ({
+        id: "issue_" + issue.id,
+        event: "Issue #" + issue.number + ": " + issue.title,
+        actor: issue.user?.login || issue.user?.name || "Unknown",
+        timestamp: new Date(issue.updated_at || issue.created_at).toISOString(),
+        affectedComponents: [],
+        reason: "Issue #" + issue.number + " was observed in GitHub.",
+        metadata: {
+          type: "issue",
+          issue: issue.number,
+          url: issue.html_url,
+        },
+      })),
+      ...observedRecords.releases.slice(0, 12).map((release: any) => ({
+        id: "release_" + release.id,
+        event: "Release: " + (release.name || release.tag_name),
+        actor: release.author?.login || release.author?.name || "Unknown",
+        timestamp: new Date(release.published_at || release.created_at).toISOString(),
+        affectedComponents: [],
+        reason: "GitHub release " + (release.tag_name || release.id) + " was observed.",
+        metadata: {
+          type: "release",
+          tag: release.tag_name,
+          url: release.html_url,
+        },
+      })),
+    ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 50);
+
+    const observedMemoryEntries = realEvents.map((event: any) => ({
+      type: event.metadata?.type === "pull_request"
+        ? "pull_request"
+        : event.metadata?.type === "issue"
+        ? "issue"
+        : event.metadata?.type === "release"
+        ? "release"
+        : "commit",
+      title: event.event,
+      summary: event.reason,
+      status: "KNOWN",
+      evidence: [event.metadata?.url || event.reason].filter(Boolean),
+      source: {
+        kind: event.metadata?.type ? "github_" + event.metadata.type : "github_commit",
+        id: event.metadata?.pullRequest || event.metadata?.issue || event.metadata?.tag || event.metadata?.fullSha || event.metadata?.sha,
+        url: event.metadata?.url,
+      },
+      relatedFiles: [],
+      createdAt: event.timestamp,
+      observedAt: new Date().toISOString(),
+    }));
+
     // 3. Fetch Real File Tree
     let treeItems: any[] = [];
     try {
@@ -655,7 +772,7 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
     // Symbol extraction: build symbol-level entities from real source text.
     // This is intentionally parser-light so it works across TS/JS/Python/Go/Rust
     // without inventing symbols when the source cannot be parsed confidently.
-    const symbolPatterns: Array<{ regex: RegExp; type: string }> = [
+    const symbolPatterns: Array<{ regex: RegExp; type: "function" | "class" }> = [
       { regex: /(?:export\s+default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g, type: "function" },
       { regex: /(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/g, type: "function" },
       { regex: /(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/g, type: "function" },
@@ -721,7 +838,7 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
         const node = {
           id: `file_${file.path.replace(/[^a-zA-Z0-9_]/g, "_")}`,
           label: file.path.split("/").pop() || file.path,
-          type: "function", category: "source", status: "healthy", changesCount: 1,
+          type: "file", category: "source", status: "healthy", changesCount: 1,
           filePath: file.path, symbol: file.path.split("/").pop()?.replace(/\.[^/.]+$/, ""), line: 1,
           description: "Source file observed in the repository tree.",
         };
@@ -856,9 +973,14 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
       },
       graphNodes,
       graphEdges,
-      analysis: { sourceFilesInspected: sourceContents.size, sourceFilesAvailable: sourceCandidates.length, relationshipEvidence: "imports extracted from repository source content" },
+      analysis: {
+        sourceFilesInspected: sourceContents.size,
+        sourceFilesAvailable: sourceCandidates.length,
+        relationshipEvidence: "imports extracted from repository source content",
+      },
       events: realEvents,
       insights: realInsights,
+      memoryEntries: observedMemoryEntries,
     });
   } catch (err: any) {
     console.error("Error analyzing repository:", err);
