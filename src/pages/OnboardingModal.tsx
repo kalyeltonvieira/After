@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Sparkles, Check, AlertCircle, ArrowRight, Github, FolderPlus } from "lucide-react";
+import { Sparkles, Check, AlertCircle, ArrowRight, Github } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useProject } from "../context/ProjectContext";
 
@@ -15,9 +15,7 @@ export function OnboardingModal() {
   const [isUsernameAvailable, setIsUsernameAvailable] = useState<boolean | null>(null);
   const [usernameError, setUsernameError] = useState<string | null>(null);
 
-  // Optional project connection on onboarding step 2
-  const [repository, setRepository] = useState("");
-  const [branch, setBranch] = useState("");
+
 
   const [loading, setLoading] = useState(false);
   const [generalError, setGeneralError] = useState<string | null>(null);
@@ -69,20 +67,11 @@ export function OnboardingModal() {
     setGeneralError(null);
 
     try {
-      // 1. Complete user profile in Firestore
       await completeOnboarding({
         username,
         displayName: displayName || username,
         bio,
       });
-
-      // 2. Connect repository if user provided one
-      if (repository.trim()) {
-        await connectRepository({
-          repository: repository.trim(),
-          branch: branch.trim() || undefined,
-        });
-      }
     } catch (err: any) {
       console.error("Onboarding failed:", err);
       setGeneralError(err?.message || "Failed to complete onboarding setup.");
@@ -92,20 +81,7 @@ export function OnboardingModal() {
   };
 
   const handleSkipRepository = async () => {
-    setLoading(true);
-    setGeneralError(null);
-
-    try {
-      await completeOnboarding({
-        username,
-        displayName: displayName || username,
-        bio,
-      });
-    } catch (err: any) {
-      setGeneralError(err?.message || "Failed to complete onboarding.");
-    } finally {
-      setLoading(false);
-    }
+    await handleFinishOnboarding(new Event("submit") as unknown as React.FormEvent);
   };
 
   return (
