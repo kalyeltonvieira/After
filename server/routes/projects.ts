@@ -774,10 +774,10 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
     // without inventing symbols when the source cannot be parsed confidently.
     const symbolPatterns: Array<{ regex: RegExp; type: "function" | "class" }> = [
       { regex: /(?:export\s+default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g, type: "function" },
-      { regex: /(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/g, type: "function" },
+      { regex: /(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/g, type: "class" },
       { regex: /(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/g, type: "function" },
       { regex: /\bdef\s+([A-Za-z_][\w]*)\s*\(/g, type: "function" },
-      { regex: /\bclass\s+([A-Za-z_][\w]*)\s*[:(]/g, type: "function" },
+      { regex: /\bclass\s+([A-Za-z_][\w]*)\s*[:(]/g, type: "class" },
       { regex: /\bfunc\s+(?:\([^)]*\)\s*)?([A-Za-z_][\w]*)\s*\(/g, type: "function" },
       { regex: /\bfn\s+([A-Za-z_][\w]*)\s*\(/g, type: "function" },
     ];
