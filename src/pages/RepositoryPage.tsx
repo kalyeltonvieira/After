@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Branch, FileCode2, GitCommit, GitPullRequest, CircleDot, Package, Users, Search, Plus, Eye, EyeOff, ExternalLink, RefreshCw } from "lucide-react";
+import { GitBranch, FileCode2, GitCommit, GitPullRequest, CircleDot, Package, Users, Search, Plus, Eye, ExternalLink, RefreshCw } from "lucide-react";
 import { useProject } from "../context/ProjectContext";
 import { authenticatedHeaders } from "../lib/api";
 import { EmptyState } from "../components/EmptyState";
@@ -22,7 +22,7 @@ export function RepositoryPage() {
   const projectId = currentProject?.id;
   const tabs = useMemo(() => [
     ["code", FileCode2, "Code"],
-    ["branches", Branch, "Branches"],
+    ["branches", GitBranch, "Branches"],
     ["commits", GitCommit, "Commits"],
     ["pulls", GitPullRequest, "Pull Requests"],
     ["issues", CircleDot, "Issues"],
