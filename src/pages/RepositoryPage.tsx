@@ -87,7 +87,7 @@ export function RepositoryPage() {
   ] as const, []);
 
   const request = async (path: string, init?: RequestInit) => {
-    const res = await fetch(path, { ...init, headers: { ...(await authenticatedHeaders()), ...(init?.headers || {}) } });
+    const res = await fetch(path, { ...init, headers: { ...(await authenticatedHeaders({}, true)), ...(init?.headers || {}) } });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
     return body;
