@@ -386,7 +386,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       name: name.trim(),
       description: description.trim(),
       repository: repository.trim() || "unconnected",
-      branch: branch.trim() || "main",
+      branch: branch.trim() || "unselected",
       framework: framework.trim() || "Standard",
       language: language.trim() || "TypeScript",
       createdAt: now,
