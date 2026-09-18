@@ -229,13 +229,9 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
               id: `commit_${c.sha || index}`,
               event: message,
               actor: author,
-              timestamp: new Date(dateStr).toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-              }),
-              affectedComponents: [repoData.name],
-              reason: `Commit ${shaShort} on branch ${branch}`,
+              timestamp: new Date(dateStr).toISOString(),
+              affectedComponents: [repoData.full_name],
+              reason: `Commit ${shaShort} on branch ${branch}.`,
               metadata: {
                 sha: shaShort,
                 fullSha: c.sha,
@@ -390,13 +386,13 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
         label: baseName,
         type: "page",
         category: "frontend",
-        status: "healthy",
-        changesCount: 1,
+        status: "monitored",
+        changesCount: 0,
         filePath: file.path,
         symbol: baseName.replace(/\.[^/.]+$/, ""),
         line: 1,
         description: `Application view file mapped directly from repository.`,
-        lastModified: "Synchronized with repository",
+
       });
     }
 
@@ -419,8 +415,8 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
         label: baseName,
         type: "component",
         category: "frontend",
-        status: "healthy",
-        changesCount: 1,
+        status: "monitored",
+        changesCount: 0,
         filePath: file.path,
         symbol: baseName.replace(/\.[^/.]+$/, ""),
         line: 1,
@@ -450,8 +446,8 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
         label: baseName,
         type: "api",
         category: "backend",
-        status: "healthy",
-        changesCount: 1,
+        status: "monitored",
+        changesCount: 0,
         filePath: file.path,
         symbol: baseName.replace(/\.[^/.]+$/, ""),
         endpoint: `/api/${baseName.replace(/\.[^/.]+$/, "")}`,
@@ -483,8 +479,8 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
         label: baseName,
         type: "function",
         category: "logic",
-        status: "healthy",
-        changesCount: 1,
+        status: "monitored",
+        changesCount: 0,
         filePath: file.path,
         symbol: baseName.replace(/\.[^/.]+$/, ""),
         line: 1,
@@ -515,8 +511,8 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
         label: baseName,
         type: "config",
         category: "config",
-        status: "healthy",
-        changesCount: 1,
+        status: "monitored",
+        changesCount: 0,
         filePath: file.path,
         configKey: baseName,
         line: 1,
@@ -540,7 +536,7 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
           dependency: depName,
           filePath: "package.json",
           description: `Direct production dependency specified in package.json.`,
-          lastModified: "Declared in package.json",
+
         });
       }
     }
@@ -555,7 +551,7 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
           label: file.path.split("/").pop() || file.path,
           type: "function", category: "source", status: "healthy", changesCount: 1,
           filePath: file.path, symbol: file.path.split("/").pop()?.replace(/\.[^/.]+$/, ""), line: 1,
-          description: "Source file observed in the repository tree.", lastModified: "Synchronized with repository",
+          description: "Source file observed in the repository tree.",
         };
         graphNodes.push(node);
         nodeByPath.set(file.path, node);
