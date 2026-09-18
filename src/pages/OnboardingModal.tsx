@@ -12,8 +12,6 @@ export function OnboardingModal() {
   const [isUsernameAvailable, setIsUsernameAvailable] = useState<boolean | null>(null);
   const [usernameError, setUsernameError] = useState<string | null>(null);
 
-
-
   const [loading, setLoading] = useState(false);
   const [generalError, setGeneralError] = useState<string | null>(null);
 
@@ -23,7 +21,7 @@ export function OnboardingModal() {
       const draft = user.email.split("@")[0].toLowerCase().replace(/[^a-z0-9_]/g, "");
       setUsername(draft);
     }
-  }, [user]);
+  }, [user, username]);
 
   // Debounced check for username
   useEffect(() => {
@@ -48,38 +46,9 @@ export function OnboardingModal() {
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [username]);
+  }, [username, checkUsernameAvailable]);
 
   if (!needsOnboarding) return null;
-
-  const handleStep1Submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isUsernameAvailable) return;
-    setStep(2);
-  };
-
-  const handleFinishOnboarding = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setGeneralError(null);
-
-    try {
-      await completeOnboarding({
-        username,
-        displayName: displayName || username,
-        bio,
-      });
-    } catch (err: any) {
-      console.error("Onboarding failed:", err);
-      setGeneralError(err?.message || "Failed to complete onboarding setup.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSkipRepository = async () => {
-    await handleFinishOnboarding(new Event("submit") as unknown as React.FormEvent);
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-md">
@@ -236,6 +205,7 @@ export function OnboardingModal() {
             </div>
           </div>
         )}
+      </div>
     </div>
   );
 }
