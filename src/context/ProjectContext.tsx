@@ -176,105 +176,27 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, [user]);
 
-  // 2. Subscribe to subcollections of current project: events, insights, experiments
+  // 2. Hydrate analysis state from the project document itself.
+  // This keeps repository connection functional even when named Firestore
+  // subcollection rules have not yet been deployed in the environment.
   useEffect(() => {
     if (!user || !currentProject || currentProject.ownerId !== user.uid) {
       setEvents([]);
       setInsights([]);
       setExperiments([]);
+      setMemoryEntries([]);
       setGraphNodes([]);
       setGraphEdges([]);
       return;
     }
 
-    const projectId = currentProject.id;
-
-    // A. Events
-    const eventsRef = collection(db, "projects", projectId, "events");
-    const unsubEvents = onSnapshot(
-      eventsRef,
-      (snapshot) => {
-        const evList: ProjectEvent[] = [];
-        snapshot.forEach((d) => evList.push(d.data() as ProjectEvent));
-        setEvents(evList);
-      },
-      (error) => {
-        try {
-          handleFirestoreError(error, OperationType.LIST, `projects/${projectId}/events`);
-        } catch (e) {
-          // Handled
-        }
-        setEvents([]);
-      }
-    );
-
-    // B. Insights
-    const insightsRef = collection(db, "projects", projectId, "insights");
-    const unsubInsights = onSnapshot(
-      insightsRef,
-      (snapshot) => {
-        const insList: ProjectInsight[] = [];
-        snapshot.forEach((d) => insList.push(d.data() as ProjectInsight));
-        setInsights(insList);
-      },
-      (error) => {
-        try {
-          handleFirestoreError(error, OperationType.LIST, `projects/${projectId}/insights`);
-        } catch (e) {
-          // Handled
-        }
-        setInsights([]);
-      }
-    );
-
-    // C. Experiments
-    const experimentsRef = collection(db, "projects", projectId, "experiments");
-    const unsubExp = onSnapshot(
-      experimentsRef,
-      (snapshot) => {
-        const expList: ProjectExperiment[] = [];
-        snapshot.forEach((d) => expList.push(d.data() as ProjectExperiment));
-        setExperiments(expList);
-      },
-      (error) => {
-        try {
-          handleFirestoreError(error, OperationType.LIST, `projects/${projectId}/experiments`);
-        } catch (e) {
-          // Handled
-        }
-        setExperiments([]);
-      }
-    );
-
-    // D. Software Memory
-    const memoryRef = collection(db, "projects", projectId, "memoryEntries");
-    const unsubMemory = onSnapshot(
-      memoryRef,
-      (snapshot) => {
-        const entries: SoftwareMemoryEntry[] = [];
-        snapshot.forEach((d) => entries.push(d.data() as SoftwareMemoryEntry));
-        entries.sort((a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-        setMemoryEntries(entries);
-      },
-      (error) => {
-        try {
-          handleFirestoreError(error, OperationType.LIST, `projects/${projectId}/memoryEntries`);
-        } catch (e) {
-          // Handled
-        }
-        setMemoryEntries([]);
-      }
-    );
-
-    return () => {
-      unsubEvents();
-      unsubInsights();
-      unsubExp();
-      unsubMemory();
-    };
-  }, [user, currentProject?.id, currentProject?.ownerId]);
+    setEvents(currentProject.events || []);
+    setInsights(currentProject.insights || []);
+    setExperiments(currentProject.experiments || []);
+    setMemoryEntries(currentProject.memoryEntries || []);
+    setGraphNodes(currentProject.graphNodes || []);
+    setGraphEdges(currentProject.graphEdges || []);
+  }, [user, currentProject]);
 
   // 2.5. Poll persistent analysis jobs so UI reflects real backend state.
   useEffect(() => {
@@ -363,51 +285,21 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       const projectId = `proj_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const now = new Date().toISOString();
 
-      const newProject: Project = {
-        id: projectId,
-        ownerId: user.uid,
-        name: data.project.name,
-        description: data.project.description,
-        repository: data.project.repository,
-        branch: data.project.branch,
-        defaultBranch: data.project.defaultBranch,
-        framework: data.project.framework,
-        language: data.project.language,
-        stars: data.project.stars,
-        openIssues: data.project.openIssues,
-        githubConnected: true,
-        telemetryConnected: false,
-        graphNodes: data.graphNodes || [],
-        graphEdges: data.graphEdges || [],
-        createdAt: now,
-        updatedAt: now,
-      };
+      const nextEvents: ProjectEvent[] = (data.events || []).map((ev: ProjectEvent) => ({
+        ...ev,
+        projectId,
+      }));
+      const nextInsights: ProjectInsight[] = (data.insights || []).map((ins: ProjectInsight) => ({
+        ...ins,
+        projectId,
+        createdAt: ins.createdAt || now,
+      }));
+      const nextMemoryEntries: SoftwareMemoryEntry[] = [];
 
-      // 1. Save project document in Firestore
-      await setDoc(doc(db, "projects", projectId), newProject);
-      await setDoc(doc(db, "projects", projectId, "snapshots", `snapshot_${Date.now()}`), {
-        projectId, ownerId: user.uid, createdAt: now, branch: data.project.branch,
-        graphNodes: data.graphNodes || [], graphEdges: data.graphEdges || [], analysis: data.analysis || null,
-      });
-
-      // 2. Persist real commits into events subcollection
-      for (const ev of data.events || []) {
-        const evId = `ev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-        await setDoc(doc(db, "projects", projectId, "events", evId), {
-          ...ev,
-          id: evId,
-          projectId,
-          ownerId: user.uid,
-        });
-      }
-
-      // 3. Persist real repository facts into Software Memory.
-      // Entries are keyed by source identity so the same evidence is not duplicated
-      // if the project is connected again with the same analysis payload.
-      for (const ev of data.events || []) {
-        const sourceId = String(ev.metadata?.fullSha || ev.metadata?.sha || ev.id || Date.now());
+      for (const ev of nextEvents) {
+        const sourceId = String(ev.metadata?.fullSha || ev.metadata?.sha || ev.id);
         const memoryId = `commit_${sourceId.replace(/[^A-Za-z0-9_-]/g, "")}`;
-        const memory: SoftwareMemoryEntry = {
+        nextMemoryEntries.push({
           id: memoryId,
           projectId,
           type: "commit",
@@ -426,72 +318,73 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
           relatedFiles: Array.isArray(ev.affectedComponents) ? ev.affectedComponents : [],
           createdAt: ev.timestamp || now,
           observedAt: now,
-        };
-        await setDoc(
-          doc(db, "projects", projectId, "memoryEntries", memoryId),
-          { ...memory, ownerId: user.uid },
-          { merge: true }
-        );
-      }
-
-      // 4. Persist grounded insights into insights subcollection
-      for (const ins of data.insights || []) {
-        const insId = `ins_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-        await setDoc(doc(db, "projects", projectId, "insights", insId), {
-          ...ins,
-          id: insId,
-          projectId,
-          ownerId: user.uid,
-          createdAt: now,
         });
-
-        // An insight is also remembered as an observed software event.
-        const memoryId = `insight_${insId}`;
-        await setDoc(
-          doc(db, "projects", projectId, "memoryEntries", memoryId),
-          {
-            id: memoryId,
-            projectId,
-            ownerId: user.uid,
-            type: "insight",
-            title: ins.title,
-            summary: ins.description,
-            status: "KNOWN",
-            evidence: [ins.evidence, ...(ins.affectedFiles || [])].filter(Boolean),
-            source: { kind: "after_analysis", id: insId },
-            relatedFiles: ins.affectedFiles || [],
-            relatedNodes: ins.affectedComponents || [],
-            createdAt: ins.createdAt || now,
-            observedAt: now,
-          },
-          { merge: true }
-        );
       }
 
-      // Dependency declarations are part of the software's persistent memory.
-      const memoryDependencies = (data.graphNodes || []).filter((node: any) => node.type === "dependency");
-      for (const dependency of memoryDependencies) {
-        const memoryId = `dependency_${String(dependency.id).replace(/[^A-Za-z0-9_-]/g, "")}`;
-        await setDoc(
-          doc(db, "projects", projectId, "memoryEntries", memoryId),
-          {
-            id: memoryId,
-            projectId,
-            ownerId: user.uid,
-            type: "dependency",
-            title: dependency.label,
-            summary: dependency.description || `Dependency declared in ${dependency.filePath || "repository metadata"}.`,
-            status: "KNOWN",
-            evidence: [dependency.filePath || "repository dependency metadata"],
-            source: { kind: "repository_dependency", id: dependency.dependency || dependency.id },
-            relatedFiles: dependency.filePath ? [dependency.filePath] : [],
-            relatedNodes: [dependency.id],
-            createdAt: now,
-            observedAt: now,
-          },
-          { merge: true }
-        );
+      for (const ins of nextInsights) {
+        nextMemoryEntries.push({
+          id: `insight_${ins.id}`,
+          projectId,
+          type: "insight",
+          title: ins.title,
+          summary: ins.description,
+          status: "KNOWN",
+          evidence: [ins.evidence, ...(ins.affectedFiles || [])].filter(Boolean),
+          source: { kind: "after_analysis", id: ins.id },
+          relatedFiles: ins.affectedFiles || [],
+          relatedNodes: ins.affectedComponents || [],
+          createdAt: ins.createdAt || now,
+          observedAt: now,
+        });
       }
+
+      for (const dependency of (data.graphNodes || []).filter((node: any) => node.type === "dependency")) {
+        nextMemoryEntries.push({
+          id: `dependency_${String(dependency.id).replace(/[^A-Za-z0-9_-]/g, "")}`,
+          projectId,
+          type: "dependency",
+          title: dependency.label,
+          summary: dependency.description || `Dependency declared in ${dependency.filePath || "repository metadata"}.`,
+          status: "KNOWN",
+          evidence: [dependency.filePath || "repository dependency metadata"],
+          source: { kind: "repository_dependency", id: dependency.dependency || dependency.id },
+          relatedFiles: dependency.filePath ? [dependency.filePath] : [],
+          relatedNodes: [dependency.id],
+          createdAt: now,
+          observedAt: now,
+        });
+      }
+
+      const newProject: Project = {
+        id: projectId,
+        ownerId: user.uid,
+        name: data.project.name,
+        description: data.project.description,
+        repository: data.project.repository,
+        branch: data.project.branch,
+        defaultBranch: data.project.defaultBranch,
+        framework: data.project.framework,
+        language: data.project.language,
+        stars: data.project.stars,
+        openIssues: data.project.openIssues,
+        githubConnected: true,
+        telemetryConnected: false,
+        graphNodes: data.graphNodes || [],
+        graphEdges: data.graphEdges || [],
+        events: nextEvents,
+        insights: nextInsights,
+        experiments: [],
+        memoryEntries: nextMemoryEntries,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      // 1. Save project document in Firestore
+      await setDoc(doc(db, "projects", projectId), newProject);
+      setEvents(nextEvents);
+      setInsights(nextInsights);
+      setExperiments([]);
+      setMemoryEntries(nextMemoryEntries);
 
       setCurrentProject(newProject);
       return newProject;
@@ -592,17 +485,13 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       projectId: currentProject.id,
       ownerId: user.uid,
     } as any;
-
-    try {
-      await setDoc(doc(db, "projects", currentProject.id, "events", evId), fullEvent);
-      await updateCurrentProject({ updatedAt: new Date().toISOString() });
-    } catch (error) {
-      try {
-        handleFirestoreError(error, OperationType.CREATE, `projects/${currentProject.id}/events/${evId}`);
-      } catch (e) {
-        // Logged
-      }
-    }
+    const nextEvents = [fullEvent, ...(currentProject.events || [])];
+    await updateDoc(doc(db, "projects", currentProject.id), {
+      events: nextEvents,
+      updatedAt: new Date().toISOString(),
+    });
+    setCurrentProject({ ...currentProject, events: nextEvents, updatedAt: new Date().toISOString() });
+    setEvents(nextEvents);
   };
 
   // Add insight
@@ -618,16 +507,13 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       createdAt: new Date().toISOString(),
       ownerId: user.uid,
     } as any;
-
-    try {
-      await setDoc(doc(db, "projects", currentProject.id, "insights", insId), fullInsight);
-    } catch (error) {
-      try {
-        handleFirestoreError(error, OperationType.CREATE, `projects/${currentProject.id}/insights/${insId}`);
-      } catch (e) {
-        // Logged
-      }
-    }
+    const nextInsights = [fullInsight, ...(currentProject.insights || [])];
+    await updateDoc(doc(db, "projects", currentProject.id), {
+      insights: nextInsights,
+      updatedAt: new Date().toISOString(),
+    });
+    setCurrentProject({ ...currentProject, insights: nextInsights, updatedAt: new Date().toISOString() });
+    setInsights(nextInsights);
   };
 
   // Add experiment
@@ -644,29 +530,27 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       createdAt: new Date().toISOString(),
       ownerId: user.uid,
     } as any;
-
-    try {
-      await setDoc(doc(db, "projects", currentProject.id, "experiments", expId), fullExp);
-    } catch (error) {
-      try {
-        handleFirestoreError(error, OperationType.CREATE, `projects/${currentProject.id}/experiments/${expId}`);
-      } catch (e) {
-        // Logged
-      }
-    }
+    const nextExperiments = [fullExp, ...(currentProject.experiments || [])];
+    await updateDoc(doc(db, "projects", currentProject.id), {
+      experiments: nextExperiments,
+      updatedAt: new Date().toISOString(),
+    });
+    setCurrentProject({ ...currentProject, experiments: nextExperiments, updatedAt: new Date().toISOString() });
+    setExperiments(nextExperiments);
   };
 
   // Update experiment status
   const updateExperimentStatus = async (id: string, status: ProjectExperiment["status"]) => {
     if (!currentProject || !user) return;
-    try {
-      await updateDoc(doc(db, "projects", currentProject.id, "experiments", id), {
-        status,
-        updatedAt: new Date().toISOString(),
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `projects/${currentProject.id}/experiments/${id}`);
-    }
+    const nextExperiments = (currentProject.experiments || []).map((experiment) =>
+      experiment.id === id ? { ...experiment, status, updatedAt: new Date().toISOString() } : experiment
+    );
+    await updateDoc(doc(db, "projects", currentProject.id), {
+      experiments: nextExperiments,
+      updatedAt: new Date().toISOString(),
+    });
+    setCurrentProject({ ...currentProject, experiments: nextExperiments, updatedAt: new Date().toISOString() });
+    setExperiments(nextExperiments);
   };
 
   // Re-run repository analysis & forensic AI scan
