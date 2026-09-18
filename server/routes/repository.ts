@@ -332,5 +332,3 @@ repositoryRouter.post("/notifications/:id/read", async (req: AuthenticatedReques
     return res.json({ read: true });
   } catch (error) { return handleRouteError(res, error); }
 });
-
-repositoryRoutes;
