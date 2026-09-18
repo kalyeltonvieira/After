@@ -1,8 +1,7 @@
-import { getFirestore } from "firebase-admin/firestore";
-import { adminApp } from "./auth.js";
+import { getAdminFirestore } from "./auth.js";
 
 export async function loadProjectContext(projectId: string, uid: string) {
-  const db = getFirestore(adminApp);
+  const db = getAdminFirestore();
   const projectSnap = await db.collection("projects").doc(projectId).get();
   if (!projectSnap.exists || projectSnap.data()?.ownerId !== uid) return null;
   const [eventsSnap, insightsSnap, experimentsSnap, memorySnap] = await Promise.all([
