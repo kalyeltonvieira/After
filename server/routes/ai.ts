@@ -302,6 +302,188 @@ Answer the user's question using the repository evidence above. Keep the answer 
   }
 });
 
+// Endpoint: Change Analysis (evidence extraction + AI interpretation)
+aiRouter.post("/change-analysis", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+  const { projectId, sha, path, question } = req.body;
+  const context = projectId ? await loadProjectContext(String(projectId), req.user!.uid) : null;
+  if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
+  if (!sha && !path) return res.status(400).json({ error: "sha or path is required." });
+
+  const project: any = context.project;
+  const parsedRepo = parseGitHubRepo(String(project.repository || ""));
+  if (!parsedRepo) return res.status(400).json({ error: "Project repository is not a valid GitHub repository." });
+
+  const token = getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined;
+  const ghHeaders: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "AFTER-Software-Evolution-Platform",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+
+  try {
+    let subject: any = null;
+    let files: any[] = [];
+    let history: any[] = [];
+
+    if (sha) {
+      const commitRes = await fetch(
+        `https://api.github.com/repos/${parsedRepo.owner}/${parsedRepo.repo}/commits/${encodeURIComponent(String(sha))}`,
+        { headers: ghHeaders }
+      );
+      if (!commitRes.ok) return res.status(commitRes.status).json({ error: `GitHub commit lookup failed (${commitRes.status}).` });
+      subject = await commitRes.json();
+      files = Array.isArray(subject?.files)
+        ? subject.files.map((file: any) => ({
+            path: file.filename,
+            status: file.status,
+            additions: file.additions,
+            deletions: file.deletions,
+            patch: typeof file.patch === "string" ? file.patch.slice(0, 12000) : undefined,
+          }))
+        : [];
+      history = (context.timeline || []).filter((event: any) =>
+        event?.metadata?.fullSha === sha ||
+        event?.metadata?.sha === String(sha).slice(0, 7)
+      );
+    } else {
+      const ref = String(project.branch || project.defaultBranch || "");
+      const encodedPath = String(path).split("/").map(encodeURIComponent).join("/");
+      const [fileRes, historyRes] = await Promise.all([
+        fetch(
+          `https://api.github.com/repos/${parsedRepo.owner}/${parsedRepo.repo}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`,
+          { headers: ghHeaders }
+        ),
+        fetch(
+          `https://api.github.com/repos/${parsedRepo.owner}/${parsedRepo.repo}/commits?path=${encodeURIComponent(String(path))}&sha=${encodeURIComponent(ref)}&per_page=12`,
+          { headers: ghHeaders }
+        ),
+      ]);
+      if (!fileRes.ok) return res.status(fileRes.status).json({ error: `GitHub file lookup failed (${fileRes.status}).` });
+      const file = await fileRes.json();
+      if (historyRes.ok) history = await historyRes.json();
+
+      subject = {
+        path: String(path),
+        sha: file?.sha || null,
+        title: `File history: ${path}`,
+      };
+      files = [{
+        path: String(path),
+        status: "current",
+        additions: undefined,
+        deletions: undefined,
+        patch: undefined,
+      }];
+    }
+
+    const changedPaths = new Set<string>(files.map((file) => file.path).filter(Boolean));
+    const affectedNodeIds = new Set<string>();
+    for (const node of context.graphNodes || []) {
+      if (node.filePath && changedPaths.has(node.filePath)) affectedNodeIds.add(node.id);
+    }
+
+    const affectedNodes = (context.graphNodes || [])
+      .filter((node: any) => affectedNodeIds.has(node.id))
+      .map((node: any) => ({
+        id: node.id,
+        label: node.label,
+        filePath: node.filePath,
+      }));
+
+    const relationshipEdges = (context.graphEdges || []).filter((edge: any) =>
+      affectedNodeIds.has(edge.from) || affectedNodeIds.has(edge.to)
+    );
+
+    const potentialImpact = relationshipEdges.slice(0, 25).map((edge: any) => {
+      const from = (context.graphNodes || []).find((node: any) => node.id === edge.from)?.label || edge.from;
+      const to = (context.graphNodes || []).find((node: any) => node.id === edge.to)?.label || edge.to;
+      return `${from} → ${to}${edge.label ? ` (${edge.label})` : ""}`;
+    });
+
+    const evidence = {
+      subject: {
+        type: sha ? "commit" : "file",
+        id: String(sha || path),
+        title: sha ? (subject?.commit?.message?.split("\n")[0] || `Commit ${sha}`) : subject.title,
+      },
+      commit: sha ? {
+        sha: subject?.sha || sha,
+        author: subject?.commit?.author?.name || subject?.author?.login || null,
+        date: subject?.commit?.author?.date || subject?.commit?.committer?.date || null,
+        url: subject?.html_url || null,
+      } : null,
+      files,
+      affectedNodes,
+      relationships: relationshipEdges,
+      history,
+      question: typeof question === "string" ? question : null,
+    };
+
+    const systemPrompt = `You are AFTER's Change Analysis engine.
+Analyze only the concrete change evidence supplied by the repository.
+Never invent causality, regressions, metrics, or business rationale.
+Distinguish KNOWN, INFERRED, and UNKNOWN.
+Explain what changed, what repository nodes are directly mapped to the changed files, what graph relationships are involved, and what should be investigated next.
+Return JSON:
+{
+  "summary": "Direct explanation",
+  "known": ["Facts directly supported by the evidence"],
+  "inferred": ["Carefully bounded deductions"],
+  "unknown": ["Important questions the evidence cannot establish"],
+  "potentialImpact": ["Potentially affected elements, phrased without certainty"],
+  "nextInvestigations": ["Concrete follow-up investigation"],
+  "confidence": "high" | "medium" | "low"
+}`;
+
+    const prompt = `Repository: ${project.repository}
+Branch: ${project.branch || project.defaultBranch || "unknown"}
+User question: ${question || "Analyze this change."}
+
+Evidence:
+${JSON.stringify(evidence, null, 2)}`;
+
+    try {
+      const rawText = await generateContentWithFallback({
+        contents: prompt,
+        systemInstruction: systemPrompt,
+        responseMimeType: "application/json",
+        temperature: 0.2,
+      });
+      const parsed = JSON.parse(rawText || "{}");
+      return res.json({
+        evidence,
+        analysis: parsed,
+      });
+    } catch (aiError: any) {
+      console.warn("Gemini unavailable for /api/gemini/change-analysis:", aiError?.message);
+      return res.json({
+        evidence,
+        analysis: {
+          summary: `The repository evidence for ${sha ? `commit ${sha}` : `file ${path}`} is available, but an AI interpretation could not be generated.`,
+          known: [
+            ...files.slice(0, 12).map((file) =>
+              `${file.path}: ${file.status || "changed"}${typeof file.additions === "number" ? `, +${file.additions}` : ""}${typeof file.deletions === "number" ? ` / -${file.deletions}` : ""}`
+            ),
+            ...affectedNodes.slice(0, 12).map((node) => `Mapped node: ${node.label}${node.filePath ? ` (${node.filePath})` : ""}`),
+          ],
+          inferred: potentialImpact.map((item) => `The recorded graph relationship may make this path relevant to the change: ${item}`),
+          unknown: ["The available repository evidence does not establish runtime regression impact or original business rationale."],
+          potentialImpact,
+          nextInvestigations: [
+            "Inspect the changed files and their direct dependents.",
+            "Review the commit history and related pull request when available.",
+          ],
+          confidence: "low",
+        },
+      });
+    }
+  } catch (error: any) {
+    console.warn("Change analysis failed:", error?.message);
+    return res.status(500).json({ error: error?.message || "Change analysis failed." });
+  }
+});
+
 // Endpoint: Analyze Insights (Continuous detection of anomalies, risks, cost & performance)
 aiRouter.post("/analyze-insights", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
   const { projectId } = req.body;
