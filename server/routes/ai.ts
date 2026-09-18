@@ -20,6 +20,56 @@ aiRouter.post("/why", requireFirebaseUser, async (req: AuthenticatedRequest, res
     return res.status(400).json({ error: "nodeName is required" });
   }
 
+  const node = context.graphNodes.find((item: any) =>
+    item?.id === nodeName || item?.label?.toLowerCase() === String(nodeName).toLowerCase()
+  );
+
+  let fileHistory: any[] = [];
+  let focusedFileContent = "";
+  if (node?.filePath) {
+    const parsedRepo = parseGitHubRepo(String(projectContext?.repository || ""));
+    const token = getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined;
+    const headers: Record<string, string> = {
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "AFTER-Software-Evolution-Platform",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+
+    if (parsedRepo) {
+      try {
+        const ref = String(projectContext?.branch || projectContext?.defaultBranch || "");
+        const encodedPath = String(node.filePath).split("/").map(encodeURIComponent).join("/");
+        const [fileRes, historyRes] = await Promise.all([
+          fetch(
+            `https://api.github.com/repos/${parsedRepo.owner}/${parsedRepo.repo}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}` ,
+            { headers }
+          ),
+          fetch(
+            `https://api.github.com/repos/${parsedRepo.owner}/${parsedRepo.repo}/commits?path=${encodeURIComponent(node.filePath)}&sha=${encodeURIComponent(ref)}&per_page=12`,
+            { headers }
+          ),
+        ]);
+
+        if (fileRes.ok) {
+          const file = await fileRes.json();
+          if (typeof file?.content === "string") {
+            focusedFileContent = Buffer.from(file.content.replace(/\n/g, ""), "base64")
+              .toString("utf8")
+              .slice(0, 20000);
+          }
+        }
+
+        if (historyRes.ok) {
+          const history = await historyRes.json();
+          if (Array.isArray(history)) fileHistory = history;
+        }
+      } catch (error: any) {
+        console.warn("Could not resolve Why Engine file evidence:", error?.message);
+      }
+    }
+  }
+
   const systemPrompt = `You are AFTER's architectural forensics engine.
 AFTER monitors software evolution and explains the rationale behind systems.
 Your core principle: "OBSERVE → ENTENDER → EXPLICAR → DETECTAR → SUGERIR → EXPERIMENTAR → MONITORAR".
@@ -68,10 +118,20 @@ ${JSON.stringify(projectContext || {}, null, 2)}
 Recent Events & Timeline:
 ${JSON.stringify(recentEvents || [], null, 2)}
 
+Software Memory:
+${JSON.stringify((context as any).memoryEntries || [], null, 2)}
+
+Entity Evidence:
+${JSON.stringify({
+  node: node || null,
+  fileHistory,
+  focusedFileContent: focusedFileContent || null,
+}, null, 2)}
+
 Dependencies:
 ${JSON.stringify(dependencies || [], null, 2)}
 
-Explain WHY "${nodeName}" exists and analyze its architectural impact.`;
+Explain WHY "${nodeName}" exists and analyze its architectural impact using the entity evidence first.`;
 
   try {
     const rawText = await generateContentWithFallback({
@@ -86,9 +146,6 @@ Explain WHY "${nodeName}" exists and analyze its architectural impact.`;
   } catch (error: any) {
     console.warn("Gemini unavailable for /api/gemini/why:", error?.message);
 
-    const node = context.graphNodes.find((item: any) =>
-      item?.id === nodeName || item?.label?.toLowerCase() === String(nodeName).toLowerCase()
-    );
     const nodeId = node?.id;
     const outgoing = nodeId
       ? context.graphEdges.filter((edge: any) => edge.from === nodeId)
