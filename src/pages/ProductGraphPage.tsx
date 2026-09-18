@@ -12,6 +12,9 @@ import {
   Info,
   FileCode,
   FolderGit2,
+  ZoomIn,
+  ZoomOut,
+  Focus,
 } from "lucide-react";
 import { useProject } from "../context/ProjectContext";
 import { useLanguage } from "../context/LanguageContext";
@@ -33,6 +36,8 @@ export function ProductGraphPage() {
   const [filterLayer, setFilterLayer] = useState<string>("all");
   const [impactLoading, setImpactLoading] = useState(false);
   const [impactResult, setImpactResult] = useState<any>(null);
+  const [graphZoom, setGraphZoom] = useState(0.85);
+  const [focusGraph, setFocusGraph] = useState(false);
 
   useEffect(() => {
     if (graphNodes.length > 0 && (!selectedNode || !graphNodes.find((n) => n.id === selectedNode.id))) {
@@ -172,8 +177,176 @@ export function ProductGraphPage() {
           </p>
         </div>
       ) : (
-        /* Main interactive area: Canvas + Inspector */
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        /* Main interactive area: Graph canvas + inspector */
+        <div className="space-y-6">
+          {(() => {
+            const neighborhood = selectedNode
+              ? new Set([
+                  selectedNode.id,
+                  ...graphEdges.filter((edge) => edge.from === selectedNode.id).map((edge) => edge.to),
+                  ...graphEdges.filter((edge) => edge.to === selectedNode.id).map((edge) => edge.from),
+                ])
+              : new Set<string>();
+
+            const visibleNodes = focusGraph && selectedNode
+              ? filteredNodes.filter((node) => neighborhood.has(node.id))
+              : filteredNodes;
+
+            const columns = Math.max(4, Math.min(10, Math.ceil(Math.sqrt(Math.max(visibleNodes.length, 1)))));
+            const cellWidth = 175;
+            const cellHeight = 105;
+            const canvasWidth = Math.max(980, columns * cellWidth + 60);
+            const rows = Math.ceil(visibleNodes.length / columns);
+            const canvasHeight = Math.max(430, rows * cellHeight + 80);
+            const positions = new Map(
+              visibleNodes.map((node, index) => [
+                node.id,
+                {
+                  x: 40 + (index % columns) * cellWidth,
+                  y: 45 + Math.floor(index / columns) * cellHeight,
+                },
+              ])
+            );
+
+            return (
+              <section className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900/40 overflow-hidden">
+                <div className="px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wider font-semibold text-zinc-400 font-mono">
+                      LIVE SOFTWARE GRAPH
+                    </div>
+                    <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                      {focusGraph && selectedNode
+                        ? `Focused on ${selectedNode.label} and its recorded neighborhood`
+                        : `${visibleNodes.length} mapped nodes · ${graphEdges.length} recorded relationships`}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setFocusGraph((value) => !value)}
+                      disabled={!selectedNode}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[10px] font-medium cursor-pointer disabled:opacity-40 ${focusGraph ? "bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-100" : "border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300"}`}
+                    >
+                      <Focus className="w-3 h-3" />
+                      {focusGraph ? "Full graph" : "Focus"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGraphZoom((value) => Math.max(0.55, Number((value - 0.1).toFixed(2))))}
+                      className="p-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+                      title="Zoom out"
+                    >
+                      <ZoomOut className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="w-12 text-center text-[10px] font-mono text-zinc-400">
+                      {Math.round(graphZoom * 100)}%
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setGraphZoom((value) => Math.min(1.5, Number((value + 0.1).toFixed(2))))}
+                      className="p-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+                      title="Zoom in"
+                    >
+                      <ZoomIn className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="overflow-auto max-h-[650px] bg-zinc-50/40 dark:bg-zinc-950/30 p-4">
+                  <div
+                    className="origin-top-left"
+                    style={{
+                      width: canvasWidth,
+                      minHeight: canvasHeight,
+                      transform: `scale(${graphZoom})`,
+                    }}
+                  >
+                    <svg
+                      width={canvasWidth}
+                      height={canvasHeight}
+                      viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
+                      className="overflow-visible"
+                    >
+                      {graphEdges.map((edge, index) => {
+                        const from = positions.get(edge.from);
+                        const to = positions.get(edge.to);
+                        if (!from || !to) return null;
+                        const highlighted = selectedNode
+                          ? edge.from === selectedNode.id || edge.to === selectedNode.id
+                          : false;
+                        return (
+                          <line
+                            key={`edge_${index}`}
+                            x1={from.x}
+                            y1={from.y}
+                            x2={to.x}
+                            y2={to.y}
+                            stroke="currentColor"
+                            strokeOpacity={highlighted ? 0.65 : 0.14}
+                            strokeWidth={highlighted ? 2 : 1}
+                          />
+                        );
+                      })}
+
+                      {visibleNodes.map((node) => {
+                        const pos = positions.get(node.id)!;
+                        const selected = selectedNode?.id === node.id;
+                        const connected = selectedNode
+                          ? node.id === selectedNode.id ||
+                            graphEdges.some(
+                              (edge) =>
+                                (edge.from === selectedNode.id && edge.to === node.id) ||
+                                (edge.to === selectedNode.id && edge.from === node.id)
+                            )
+                          : true;
+                        return (
+                          <g
+                            key={node.id}
+                            transform={`translate(${pos.x} ${pos.y})`}
+                            onClick={() => setSelectedNode(node)}
+                            className="cursor-pointer"
+                            opacity={connected ? 1 : 0.28}
+                          >
+                            <circle
+                              r={selected ? 16 : 13}
+                              className="fill-white dark:fill-zinc-900 stroke-zinc-700 dark:stroke-zinc-300"
+                              strokeWidth={selected ? 3 : 1.5}
+                            />
+                            <circle
+                              r="4"
+                              className={`fill-${node.status === "warning" ? "amber" : node.status === "updated" ? "sky" : "emerald"}-500`}
+                            />
+                            <text
+                              x="0"
+                              y="31"
+                              textAnchor="middle"
+                              className="fill-zinc-700 dark:fill-zinc-200 text-[9px] font-medium"
+                            >
+                              {node.label.length > 24 ? `${node.label.slice(0, 23)}…` : node.label}
+                            </text>
+                            {node.filePath && (
+                              <text
+                                x="0"
+                                y="44"
+                                textAnchor="middle"
+                                className="fill-zinc-400 text-[7px] font-mono"
+                              >
+                                {node.filePath.length > 30 ? `${node.filePath.slice(-29)}…` : node.filePath}
+                              </text>
+                            )}
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  </div>
+                </div>
+              </section>
+            );
+          })()}
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left 2 Cols: Visual Nodes Matrix */}
           <div className="lg:col-span-2 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900/40 p-6 min-h-[480px] flex flex-col justify-between">
             <div className="flex items-center justify-between text-xs text-zinc-400 font-mono pb-4 border-b border-zinc-100 dark:border-zinc-850">
