@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type { Request, Response } from "express";
 import { getFirestore } from "firebase-admin/firestore";
 import { adminApp } from "../auth.js";
+import { enqueueIncrementalAnalysis } from "../services/incrementalAnalysis.js";
 
 type WebhookRequest = Request & { body: Buffer };
 
@@ -183,6 +184,32 @@ export async function githubWebhookHandler(req: WebhookRequest, res: Response) {
       createdAt: eventPayload.timestamp,
       observedAt: new Date().toISOString(),
     }, { merge: true });
+
+    if (eventName === "push") {
+      const branch = String(eventPayload.metadata?.ref || "").replace(/^refs\/heads\//, "");
+      const changedFiles = [
+        ...(Array.isArray(payload?.head_commit?.modified) ? payload.head_commit.modified : []),
+        ...(Array.isArray(payload?.head_commit?.added) ? payload.head_commit.added : []),
+      ].filter((file: any) => typeof file === "string");
+      const removedFiles = Array.isArray(payload?.head_commit?.removed)
+        ? payload.head_commit.removed.filter((file: any) => typeof file === "string")
+        : [];
+      if (branch && changedFiles.length + removedFiles.length > 0 && (!project.branch || project.branch === branch)) {
+        try {
+          await enqueueIncrementalAnalysis({
+            projectId,
+            ownerId,
+            branch,
+            changedFiles,
+            removedFiles,
+            commitSha: String(eventPayload.metadata?.commitSha || ""),
+            deliveryId,
+          });
+        } catch (error: any) {
+          console.warn("Could not enqueue incremental analysis:", error?.message);
+        }
+      }
+    }
 
     if (isWatched) {
       const notificationId = crypto.createHash("sha256")
