@@ -1,5 +1,12 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, GithubAuthProvider } from "firebase/auth";
+import {
+  initializeAuth,
+  indexedDBLocalPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
+  browserPopupRedirectResolver,
+  GithubAuthProvider,
+} from "firebase/auth";
 import { getFirestore, doc, getDocFromServer } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import firebaseConfig from "../../firebase-applet-config.json";
@@ -9,7 +16,14 @@ const app = initializeApp(firebaseConfig);
 
 // CRITICAL: Must include firestoreDatabaseId parameter as mandated by skill
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
+export const auth = initializeAuth(app, {
+  persistence: [
+    indexedDBLocalPersistence,
+    browserLocalPersistence,
+    browserSessionPersistence,
+  ],
+  popupRedirectResolver: browserPopupRedirectResolver,
+});
 export const githubProvider = new GithubAuthProvider();
 githubProvider.addScope("repo");
 githubProvider.addScope("user:email");
