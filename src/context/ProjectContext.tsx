@@ -521,8 +521,8 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     if (!currentProject || !user) return;
     setIsAnalyzing(true);
     setScanStage("repository");
+
     try {
-      // 1. Refresh latest repository state from GitHub.
       if (currentProject.repository && currentProject.repository.includes("/")) {
         const res = await fetch("/api/projects/analyze-repository", {
           method: "POST",
@@ -532,58 +532,80 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
             branch: currentProject.branch,
           }),
         });
+
         if (!res.ok) {
           const errorBody = await res.json().catch(() => ({}));
-          throw new Error(errorBody.error || `Repository analysis failed (${res.status}).`);
+          throw new Error(
+            errorBody.error || `Repository analysis failed (${res.status}).`
+          );
         }
-        setScanStage("architecture");
-        const data = await res.json();
-            // Update project nodes and edges if refreshed
-            if (data.graphNodes && data.graphNodes.length > 0) {
-              await setDoc(doc(db, "projects", currentProject.id, "snapshots", `snapshot_${Date.now()}`), {
-                projectId: currentProject.id, ownerId: user.uid, createdAt: new Date().toISOString(),
-                branch: currentProject.branch, graphNodes: data.graphNodes, graphEdges: data.graphEdges || [], analysis: data.analysis || null,
-              });
-              await updateCurrentProject({
-                graphNodes: data.graphNodes,
-                graphEdges: data.graphEdges || [],
-                framework: data.project.framework,
-                language: data.project.language,
-                stars: data.project.stars,
-                openIssues: data.project.openIssues,
-              });
-            }
 
-            // Sync new insights if any
-            for (const ins of data.insights || []) {
-              await addInsight(ins);
+        const data = await res.json();
+        setScanStage("architecture");
+
+        if (data.graphNodes && data.graphNodes.length > 0) {
+          const now = new Date().toISOString();
+          await setDoc(
+            doc(
+              db,
+              "projects",
+              currentProject.id,
+              "snapshots",
+              `snapshot_${Date.now()}`
+            ),
+            {
+              projectId: currentProject.id,
+              ownerId: user.uid,
+              createdAt: now,
+              branch: currentProject.branch,
+              graphNodes: data.graphNodes,
+              graphEdges: data.graphEdges || [],
+              analysis: data.analysis || null,
             }
-          }
-        } catch (repoErr) {
-          throw repoErr;
+          );
+
+          await updateCurrentProject({
+            graphNodes: data.graphNodes,
+            graphEdges: data.graphEdges || [],
+            framework: data.project.framework,
+            language: data.project.language,
+            stars: data.project.stars,
+            openIssues: data.project.openIssues,
+          });
+        }
+
+        for (const ins of data.insights || []) {
+          await addInsight(ins);
         }
       }
 
-      // 2. Run Gemini deep forensic scan
       setScanStage("insights");
-      const res = await fetch("/api/gemini/analyze-insights", {
+      const aiRes = await fetch("/api/gemini/analyze-insights", {
         method: "POST",
         headers: await authenticatedHeaders(),
         body: JSON.stringify({
           projectId: currentProject.id,
         }),
       });
-      const data = await res.json();
-      if (data.insights && Array.isArray(data.insights)) {
-        for (const ins of data.insights) {
-          await addInsight(ins);
-        }
+
+      if (!aiRes.ok) {
+        const errorBody = await aiRes.json().catch(() => ({}));
+        throw new Error(
+          errorBody.error || `Insight analysis failed (${aiRes.status}).`
+        );
       }
+
+      const aiData = await aiRes.json();
+      for (const ins of aiData.insights || []) {
+        await addInsight(ins);
+      }
+
       setScanStage("completed");
       setTimeout(() => setScanStage("idle"), 1000);
-    } catch (e) {
-      console.error("Failed to refresh analysis:", e);
+    } catch (error) {
+      console.error("Failed to refresh analysis:", error);
       setScanStage("idle");
+      throw error;
     } finally {
       setIsAnalyzing(false);
     }
