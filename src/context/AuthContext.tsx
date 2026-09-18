@@ -1,10 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import {
   User,
-  browserLocalPersistence,
   GithubAuthProvider,
   onAuthStateChanged,
-  setPersistence,
   signInWithCustomToken,
   signInWithPopup,
   signOut as firebaseSignOut,
@@ -79,7 +77,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       recoveryAttemptedRef.current = true;
 
       try {
-        await setPersistence(auth, browserLocalPersistence);
         const response = await fetch("/api/projects/github-session/recover", {
           method: "POST",
           credentials: "include",
@@ -154,18 +151,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  useEffect(() => {
-    void setPersistence(auth, browserLocalPersistence).catch((error) => {
-      console.warn("Firebase local auth persistence is unavailable:", error);
-    });
-  }, []);
-
   const signInWithGitHub = async () => {
     let githubAccessToken: string | null = null;
     let firebaseUser: User | null = null;
 
     try {
-      await setPersistence(auth, browserLocalPersistence);
       const result = await signInWithPopup(auth, githubProvider);
       firebaseUser = result.user;
       githubAccessToken =
