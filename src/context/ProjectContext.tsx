@@ -24,6 +24,7 @@ import {
   GraphNode,
   GraphEdge,
   SoftwareMemoryEntry,
+  AnalysisJob,
 } from "../types";
 
 interface ProjectContextType {
@@ -36,6 +37,7 @@ interface ProjectContextType {
   graphNodes: GraphNode[];
   graphEdges: GraphEdge[];
   memoryEntries: SoftwareMemoryEntry[];
+  analysisJobs: AnalysisJob[];
   loadingProjects: boolean;
   createProject: (data: {
     name: string;
@@ -97,6 +99,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
   const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
   const [memoryEntries, setMemoryEntries] = useState<SoftwareMemoryEntry[]>([]);
+  const [analysisJobs, setAnalysisJobs] = useState<AnalysisJob[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [selectedNodeForWhy, setSelectedNodeForWhy] = useState<GraphNode | null>(null);
   const [isAskAfterOpen, setIsAskAfterOpen] = useState(false);
@@ -114,6 +117,8 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       setExperiments([]);
       setGraphNodes([]);
       setGraphEdges([]);
+      setMemoryEntries([]);
+      setAnalysisJobs([]);
       setAiContext(null);
       setLoadingProjects(false);
       return;
@@ -268,6 +273,32 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       unsubInsights();
       unsubExp();
       unsubMemory();
+    };
+  }, [user, currentProject?.id, currentProject?.ownerId]);
+
+  // 2.5. Poll persistent analysis jobs so UI reflects real backend state.
+  useEffect(() => {
+    if (!user || !currentProject || currentProject.ownerId !== user.uid) {
+      setAnalysisJobs([]);
+      return;
+    }
+    let cancelled = false;
+    const loadJobs = async () => {
+      try {
+        const response = await fetch(`/api/projects/analysis-jobs/latest?projectId=${encodeURIComponent(currentProject.id)}`, {
+          headers: await authenticatedHeaders(),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!cancelled && response.ok && Array.isArray(body.jobs)) setAnalysisJobs(body.jobs as AnalysisJob[]);
+      } catch {
+        if (!cancelled) setAnalysisJobs([]);
+      }
+    };
+    void loadJobs();
+    const timer = window.setInterval(() => void loadJobs(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
     };
   }, [user, currentProject?.id, currentProject?.ownerId]);
 
@@ -745,6 +776,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         graphNodes,
         graphEdges,
         memoryEntries,
+        analysisJobs,
         loadingProjects,
         createProject,
         connectRepository,
