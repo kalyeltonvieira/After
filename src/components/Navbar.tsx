@@ -47,25 +47,6 @@ export function Navbar({
 
   const unreadNotifications = notifications.filter((n) => !n.read).length;
 
-  const loadNotifications = async () => {
-    if (!currentProject?.id || !user) {
-      setNotifications([]);
-      return;
-    }
-
-    try {
-      const res = await fetch(
-        `/api/repository/notifications?projectId=${encodeURIComponent(currentProject.id)}`,
-        { headers: await authenticatedHeaders() }
-      );
-      if (!res.ok) return;
-      const data = await res.json();
-      setNotifications(Array.isArray(data.notifications) ? data.notifications : []);
-    } catch {
-      setNotifications([]);
-    }
-  };
-
   useEffect(() => {
     let cancelled = false;
     if (!currentProject?.id || !user) {
