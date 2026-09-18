@@ -1,7 +1,6 @@
 import { Router } from "express";
 import type { Response } from "express";
-import { getAuth as getAdminAuth } from "firebase-admin/auth";
-import { requireFirebaseUser, type AuthenticatedRequest, adminApp } from "../auth.js";
+import { requireFirebaseUser, type AuthenticatedRequest } from "../auth.js";
 import {
   createGitHubSession,
   getGitHubToken,
@@ -83,24 +82,7 @@ projectsRouter.post("/github-session", requireFirebaseUser, async (req: Authenti
     const sessionId = createGitHubSession(req.user!.uid, githubAccessToken);
     await persistGitHubToken(req.user!.uid, githubAccessToken);
 
-    const firebaseIdToken = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
-    if (!firebaseIdToken) {
-      return res.status(401).json({ error: "Firebase authentication token is required." });
-    }
-
-    const firebaseSessionCookie = await getAdminAuth(adminApp).createSessionCookie(
-      firebaseIdToken,
-      { expiresIn: 7 * 24 * 60 * 60 * 1000 }
-    );
-
     res.cookie("after_github_session", sessionId, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: "/",
-    });
-    res.cookie("after_firebase_session", firebaseSessionCookie, {
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
@@ -114,58 +96,10 @@ projectsRouter.post("/github-session", requireFirebaseUser, async (req: Authenti
   }
 });
 
-// Recover the Firebase/GitHub session after a preview remount or browser reload.
-projectsRouter.post("/github-session/recover", async (req, res) => {
-  const firebaseSessionCookie = req.cookies?.after_firebase_session;
-  if (!firebaseSessionCookie) {
-    return res.status(401).json({ error: "No recoverable AFTER session." });
-  }
-
-  try {
-    const decoded = await getAdminAuth(adminApp).verifySessionCookie(firebaseSessionCookie, true);
-    const uid = decoded.uid;
-
-    const githubToken =
-      getGitHubToken(req.cookies?.after_github_session, uid) ||
-      (await getPersistentGitHubToken(uid));
-
-    let githubUser = null;
-    if (githubToken) {
-      try {
-        githubUser = await getAuthenticatedUser(githubToken);
-        const githubSessionId = createGitHubSession(uid, githubToken);
-        res.cookie("after_github_session", githubSessionId, {
-          httpOnly: true,
-          sameSite: "lax",
-          secure: process.env.NODE_ENV === "production",
-          maxAge: 7 * 24 * 60 * 60 * 1000,
-          path: "/",
-        });
-      } catch (githubError) {
-        console.warn("Stored GitHub token could not be recovered:", githubError);
-      }
-    }
-
-    // Firebase identity is independent from the GitHub API credential.
-    // Recover the AFTER account even when the GitHub token is unavailable;
-    // repository operations can report the missing GitHub connection explicitly.
-    return res.json({
-      customToken: await getAdminAuth(adminApp).createCustomToken(uid),
-      user: githubUser,
-      githubConnected: Boolean(githubUser),
-    });
-  } catch (err: any) {
-    res.clearCookie("after_firebase_session", { path: "/" });
-    res.clearCookie("after_github_session", { path: "/" });
-    return res.status(401).json({ error: err?.message || "AFTER session recovery failed." });
-  }
-});
-
 // End both browser sessions without disconnecting the persisted GitHub integration.
 projectsRouter.post("/github-session/revoke", async (req, res) => {
   revokeGitHubSession(req.cookies?.after_github_session);
   res.clearCookie("after_github_session", { path: "/" });
-  res.clearCookie("after_firebase_session", { path: "/" });
   return res.json({ ok: true });
 });
 
@@ -183,7 +117,7 @@ projectsRouter.get("/github-user", requireFirebaseUser, async (req: Authenticate
 
 // List every accessible repository by following GitHub pagination server-side.
 projectsRouter.get("/github-repos", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
-  const token = getGitHubToken(req.cookies?.after_github_session, req.user!.uid);
+  const token = await resolveGitHubToken(req, res);
   if (!token) return res.status(401).json({ error: "Connect GitHub first." });
   try {
     const repos = await listUserRepositories(token, { page: 1, per_page: 100 });
