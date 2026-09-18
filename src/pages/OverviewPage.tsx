@@ -31,6 +31,7 @@ export function OverviewPage({ onNavigate, onOpenCreateProject }: OverviewPagePr
     graphNodes,
     refreshAnalysis,
     isAnalyzing,
+    analysisJobs,
   } = useProject();
   const { t, language } = useLanguage();
 
@@ -83,6 +84,32 @@ export function OverviewPage({ onNavigate, onOpenCreateProject }: OverviewPagePr
           </button>
         </div>
       </div>
+
+      {analysisJobs.length > 0 && (() => {
+        const job = analysisJobs[0];
+        const active = ["queued", "fetching", "analyzing", "building_graph", "generating_insights"].includes(job.status);
+        const label = {
+          queued: "Queued",
+          fetching: "Fetching repository data",
+          analyzing: "Analyzing changed files",
+          building_graph: "Updating Product Graph",
+          generating_insights: "Generating grounded insights",
+          completed: "Analysis completed",
+          failed: "Analysis failed",
+        }[job.status] || job.status;
+        return (
+          <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900/40 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className={`w-2 h-2 rounded-full ${active ? "bg-amber-500 animate-pulse" : job.status === "failed" ? "bg-rose-500" : "bg-emerald-500"}`} />
+              <div>
+                <div className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">Repository analysis</div>
+                <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">{label}{job.changedFiles?.length ? ` · ${job.changedFiles.length} changed file(s)` : ""}</div>
+              </div>
+            </div>
+            <div className="text-[10px] font-mono text-zinc-400">{job.commitSha ? job.commitSha.slice(0, 8) : "incremental"}</div>
+          </div>
+        );
+      })()}
 
       {/* High-level status cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
