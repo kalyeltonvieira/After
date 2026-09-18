@@ -8,7 +8,7 @@ import {
   persistGitHubToken,
 } from "../githubSession.js";
 import { adminApp } from "../auth.js";
-import { getAuthenticatedUser } from "../services/githubService.js";
+import { exchangeOAuthCode, getAuthenticatedUser } from "../services/githubService.js";
 
 const OAUTH_STATE_COOKIE = "after_github_oauth_state";
 const GITHUB_SESSION_COOKIE = "after_github_session";
@@ -80,6 +80,25 @@ async function ensureFirebaseIdentity(
     } catch {
       // No existing Firebase account for this email. Use the stable GitHub ID below.
     }
+  }
+
+  try {
+    await firebaseAuth.getUser(uid);
+  } catch {
+    await firebaseAuth.createUser({
+      uid,
+      email: email || undefined,
+      displayName: githubUser.name?.trim() || githubUser.login,
+      photoURL: githubUser.avatar_url || undefined,
+    });
+  }
+
+  if (email) {
+    await firebaseAuth.updateUser(uid, {
+      email,
+      displayName: githubUser.name?.trim() || githubUser.login,
+      photoURL: githubUser.avatar_url || undefined,
+    });
   }
 
   const db = getFirestore(adminApp);
@@ -171,7 +190,6 @@ export async function githubLoginCallback(req: Request, res: Response) {
   }
 
   try {
-    const { exchangeOAuthCode } = await import("../services/githubService.js");
     const result = await exchangeOAuthCode(String(code));
     const githubUser = await getAuthenticatedUser(result.token);
     const email = await getGitHubPrimaryEmail(result.token, githubUser.email);
