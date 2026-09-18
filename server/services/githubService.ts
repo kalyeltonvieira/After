@@ -341,23 +341,26 @@ export async function getRepositoryCommits(
 export async function getRepositoryTree(
   owner: string,
   repo: string,
-  shaOrBranch: string = "main",
+  shaOrBranch: string | undefined,
   token?: string
 ): Promise<{ sha: string; tree: GitHubTreeItem[] }> {
-  const res = await fetch(
+  return getRepository(owner, repo, token).then(async (repository) => {
+    const ref = shaOrBranch || repository.default_branch;
+    const res = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(
-      shaOrBranch
+      ref
     )}?recursive=1`,
     {
       headers: getGitHubHeaders(token),
     }
   );
 
-  if (!res.ok) {
-    return { sha: shaOrBranch, tree: [] };
-  }
+    if (!res.ok) {
+      return { sha: ref, tree: [] };
+    }
 
-  return (await res.json()) as { sha: string; tree: GitHubTreeItem[] };
+    return (await res.json()) as { sha: string; tree: GitHubTreeItem[] };
+  });
 }
 
 /**
