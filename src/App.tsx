@@ -10,6 +10,7 @@ import { AuthModal } from "./pages/AuthModal";
 import { OnboardingModal } from "./pages/OnboardingModal";
 import { OverviewPage } from "./pages/OverviewPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
+import { RepositoryPage } from "./pages/RepositoryPage";
 import { ProductGraphPage } from "./pages/ProductGraphPage";
 import { InsightsPage } from "./pages/InsightsPage";
 import { ExperimentsPage } from "./pages/ExperimentsPage";
@@ -100,6 +101,8 @@ function MainApp() {
                   onOpenCreateProject={() => setIsCreateProjectOpen(true)}
                 />
               )}
+
+              {currentView === "repository" && <RepositoryPage />}
 
               {currentView === "projects" && (
                 <ProjectsPage
