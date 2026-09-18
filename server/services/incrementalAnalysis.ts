@@ -333,10 +333,16 @@ async function runIncrementalAnalysis(input: IncrementalInput & { jobId: string 
 
 export async function recoverQueuedIncrementalAnalyses() {
   const db = getAdminFirestore();
-  const snapshot = await db.collectionGroup("analysisJobs")
-    .where("status", "==", "queued")
-    .limit(100)
-    .get();
+  let snapshot;
+  try {
+    snapshot = await db.collectionGroup("analysisJobs")
+      .where("status", "==", "queued")
+      .limit(100)
+      .get();
+  } catch (error: any) {
+    console.warn("Skipping queued analysis recovery because Firestore is unavailable:", error?.message || error);
+    return 0;
+  }
 
   for (const job of snapshot.docs) {
     const data = job.data();
