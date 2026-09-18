@@ -12,7 +12,7 @@ function formatDate(value: string) {
 }
 
 export function RepositoryPage() {
-  const { currentProject } = useProject();
+  const { currentProject, setAiContext, setIsAskAfterOpen } = useProject();
   const [tab, setTab] = useState<Tab>("code");
   const [data, setData] = useState<any>({});
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -67,6 +67,12 @@ export function RepositoryPage() {
     try {
       const body = await request(`/api/repository/file?projectId=${encodeURIComponent(projectId!)}&path=${encodeURIComponent(path)}`);
       setData((prev: any) => ({ ...prev, file: body }));
+      setAiContext({
+        type: "file",
+        label: path,
+        path,
+        content: typeof body.content === "string" ? body.content.slice(0, 24000) : undefined,
+      });
     } catch (error) {
       setData((prev: any) => ({ ...prev, file: null, error: error instanceof Error ? error.message : String(error) }));
     }
@@ -178,7 +184,18 @@ export function RepositoryPage() {
             </div>
           </div>
           <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-            <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 font-mono text-xs">{data.file?.path || "Select a file"}</div>
+            <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-3">
+              <div className="font-mono text-xs truncate">{data.file?.path || "Select a file"}</div>
+              {data.file?.path && (
+                <button
+                  type="button"
+                  onClick={() => setIsAskAfterOpen(true)}
+                  className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 text-[11px] font-medium hover:opacity-90 transition-opacity cursor-pointer"
+                >
+                  Ask AFTER
+                </button>
+              )}
+            </div>
             <pre className="max-h-[65vh] overflow-auto p-4 text-[11px] leading-relaxed"><code>{data.file?.content || "No file selected."}</code></pre>
           </div>
         </div>
