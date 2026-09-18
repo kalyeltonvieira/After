@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
-import { getFirestore } from "firebase-admin/firestore";
-import { adminApp } from "./auth.js";
+import { getAdminFirestore } from "./auth.js";
 
 interface GitHubSession {
   uid: string;
@@ -82,7 +81,7 @@ function decryptToken(data: any): string | null {
 
 export async function persistGitHubToken(uid: string, token: string) {
   if (!process.env.GITHUB_TOKEN_ENCRYPTION_KEY) return false;
-  const db = getFirestore(adminApp);
+  const db = getAdminFirestore();
   await db.collection("githubConnections").doc(uid).set({
     uid,
     provider: "github",
