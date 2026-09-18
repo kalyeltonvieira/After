@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   GitBranch, FileCode2, GitCommit, GitPullRequest, CircleDot, Package, Users,
   Search, Plus, Eye, ExternalLink, RefreshCw, Sparkles, X, Tag, Activity,
-  Copy, Check, GitCompare, MessageSquare, Save, ChevronRight, Clock3,
+  Copy, Check, GitCompare, MessageSquare, Save, ChevronRight, Clock3, Folder,
 } from "lucide-react";
 import { useProject } from "../context/ProjectContext";
 import { authenticatedHeaders } from "../lib/api";
@@ -72,6 +72,11 @@ export function RepositoryPage() {
   const [pullComment, setPullComment] = useState("");
   const [pullSaving, setPullSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
+  const [showBlame, setShowBlame] = useState(false);
+  const [blameLoading, setBlameLoading] = useState(false);
+  const [blame, setBlame] = useState<any[]>([]);
+  const [commitDetail, setCommitDetail] = useState<any>(null);
 
   const projectId = currentProject?.id;
   const tabs = useMemo(() => [
@@ -149,6 +154,8 @@ export function RepositoryPage() {
         request(`/api/repository/file-history?projectId=${encodeURIComponent(projectId!)}&path=${encodeURIComponent(path)}&ref=${encodeURIComponent(currentProject.branch)}&per_page=12`),
       ]);
       setData((prev: any) => ({ ...prev, file, fileHistory: history.commits || [] }));
+      setBlame([]);
+      setShowBlame(false);
       setAiContext({
         type: "file",
         label: path,
@@ -389,9 +396,99 @@ export function RepositoryPage() {
     }
   };
 
-  const tree = (data.tree || [])
-    .filter((item: any) => item.type === "blob" && String(item.path).toLowerCase().includes(search.toLowerCase()))
-    .slice(0, 400);
+  const toggleBlame = async () => {
+    if (!data.file?.path) return;
+    if (showBlame) {
+      setShowBlame(false);
+      return;
+    }
+
+    setBlameLoading(true);
+    try {
+      const body = await request(
+        `/api/repository/file-blame?projectId=${encodeURIComponent(projectId!)}&path=${encodeURIComponent(data.file.path)}&ref=${encodeURIComponent(currentProject.branch)}`
+      );
+      setBlame(Array.isArray(body.ranges) ? body.ranges : []);
+      setShowBlame(true);
+    } catch (error) {
+      setBlame([]);
+      window.alert(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBlameLoading(false);
+    }
+  };
+
+  const openCommit = async (sha: string) => {
+    try {
+      setCommitDetail(await request(
+        `/api/repository/commits/${encodeURIComponent(sha)}?projectId=${encodeURIComponent(projectId!)}`
+      ));
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const treeFiles = (data.tree || [])
+    .filter((item: any) => item.type === "blob")
+    .filter((item: any) => {
+      const query = search.trim().toLowerCase();
+      return !query || String(item.path).toLowerCase().includes(query);
+    })
+    .slice(0, 600);
+
+  const treeRows = useMemo(() => {
+    const sourceItems = Array.isArray(data.tree) ? data.tree.filter((item: any) => item.type === "blob") : [];
+    const query = search.trim().toLowerCase();
+    const matchedFiles = sourceItems.filter((item: any) =>
+      !query || String(item.path).toLowerCase().includes(query)
+    );
+    const matchedPaths = new Set<string>();
+
+    for (const item of matchedFiles) {
+      const parts = String(item.path).split("/");
+      for (let i = 1; i < parts.length; i += 1) {
+        matchedPaths.add(parts.slice(0, i).join("/"));
+      }
+    }
+
+    const rows = new Map<string, { path: string; kind: "directory" | "file"; name: string; depth: number }>();
+
+    for (const item of matchedFiles) {
+      const parts = String(item.path).split("/");
+      for (let i = 1; i < parts.length; i += 1) {
+        const dirPath = parts.slice(0, i).join("/");
+        rows.set(dirPath, {
+          path: dirPath,
+          kind: "directory",
+          name: parts[i - 1],
+          depth: i - 1,
+        });
+      }
+      rows.set(String(item.path), {
+        path: String(item.path),
+        kind: "file",
+        name: parts[parts.length - 1],
+        depth: Math.max(0, parts.length - 1),
+      });
+    }
+
+    const isHidden = (path: string) => {
+      const parts = path.split("/");
+      for (let i = 1; i < parts.length; i += 1) {
+        if (collapsedDirs.has(parts.slice(0, i).join("/"))) return true;
+      }
+      return false;
+    };
+
+    return [...rows.values()]
+      .filter((row) => matchedPaths.has(row.path) || row.kind === "file")
+      .filter((row) => !isHidden(row.path))
+      .sort((a, b) => a.path.localeCompare(b.path));
+  }, [data.tree, search, collapsedDirs]);
+
+  const blameForLine = (lineNumber: number) =>
+    blame.find((range) => lineNumber >= Number(range.startingLine) && lineNumber <= Number(range.endingLine)) || null;
+
   const filteredBranches = branches.filter((b) => String(b.name).toLowerCase().includes(branchSearch.toLowerCase()));
   const commits = data.commits || [];
   const pulls = data.pulls || [];
@@ -477,15 +574,41 @@ export function RepositoryPage() {
             <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2">
               <Search className="w-3.5 h-3.5 text-zinc-400" />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search files…" className="bg-transparent outline-none text-xs flex-1" />
-              <span className="text-[10px] text-zinc-400">{tree.length}</span>
+              <span className="text-[10px] text-zinc-400">{treeFiles.length}</span>
             </div>
             <div className="max-h-[70vh] overflow-auto p-2">
-              {tree.map((item: any) => (
-                <button key={item.path} onClick={() => void openFile(item.path)} className={`w-full text-left px-3 py-2 rounded-lg font-mono text-[11px] hover:bg-zinc-100 dark:hover:bg-zinc-800 ${selectedFile === item.path ? "bg-zinc-100 dark:bg-zinc-800" : ""}`}>
-                  {item.path}
-                </button>
+              {treeRows.map((item) => (
+                item.kind === "directory" ? (
+                  <button
+                    key={item.path}
+                    type="button"
+                    onClick={() => setCollapsedDirs((current) => {
+                      const next = new Set(current);
+                      if (next.has(item.path)) next.delete(item.path);
+                      else next.add(item.path);
+                      return next;
+                    })}
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg font-mono text-[10px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-1.5"
+                    style={{ paddingLeft: `${8 + item.depth * 14}px` }}
+                  >
+                    <Folder className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{item.name}</span>
+                  </button>
+                ) : (
+                  <button
+                    key={item.path}
+                    type="button"
+                    onClick={() => void openFile(item.path)}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg font-mono text-[11px] hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-1.5 ${selectedFile === item.path ? "bg-zinc-100 dark:bg-zinc-800" : ""}`}
+                    style={{ paddingLeft: `${8 + item.depth * 14}px` }}
+                    title={item.path}
+                  >
+                    <FileCode2 className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
+                    <span className="truncate">{item.name}</span>
+                  </button>
+                )
               ))}
-              {tree.length === 0 && <p className="p-6 text-center text-xs text-zinc-400">No source file matched.</p>}
+              {treeRows.length === 0 && <p className="p-6 text-center text-xs text-zinc-400">No source file matched.</p>}
             </div>
           </div>
 
@@ -508,6 +631,9 @@ export function RepositoryPage() {
                     <button type="button" onClick={() => void copyFile()} className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-[11px]">
                       {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} {copied ? "Copied" : "Copy"}
                     </button>
+                    <button type="button" onClick={() => void toggleBlame()} disabled={blameLoading} className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] ${showBlame ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900" : "border-zinc-200 dark:border-zinc-700"}`}>
+                      {blameLoading ? "Blame…" : "Blame"}
+                    </button>
                     <button type="button" onClick={() => void analyzeChange({ path: data.file.path, question: "Analyze this file's current repository state, recent history, related graph relationships, and potential impact of changing it." })} className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-[11px]">
                       <Sparkles className="w-3 h-3" /> Analyze
                     </button>
@@ -520,12 +646,27 @@ export function RepositoryPage() {
               <div className="max-h-[62vh] overflow-auto bg-zinc-950">
                 {data.file?.content ? (
                   <div className="min-w-max font-mono text-[11px] leading-relaxed text-zinc-100">
-                    {data.file.content.split("\n").map((line: string, index: number) => (
-                      <div key={index} id={`code-line-${index + 1}`} className="flex scroll-mt-24">
-                        <span className="select-none w-12 shrink-0 text-right pr-3 text-zinc-600">{index + 1}</span>
-                        <code className="whitespace-pre px-3">{highlightLine(line, languageFromPath(data.file.path))}</code>
-                      </div>
-                    ))}
+                    {data.file.content.split("\n").map((line: string, index: number) => {
+                      const lineNumber = index + 1;
+                      const lineBlame = showBlame ? blameForLine(lineNumber) : null;
+                      return (
+                        <div key={index} id={`code-line-${lineNumber}`} className="flex scroll-mt-24">
+                          {showBlame && (
+                            <button
+                              type="button"
+                              onClick={() => lineBlame?.commit?.oid && void openCommit(lineBlame.commit.oid)}
+                              className="select-none w-56 shrink-0 px-3 py-1 text-left border-r border-zinc-800 text-[9px] leading-4 text-zinc-500 hover:text-zinc-200 truncate"
+                              title={lineBlame?.commit?.messageHeadline || "No blame data"}
+                            >
+                              <span className="text-zinc-300">{lineBlame?.commit?.author?.login || lineBlame?.commit?.author?.name || "Unknown"}</span>
+                              {lineBlame?.commit?.abbreviatedOid && <span className="ml-2 text-zinc-600">{lineBlame.commit.abbreviatedOid}</span>}
+                            </button>
+                          )}
+                          <span className="select-none w-12 shrink-0 text-right pr-3 text-zinc-600">{lineNumber}</span>
+                          <code className="whitespace-pre px-3">{highlightLine(line, languageFromPath(data.file.path))}</code>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : <div className="p-8 text-xs text-zinc-500">No file selected.</div>}
               </div>
@@ -615,8 +756,11 @@ export function RepositoryPage() {
           {commits.map((c: any) => (
             <div key={c.sha} className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800">
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0"><button type="button" onClick={() => void analyzeChange({ sha: c.sha, question: "Analyze what changed in this commit, what it affects, and what I should investigate next." })} className="text-left font-medium text-sm hover:underline">{c.commit?.message?.split("\n")[0]}</button><div className="mt-2 text-[11px] text-zinc-400">{c.commit?.author?.name || c.author?.login} · {formatDate(c.commit?.author?.date || c.commit?.committer?.date)}</div></div>
-                <div className="text-right shrink-0"><div className="font-mono text-[10px] text-zinc-400">{c.sha?.slice(0, 8)}</div><a className="mt-1 inline-block text-[10px] text-zinc-400 hover:text-zinc-900 dark:hover:text-white" href={c.html_url} target="_blank" rel="noreferrer">GitHub</a></div>
+                <div className="min-w-0"><button type="button" onClick={() => void openCommit(c.sha)} className="text-left font-medium text-sm hover:underline">{c.commit?.message?.split("\n")[0]}</button><div className="mt-2 text-[11px] text-zinc-400">{c.commit?.author?.name || c.author?.login} · {formatDate(c.commit?.author?.date || c.commit?.committer?.date)}</div></div>
+                <div className="text-right shrink-0"><div className="font-mono text-[10px] text-zinc-400">{c.sha?.slice(0, 8)}</div><div className="mt-1 flex items-center gap-2">
+                  <button type="button" onClick={() => void analyzeChange({ sha: c.sha, question: "Analyze what changed in this commit, what it affects, and what I should investigate next." })} className="text-[10px] text-zinc-400 hover:text-zinc-900 dark:hover:text-white">Analyze</button>
+                  <a className="text-[10px] text-zinc-400 hover:text-zinc-900 dark:hover:text-white" href={c.html_url} target="_blank" rel="noreferrer">GitHub</a>
+                </div></div>
               </div>
             </div>
           ))}
@@ -670,6 +814,53 @@ export function RepositoryPage() {
             </div>
           ))}
           {activity.length === 0 && <EmptyState title="No recent activity" description="No repository activity was returned by GitHub." />}
+        </div>
+      )}
+
+      {commitDetail && (
+        <div className="fixed inset-y-4 right-4 z-50 w-[min(760px,calc(100vw-2rem))] rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-2xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-mono">Commit</div>
+              <div className="text-sm font-semibold truncate">{commitDetail.commit?.commit?.message?.split("\n")[0] || commitDetail.commit?.sha}</div>
+            </div>
+            <button type="button" onClick={() => setCommitDetail(null)} className="p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900"><X className="w-4 h-4" /></button>
+          </div>
+          <div className="max-h-[calc(100vh-2rem)] overflow-auto p-4 space-y-4">
+            {commitDetail.commit && (
+              <>
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
+                  <span>{commitDetail.commit.commit?.author?.name || commitDetail.commit.author?.login || "Unknown"}</span>
+                  <span>·</span>
+                  <span>{formatDate(commitDetail.commit.commit?.author?.date || commitDetail.commit.commit?.committer?.date)}</span>
+                  <span>·</span>
+                  <span className="font-mono">{commitDetail.commit.sha?.slice(0, 12)}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-3"><div className="text-[9px] uppercase tracking-wider text-zinc-400">Files</div><div className="mt-1 text-lg font-semibold">{commitDetail.commit.stats?.total ?? commitDetail.commit.files?.length ?? 0}</div></div>
+                  <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-3"><div className="text-[9px] uppercase tracking-wider text-zinc-400">Additions</div><div className="mt-1 text-lg font-semibold">{commitDetail.commit.stats?.additions ?? 0}</div></div>
+                  <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-3"><div className="text-[9px] uppercase tracking-wider text-zinc-400">Deletions</div><div className="mt-1 text-lg font-semibold">{commitDetail.commit.stats?.deletions ?? 0}</div></div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => void analyzeChange({ sha: commitDetail.commit.sha, question: "Analyze this commit from an architectural, dependency, historical, and potential-impact perspective using only repository evidence." })} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 text-xs">
+                    <Sparkles className="w-3.5 h-3.5" /> Change Analysis
+                  </button>
+                  {commitDetail.commit.html_url && <a href={commitDetail.commit.html_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs">GitHub <ExternalLink className="w-3.5 h-3.5" /></a>}
+                </div>
+                <div className="space-y-2">
+                  {(commitDetail.commit.files || []).map((file: any) => (
+                    <div key={file.filename} className="rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+                      <div className="px-3 py-2 bg-zinc-50 dark:bg-zinc-900/60 flex items-center justify-between gap-3">
+                        <span className="font-mono text-[10px] truncate">{file.filename}</span>
+                        <span className="shrink-0 text-[10px] text-zinc-400">+{file.additions || 0} / -{file.deletions || 0}</span>
+                      </div>
+                      {file.patch && <pre className="max-h-64 overflow-auto p-3 bg-zinc-950 text-[9px] leading-4 text-zinc-200 whitespace-pre-wrap">{file.patch}</pre>}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
 
