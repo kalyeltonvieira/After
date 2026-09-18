@@ -81,7 +81,7 @@ export function AskAfterModal() {
     try {
       const res = await fetch("/api/gemini/ask", {
         method: "POST",
-        headers: await authenticatedHeaders(),
+        headers: await authenticatedHeaders({}, true),
         body: JSON.stringify({
           question: cleanQuestion,
           projectId: currentProject.id,
