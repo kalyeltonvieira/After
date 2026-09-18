@@ -57,6 +57,18 @@ interface ProjectContextType {
   setSelectedNodeForWhy: (node: GraphNode | null) => void;
   isAskAfterOpen: boolean;
   setIsAskAfterOpen: (open: boolean) => void;
+  aiContext: {
+    type: "repository" | "file" | "node";
+    label: string;
+    path?: string;
+    content?: string;
+  } | null;
+  setAiContext: (context: {
+    type: "repository" | "file" | "node";
+    label: string;
+    path?: string;
+    content?: string;
+  } | null) => void;
   refreshAnalysis: () => Promise<void>;
   isAnalyzing: boolean;
   scanStage: ScanStage;
@@ -85,6 +97,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [selectedNodeForWhy, setSelectedNodeForWhy] = useState<GraphNode | null>(null);
   const [isAskAfterOpen, setIsAskAfterOpen] = useState(false);
+  const [aiContext, setAiContext] = useState<ProjectContextType["aiContext"]>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [scanStage, setScanStage] = useState<ScanStage>("idle");
 
@@ -98,6 +111,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       setExperiments([]);
       setGraphNodes([]);
       setGraphEdges([]);
+      setAiContext(null);
       setLoadingProjects(false);
       return;
     }
@@ -236,6 +250,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     if (!currentProject) {
       setGraphNodes([]);
       setGraphEdges([]);
+      setAiContext(null);
       return;
     }
 
@@ -635,6 +650,8 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         setSelectedNodeForWhy,
         isAskAfterOpen,
         setIsAskAfterOpen,
+        aiContext,
+        setAiContext,
         refreshAnalysis,
         isAnalyzing,
         scanStage,
