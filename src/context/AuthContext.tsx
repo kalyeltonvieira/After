@@ -14,6 +14,7 @@ import {
   updateDoc,
   deleteDoc,
   onSnapshot,
+  writeBatch,
 } from "firebase/firestore";
 import {
   auth,
@@ -60,6 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const onboardingCompletedUidRef = React.useRef<string | null>(null);
 
   useEffect(() => {
     testConnection();
@@ -85,8 +87,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (snapshot.exists()) {
               const data = snapshot.data() as UserProfile;
               setProfile(data);
-              setNeedsOnboarding(!data.username);
-            } else {
+              if (data.username) {
+                onboardingCompletedUidRef.current = currentUser.uid;
+                setNeedsOnboarding(false);
+              } else if (onboardingCompletedUidRef.current !== currentUser.uid) {
+                setNeedsOnboarding(true);
+              }
+            } else if (onboardingCompletedUidRef.current !== currentUser.uid) {
               setProfile(null);
               setNeedsOnboarding(true);
             }
@@ -227,14 +234,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     try {
-      await setDoc(doc(db, "usernames", cleanUsername), {
+      const batch = writeBatch(db);
+      batch.set(doc(db, "usernames", cleanUsername), {
         uid: user.uid,
         username: cleanUsername,
         createdAt: now,
       });
+      batch.set(doc(db, "users", user.uid), newProfile);
+      await batch.commit();
 
-      await setDoc(doc(db, "users", user.uid), newProfile);
-      setProfile(newProfile);
+      const savedProfile = await getDoc(doc(db, "users", user.uid));
+      if (!savedProfile.exists() || !savedProfile.data()?.username) {
+        throw new Error("O perfil do onboarding não foi confirmado no Firebase.");
+      }
+
+      onboardingCompletedUidRef.current = user.uid;
+      setProfile(savedProfile.data() as UserProfile);
       setNeedsOnboarding(false);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`);
