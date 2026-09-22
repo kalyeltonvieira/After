@@ -366,6 +366,62 @@ export async function getRepositoryTree(
 /**
  * Fetches raw file content from a repository
  */
+export async function getGitBlobContent(owner: string, repo: string, sha: string, token?: string): Promise<{ content: string; size: number } | null> {
+  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/blobs/${encodeURIComponent(sha)}`, {
+    headers: getGitHubHeaders(token),
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (data?.encoding !== "base64" || typeof data.content !== "string") return null;
+  return {
+    content: Buffer.from(data.content.replace(/\n/g, ""), "base64").toString("utf8"),
+    size: Number(data.size || 0),
+  };
+}
+
+async function listDirectoryTree(owner: string, repo: string, path: string, ref: string, token: string | undefined, output: GitHubTreeItem[], visited: Set<string>) {
+  const key = path || "/";
+  if (visited.has(key)) return;
+  visited.add(key);
+  const urlPath = path ? `/${path.split("/").map(encodeURIComponent).join("/")}` : "";
+  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents${urlPath}?ref=${encodeURIComponent(ref)}`, { headers: getGitHubHeaders(token) });
+  if (!res.ok) return;
+  const items = await res.json();
+  if (!Array.isArray(items)) return;
+  for (const item of items) {
+    const normalized: GitHubTreeItem = {
+      path: String(item.path),
+      mode: item.type === "dir" ? "040000" : "100644",
+      type: item.type === "dir" ? "tree" : "blob",
+      sha: String(item.sha || ""),
+      size: typeof item.size === "number" ? item.size : undefined,
+      url: String(item.url || ""),
+    };
+    output.push(normalized);
+    if (normalized.type === "tree") await listDirectoryTree(owner, repo, normalized.path, ref, token, output, visited);
+  }
+}
+
+export async function getCompleteRepositoryTree(owner: string, repo: string, shaOrBranch: string | undefined, token?: string): Promise<{ sha: string; tree: GitHubTreeItem[]; truncated: boolean }> {
+  const repository = await getRepository(owner, repo, token);
+  const ref = shaOrBranch || repository.default_branch;
+  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`, { headers: getGitHubHeaders(token) });
+  if (res.ok) {
+    const data = await res.json();
+    if (Array.isArray(data?.tree) && data.truncated !== true) return { sha: String(data.sha || ref), tree: data.tree as GitHubTreeItem[], truncated: false };
+    if (Array.isArray(data?.tree) && data.tree.length) {
+      const output = [...(data.tree as GitHubTreeItem[])];
+      const seen = new Set(output.filter(item => item.type === "tree").map(item => item.path));
+      for (const directory of [...seen]) await listDirectoryTree(owner, repo, directory, ref, token, output, new Set<string>());
+      const deduped = [...new Map(output.map(item => [item.path, item])).values()];
+      return { sha: String(data.sha || ref), tree: deduped, truncated: true };
+    }
+  }
+  const output: GitHubTreeItem[] = [];
+  await listDirectoryTree(owner, repo, "", ref, token, output, new Set<string>());
+  return { sha: ref, tree: output, truncated: true };
+}
+
 export async function getFileContent(
   owner: string,
   repo: string,
