@@ -3,13 +3,11 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function ownsProject(projectId) {
-      return signedIn() && get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid;
+      return signedIn()
+        && exists(/databases/$(database)/documents/projects/$(projectId))
+        && get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid;
     }
-
-    match /test/{testId} { allow read: if true; }
-    match /users/{userId} {
-      allow read, create, update, delete: if signedIn() && request.auth.uid == userId;
-    }
+    match /users/{userId} { allow read, create, update, delete: if signedIn() && request.auth.uid == userId; }
     match /usernames/{username} {
       allow read: if true;
       allow create: if signedIn() && request.resource.data.uid == request.auth.uid && username.matches('^[a-z0-9_]{3,30}$');
@@ -19,14 +17,16 @@ service cloud.firestore {
       allow read, delete: if ownsProject(projectId);
       allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
       allow update: if ownsProject(projectId) && request.resource.data.ownerId == resource.data.ownerId;
-      match /events/{eventId} { allow read, write: if ownsProject(projectId); }
-      match /snapshots/{snapshotId} { allow read, write: if ownsProject(projectId); }
-      match /insights/{insightId} { allow read, write: if ownsProject(projectId); }
-      match /memoryEntries/{entryId} { allow read, write: if ownsProject(projectId); }
-      match /experiments/{experimentId} { allow read, write: if ownsProject(projectId); }
-      match /watchTargets/{watchId} { allow read, write: if ownsProject(projectId); }
-      match /notifications/{notificationId} { allow read, write: if ownsProject(projectId); }
-      match /analysisJobs/{jobId} { allow read, write: if ownsProject(projectId); }
+      match /events/{id} { allow read, write: if ownsProject(projectId); }
+      match /snapshots/{id} { allow read, write: if ownsProject(projectId); }
+      match /insights/{id} { allow read, write: if ownsProject(projectId); }
+      match /memoryEntries/{id} { allow read, write: if ownsProject(projectId); }
+      match /experiments/{id} { allow read, write: if ownsProject(projectId); }
+      match /watchTargets/{id} { allow read, write: if ownsProject(projectId); }
+      match /notifications/{id} { allow read, write: if ownsProject(projectId); }
+      match /analysisJobs/{id} { allow read, write: if ownsProject(projectId); }
+      match /graphNodes/{id} { allow read: if ownsProject(projectId); allow write: if false; }
+      match /graphEdges/{id} { allow read: if ownsProject(projectId); allow write: if false; }
     }
   }
 }
