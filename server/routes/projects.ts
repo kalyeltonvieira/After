@@ -10,6 +10,7 @@ import {
 } from "../githubSession.js";
 import { loadProjectContext } from "../projectContext.js";
 import { enqueueIncrementalAnalysis } from "../services/incrementalAnalysis.js";
+import { persistGraphSnapshot } from "../services/graphStore.js";
 import {
   parseGitHubRepo,
   getAuthenticatedUser,
