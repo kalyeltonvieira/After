@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type { Request, Response } from "express";
 import { getAdminFirestore } from "../auth.js";
 import { enqueueIncrementalAnalysis } from "../services/incrementalAnalysis.js";
+import { claimWebhookDelivery } from "../services/webhookDedupe.js";
 import {
   changedFilesFromPush,
   matchingWatchTargets,
@@ -159,6 +160,15 @@ export async function githubWebhookHandler(req: WebhookRequest, res: Response) {
     const projectId = projectDoc.id;
     const ownerId = project.ownerId;
     if (typeof ownerId !== "string") continue;
+
+    let claimed = false;
+    try {
+      claimed = await claimWebhookDelivery(projectId, deliveryId, eventName);
+    } catch (error: any) {
+      console.warn(`Could not claim webhook delivery for ${projectId}:`, error?.message || error);
+      continue;
+    }
+    if (!claimed) continue;
 
     const changedFiles = eventName === "push" ? changedFilesFromPush(payload) : [];
     const watchTargets = Array.isArray(project.watchTargets) ? project.watchTargets : [];
