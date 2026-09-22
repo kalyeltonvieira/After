@@ -11,6 +11,7 @@ import {
 import { loadProjectContext } from "../projectContext.js";
 import { enqueueIncrementalAnalysis } from "../services/incrementalAnalysis.js";
 import { persistGraphSnapshot } from "../services/graphStore.js";
+import { analyzeSource } from "../services/codeAnalyzer.js";
 import {
   parseGitHubRepo,
   getAuthenticatedUser,
@@ -784,61 +785,38 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
       }
     }
 
-    // Symbol extraction: build symbol-level entities from real source text.
-    // This is intentionally parser-light so it works across TS/JS/Python/Go/Rust
-    // without inventing symbols when the source cannot be parsed confidently.
-    const symbolPatterns: Array<{ regex: RegExp; type: "function" | "class" }> = [
-      { regex: /(?:export\s+default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g, type: "function" },
-      { regex: /(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/g, type: "class" },
-      { regex: /(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/g, type: "function" },
-      { regex: /\bdef\s+([A-Za-z_][\w]*)\s*\(/g, type: "function" },
-      { regex: /\bclass\s+([A-Za-z_][\w]*)\s*[:(]/g, type: "class" },
-      { regex: /\bfunc\s+(?:\([^)]*\)\s*)?([A-Za-z_][\w]*)\s*\(/g, type: "function" },
-      { regex: /\bfn\s+([A-Za-z_][\w]*)\s*\(/g, type: "function" },
-    ];
-
+    // Symbol extraction: use the shared AST/heuristic analyzer so initial and incremental analysis agree.
     for (const [filePath, source] of sourceContents) {
-      const parentNode = graphNodes.find((node: any) => node.filePath === filePath);
+      const parentNode = graphNodes.find((node: any) => node.filePath === filePath && !node.parentId);
       if (!parentNode) continue;
 
-      const seenSymbols = new Set<string>();
-      for (const pattern of symbolPatterns) {
-        pattern.regex.lastIndex = 0;
-        let match: RegExpExecArray | null;
-        while ((match = pattern.regex.exec(source)) && seenSymbols.size < 12) {
-          const symbol = match[1];
-          if (!symbol || seenSymbols.has(symbol)) continue;
-          seenSymbols.add(symbol);
-
-          const line = source.slice(0, match.index).split("\n").length;
-          const symbolType = /^[A-Z]/.test(symbol) && /\.(tsx|jsx|vue)$/.test(filePath)
-            ? "component"
-            : pattern.type;
-          const symbolId = `symbol_${filePath.replace(/[^a-zA-Z0-9_]/g, "_")}_${symbol.replace(/[^a-zA-Z0-9_]/g, "_")}`;
-
-          if (graphNodes.some((node: any) => node.id === symbolId)) continue;
-
-          graphNodes.push({
-            id: symbolId,
-            label: symbol,
-            type: symbolType,
-            category: parentNode.category,
-            status: "monitored",
-            changesCount: 0,
-            filePath,
-            symbol,
-            line,
-            parentId: parentNode.id,
-            description: `Symbol ${symbol} observed in ${filePath}.`,
-          });
-
-          graphEdges.push({
-            from: parentNode.id,
-            to: symbolId,
-            label: "contains",
-            evidence: `${filePath} contains symbol ${symbol} at line ${line}.`,
-          });
-        }
+      const analysis = analyzeSource(filePath, source);
+      for (const symbol of analysis.symbols.slice(0, 24)) {
+        const symbolId = `symbol_${filePath.replace(/[^a-zA-Z0-9_]/g, "_")}_${symbol.name.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+        if (graphNodes.some((node: any) => node.id === symbolId)) continue;
+        graphNodes.push({
+          id: symbolId,
+          label: symbol.name,
+          type: symbol.type === "variable" && /^(tsx|jsx)$/.test(filePath.split(".").pop() || "") && /^[A-Z]/.test(symbol.name) ? "component" : symbol.type,
+          category: parentNode.category,
+          status: "monitored",
+          changesCount: 0,
+          filePath,
+          symbol: symbol.name,
+          line: symbol.line,
+          endLine: symbol.endLine,
+          parentId: parentNode.id,
+          exported: symbol.exported,
+          parser: analysis.parser,
+          certainty: analysis.certainty,
+          description: `Symbol ${symbol.name} observed in ${filePath}.`,
+        });
+        graphEdges.push({
+          from: parentNode.id,
+          to: symbolId,
+          label: "contains",
+          evidence: `${analysis.parser} parser observed ${symbol.name} at ${filePath}:${symbol.line}.`,
+        });
       }
     }
 
