@@ -273,7 +273,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch("/api/projects/analyze-repository", {
         method: "POST",
         headers: await authenticatedHeaders({}, true),
-        body: JSON.stringify({ repository, branch }),
+        body: JSON.stringify({ repository, branch, projectId }),
       });
 
       if (!res.ok) {
