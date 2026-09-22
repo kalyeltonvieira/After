@@ -17,6 +17,8 @@ import {
   listUserRepositories,
   getRepositoryBranches,
   linkRepositoryToAfter,
+  getCompleteRepositoryTree,
+  getGitBlobContent,
 } from "../services/githubService.js";
 
 export const projectsRouter = Router();
@@ -492,37 +494,16 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
       observedAt: new Date().toISOString(),
     }));
 
-    // 3. Fetch Real File Tree
+    // 3. Fetch the complete repository tree. Large Git trees can be truncated by GitHub.
     let treeItems: any[] = [];
     try {
-      const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`, { headers });
-      if (treeRes.ok) {
-        const treeData = await treeRes.json();
-        if (treeData && Array.isArray(treeData.tree)) {
-          treeItems = treeData.tree;
-        }
-      }
+      const completeTree = await getCompleteRepositoryTree(owner, repo, branch, githubToken || undefined);
+      treeItems = completeTree.tree;
     } catch (treeErr) {
-      console.warn("Could not fetch recursive git tree:", treeErr);
+      console.warn("Could not fetch complete repository tree:", treeErr);
     }
-
-    // Fallback if git trees failed or empty: fetch root contents
     if (treeItems.length === 0) {
-      try {
-        const contentsRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents?ref=${branch}`, { headers });
-        if (contentsRes.ok) {
-          const contents = await contentsRes.json();
-          if (Array.isArray(contents)) {
-            treeItems = contents.map((item: any) => ({
-              path: item.path,
-              type: item.type === "dir" ? "tree" : "blob",
-              size: item.size,
-            }));
-          }
-        }
-      } catch (contentsErr) {
-        console.warn("Could not fetch root contents:", contentsErr);
-      }
+      return res.status(502).json({ error: "Could not read the repository tree from GitHub." });
     }
 
     // 4. Fetch and Parse package.json if present
@@ -594,22 +575,25 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
 
     // Filter file blobs only. Source content is fetched only for bounded, analyzable files.
     const fileBlobs = treeItems.filter((t) => t.type === "blob");
-    const sourceCandidates = fileBlobs.filter((f) => /\.(tsx?|jsx?|vue|py|go|rs)$/.test(f.path.toLowerCase()) && !/(node_modules|vendor|dist|build|coverage)\//.test(f.path)).slice(0, 120);
+    const sourceCandidates = fileBlobs
+      .filter((f) => /\.(tsx?|jsx?|vue|py|go|rs)$/.test(f.path.toLowerCase()) && !/(^|\/)(node_modules|vendor|dist|build|coverage)(\/|$)/.test(f.path))
+      .filter((f) => Number(f.size || 0) <= 2_000_000)
+      .slice(0, 200);
     const sourceContents = new Map<string, string>();
-    await Promise.all(sourceCandidates.map(async (file) => {
-      try {
-        const contentUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${file.path}?ref=${encodeURIComponent(branch)}`;
-        const contentRes = await fetch(contentUrl, { headers });
-        if (!contentRes.ok) return;
-        const contentData = await contentRes.json();
-        if (contentData.encoding === "base64" && typeof contentData.content === "string") {
-          const content = Buffer.from(contentData.content.replace(/\n/g, ""), "base64").toString("utf-8");
-          if (content.length <= 250_000) sourceContents.set(file.path, content);
+    const concurrency = 8;
+    for (let offset = 0; offset < sourceCandidates.length; offset += concurrency) {
+      const batch = sourceCandidates.slice(offset, offset + concurrency);
+      await Promise.all(batch.map(async (file) => {
+        try {
+          const contentData = await getGitBlobContent(owner, repo, file.sha, githubToken || undefined);
+          if (contentData && contentData.content.length <= 1_500_000) {
+            sourceContents.set(file.path, contentData.content);
+          }
+        } catch {
+          // An individual unreadable file must not invalidate repository analysis.
         }
-      } catch {
-        // An individual unreadable file must not invalidate the repository analysis.
-      }
-    }));
+      }));
+    }
 
     // A. Detect Pages
     const pageFiles = fileBlobs.filter((f) => {
