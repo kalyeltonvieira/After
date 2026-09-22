@@ -1,4 +1,4 @@
-import { getAdminFirestore } from "./auth.js";
+import { getAdminFirestore } from "./auth.js";\nimport { loadPersistedGraph } from "./services/graphStore.js";
 
 export async function loadProjectContext(
   projectId: string,
@@ -16,7 +16,7 @@ export async function loadProjectContext(
   const projectSnap = await db.collection("projects").doc(projectId).get();
   if (!projectSnap.exists || projectSnap.data()?.ownerId !== uid) return null;
   const project = (projectSnap.data() || {}) as Record<string, any>;
-  const results = await Promise.allSettled([
+  const [graphResult, ...results] = await Promise.allSettled([\n    loadPersistedGraph(projectId),
     projectSnap.ref.collection("events").get(),
     projectSnap.ref.collection("insights").get(),
     projectSnap.ref.collection("experiments").get(),
