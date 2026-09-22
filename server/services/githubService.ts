@@ -233,7 +233,7 @@ export async function listUserRepositories(
   const affiliation = options?.affiliation || "owner,collaborator,organization_member";
   const allRepos: GitHubRepo[] = [];
 
-  for (let page = startPage; page <= startPage + 100; page += 1) {
+  for (let page = startPage; ; page += 1) {
     const params = new URLSearchParams({
       page: String(page), per_page: String(perPage), sort, direction: "desc", affiliation,
     });
