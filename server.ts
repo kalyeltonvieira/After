@@ -4,12 +4,12 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { apiRouter } from "./server/app.ts";
 import { githubWebhookHandler } from "./server/routes/githubWebhook.ts";
-import { recoverQueuedIncrementalAnalyses } from "./server/services/incrementalAnalysis.ts";
+import { recoverQueuedIncrementalAnalyses } from "./server/services/incrementalAnalysis.ts";\nimport { requestIdMiddleware } from "./server/observability.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
+const app = express();\napp.disable("x-powered-by");\napp.use(requestIdMiddleware);
 const PORT = 3000;
 
 app.post(
