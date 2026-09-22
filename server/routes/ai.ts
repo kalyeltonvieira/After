@@ -11,8 +11,7 @@ function resolveRequestGitHubToken(req: AuthenticatedRequest): string | undefine
   const sessionToken = getGitHubToken(req.cookies?.after_github_session, req.user!.uid);
   if (sessionToken) return sessionToken;
 
-  const headerToken = String(req.headers["x-github-access-token"] || "").trim();
-  return headerToken || undefined;
+  return undefined;
 }
 
 
