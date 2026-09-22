@@ -4,6 +4,7 @@ import { getPersistentGitHubToken } from "../githubSession.js";
 import { parseGitHubRepo } from "./githubService.js";
 import { matchingWatchTargets, normalizeBranchRef } from "./observation.js";
 import { persistGraphSnapshot } from "./graphStore.js";
+import { analyzeSource } from "./codeAnalyzer.js";
 
 type IncrementalInput = {
   projectId: string;
@@ -266,7 +267,22 @@ async function runIncrementalAnalysis(input: IncrementalInput & { jobId: string 
         const source = Buffer.from(body.content.replace(/\n/g, ""), "base64").toString("utf8");
         if (source.length <= 250_000) {
           sourceContents.set(path, source);
-          const symbols = extractSymbols(path, source, parent);
+          const analysis = analyzeSource(path, source);
+          const symbols = analysis.symbols.slice(0, 24).map((symbol) => ({
+            id: `symbol_${path.replace(/[^a-zA-Z0-9_]/g, "_")}_${symbol.name.replace(/[^a-zA-Z0-9_]/g, "_")}`,
+            label: symbol.name,
+            type: symbol.type,
+            category: parent.category || "source",
+            status: "updated",
+            changesCount: 1,
+            filePath: path,
+            symbol: symbol.name,
+            line: symbol.line,
+            parentId: parent.id,
+            description: `AST symbol ${symbol.name} observed in ${path}.`,
+            parser: analysis.parser,
+            certainty: analysis.certainty,
+          }));
           nodes.push(...symbols);
           for (const symbol of symbols) {
             edges.push({
@@ -289,7 +305,8 @@ async function runIncrementalAnalysis(input: IncrementalInput & { jobId: string 
     for (const [path, source] of sourceContents) {
       const from = nodesByPath.get(path);
       if (!from) continue;
-      for (const specifier of extractImports(source)) {
+      const analysis = analyzeSource(path, source);
+      for (const specifier of analysis.imports.map((item) => item.specifier)) {
         const targetPath = resolveRelative(path, specifier, nodesByPath);
         if (targetPath) {
           const target = nodesByPath.get(targetPath);
