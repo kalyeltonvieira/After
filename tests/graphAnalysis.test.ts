@@ -1,0 +1,1 @@
+import test from "node:test";import assert from "node:assert/strict";import {calculateImpact} from "../server/services/graphAnalysis.js";test("finds transitive dependents",()=>{const r=calculateImpact("a",[{id:"a"},{id:"b"},{id:"c"}],[{from:"b",to:"a"},{from:"c",to:"b"}])!;assert.deepEqual(r.transitiveDependentIds.sort(),["b","c"]);});
