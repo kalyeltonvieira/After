@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { getAdminFirestore } from "../auth.js";
 import { getPersistentGitHubToken } from "../githubSession.js";
-import { parseGitHubRepo } from "./githubService.js";
+import { parseGitHubRepo, getCompleteRepositoryTree, getGitBlobContent } from "./githubService.js";
 import { matchingWatchTargets, normalizeBranchRef } from "./observation.js";
 import { persistGraphSnapshot } from "./graphStore.js";
 import { analyzeSource } from "./codeAnalyzer.js";
@@ -46,6 +46,33 @@ async function githubGet(url: string, token?: string) {
   return { response, body };
 }
 
+async function fetchChangedFiles(owner: string, repo: string, ref: string, paths: string[], token?: string) {
+  const results = new Map<string, { status: number; body: any }>();
+  const tree = await getCompleteRepositoryTree(owner, repo, ref, token);
+  const byPath = new Map(tree.tree.map((item: any) => [String(item.path), item]));
+  const concurrency = 8;
+  for (let offset = 0; offset < paths.length; offset += concurrency) {
+    const batch = paths.slice(offset, offset + concurrency);
+    await Promise.all(batch.map(async (path) => {
+      try {
+        const item = byPath.get(path);
+        if (item?.sha) {
+          const blob = await getGitBlobContent(owner, repo, String(item.sha), token);
+          if (blob) {
+            results.set(path, { status: 200, body: { encoding: "utf-8", content: blob.content, size: blob.size } });
+            return;
+          }
+        }
+        const encoded = path.split("/").map(encodeURIComponent).join("/");
+        const url = "https://api.github.com/repos/" + owner + "/" + repo + "/contents/" + encoded + "?ref=" + encodeURIComponent(ref);
+        results.set(path, await githubGet(url, token));
+      } catch {
+        results.set(path, { status: 500, body: null });
+      }
+    }));
+  }
+  return results;
+}
 async function setJob(projectId: string, jobId: string, patch: Record<string, any>) {
   const db = getAdminFirestore();
   const projectRef = db.collection("projects").doc(projectId);
@@ -234,10 +261,9 @@ async function runIncrementalAnalysis(input: IncrementalInput & { jobId: string 
     for (const path of removed) removePath(path);
 
     const sourceContents = new Map<string, string>();
+    const contentByPath = await fetchChangedFiles(parsed.owner, parsed.repo, String(ref), files, token || undefined);
     for (const path of files) {
-      const encodedPath = path.split("/").map(encodeURIComponent).join("/");
-      const url = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`;
-      const result = await githubGet(url, token || undefined);
+      const result = contentByPath.get(path) || { status: 404, body: null };
       const existingNode = nodeForPath(path);
 
       if (result.response.status === 404) {
