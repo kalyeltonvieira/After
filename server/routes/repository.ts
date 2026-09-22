@@ -50,10 +50,7 @@ async function getProjectRepository(req: AuthenticatedRequest, projectId: string
   if (!parsed) {
     throw Object.assign(new Error("This project is not connected to a valid GitHub repository."), { status: 400 });
   }
-  const token =
-    getGitHubToken(req.cookies?.after_github_session, req.user!.uid) ||
-    String(req.headers["x-github-access-token"] || "").trim() ||
-    undefined;
+  const token = getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined;
   return { db, project, parsed, token };
 }
 
