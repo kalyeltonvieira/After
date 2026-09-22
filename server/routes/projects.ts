@@ -578,8 +578,7 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
     const fileBlobs = treeItems.filter((t) => t.type === "blob");
     const sourceCandidates = fileBlobs
       .filter((f) => /\.(tsx?|jsx?|vue|py|go|rs)$/.test(f.path.toLowerCase()) && !/(^|\/)(node_modules|vendor|dist|build|coverage)(\/|$)/.test(f.path))
-      .filter((f) => Number(f.size || 0) <= 2_000_000)
-      .slice(0, 200);
+      .filter((f) => Number(f.size || 0) <= 2_000_000);
     const sourceContents = new Map<string, string>();
     const concurrency = 8;
     for (let offset = 0; offset < sourceCandidates.length; offset += concurrency) {
