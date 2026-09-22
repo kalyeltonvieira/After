@@ -29,20 +29,7 @@ async function resolveGitHubToken(
   const liveToken = getGitHubToken(req.cookies?.after_github_session, uid);
   if (liveToken) return liveToken;
 
-  const cachedToken = String(req.headers["x-github-access-token"] || "").trim();
-  if (cachedToken) {
-    const sessionId = createGitHubSession(uid, cachedToken);
-    res.cookie("after_github_session", sessionId, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: "/",
-    });
-    return cachedToken;
-  }
-
-  try {
+    try {
     const persistedToken = await getPersistentGitHubToken(uid);
     if (!persistedToken) return null;
 
