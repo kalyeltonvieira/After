@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { getAdminFirestore } from "../auth.js";
 import { getPersistentGitHubToken } from "../githubSession.js";
 import { parseGitHubRepo } from "./githubService.js";
-import { matchingWatchTargets, normalizeBranchRef } from "./observation.js";
+import { matchingWatchTargets, normalizeBranchRef } from "./observation.js";\nimport { persistGraphSnapshot } from "./graphStore.js";
 
 type IncrementalInput = {
   projectId: string;
@@ -309,7 +309,7 @@ async function runIncrementalAnalysis(input: IncrementalInput & { jobId: string 
       return Boolean(nodes.some((node: any) => node.id === edge.from) && nodes.some((node: any) => node.id === edge.to));
     });
 
-    await setJob(input.projectId, input.jobId, { status: "building_graph", updatedAt: new Date().toISOString() });
+    await setJob(input.projectId, input.jobId, { status: "building_graph", updatedAt: new Date().toISOString() });\n    await persistGraphSnapshot(input.projectId, nodes, normalizedEdges, "graph-v2");
     const now = new Date().toISOString();
     const update = {
       graphNodes: nodes,
