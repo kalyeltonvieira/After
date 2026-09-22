@@ -269,6 +269,15 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     if (!user) throw new Error("Must be signed in to connect a repository");
 
     setIsAnalyzing(true);
+    const projectId = `proj_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const now = new Date().toISOString();
+    await setDoc(doc(db, "projects", projectId), {
+      id: projectId, ownerId: user.uid, name: repository.split("/").pop() || repository,
+      description: "Repository analysis in progress", repository, branch: branch || "main",
+      githubConnected: false, graphNodes: [], graphEdges: [], events: [], insights: [],
+      memoryEntries: [], experiments: [], watchTargets: [], notifications: [], analysisJobs: [],
+      createdAt: now, updatedAt: now,
+    });
     try {
       const res = await fetch("/api/projects/analyze-repository", {
         method: "POST",
@@ -282,8 +291,6 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       }
 
       const data = await res.json();
-      const projectId = `proj_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const now = new Date().toISOString();
 
       const nextEvents: ProjectEvent[] = (data.events || []).map((ev: ProjectEvent) => ({
         ...ev,
