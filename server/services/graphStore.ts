@@ -5,7 +5,7 @@ const safeId = (value: string) => value.replace(/[^A-Za-z0-9_.:-]/g, "_").slice(
 export async function persistGraphSnapshot(projectId: string, nodes: any[], edges: any[], analysisVersion = "graph-v2") {
   const db = getAdminFirestore();
   const projectRef = db.collection("projects").doc(projectId);
-  const writes: Array<{ ref: FirebaseFirestore.DocumentReference; data: any }> = [];
+  const writes: Array<{ ref: any; data: any }> = [];
   for (const node of nodes.slice(0, 20000)) {
     writes.push({ ref: projectRef.collection("graphNodes").doc(safeId(String(node.id))), data: { ...node, analysisVersion, updatedAt: new Date().toISOString() } });
   }
