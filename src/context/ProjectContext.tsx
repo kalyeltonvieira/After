@@ -144,6 +144,10 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
             new Date(a.updatedAt || a.createdAt).getTime()
         );
 
+        try {
+          localStorage.setItem(`after.cached_projects.${user.uid}`, JSON.stringify(list));
+        } catch {}
+
         setProjects(list);
 
         // Keep or select current project
@@ -161,14 +165,34 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
 
         setLoadingProjects(false);
       },
-      (error) => {
+      async (error) => {
+        console.warn("Firestore live snapshot error, loading cached/API projects:", error?.message || error);
         try {
-          handleFirestoreError(error, OperationType.LIST, "projects");
-        } catch (e) {
-          // Handled
-        }
-        setProjects([]);
-        setCurrentProject(null);
+          const cached = localStorage.getItem(`after.cached_projects.${user.uid}`);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setProjects(parsed);
+              setCurrentProject((prev) => prev || parsed[0]);
+              setLoadingProjects(false);
+              return;
+            }
+          }
+        } catch {}
+
+        try {
+          const res = await fetch("/api/projects", { headers: await authenticatedHeaders() });
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data.projects) && data.projects.length > 0) {
+              setProjects(data.projects);
+              setCurrentProject((prev) => prev || data.projects[0]);
+              setLoadingProjects(false);
+              return;
+            }
+          }
+        } catch {}
+
         setLoadingProjects(false);
       }
     );

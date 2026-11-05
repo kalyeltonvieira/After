@@ -8,6 +8,10 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid;
     }
 
+    match /test/connection {
+      allow read: if true;
+    }
+
     match /users/{userId} {
       allow read, create, update, delete: if signedIn() && request.auth.uid == userId;
     }

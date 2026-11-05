@@ -4,6 +4,19 @@ import {
   Search, Plus, Eye, ExternalLink, RefreshCw, Sparkles, X, Tag, Activity,
   Copy, Check, GitCompare, MessageSquare, Save, ChevronRight, Clock3, Folder,
 } from "lucide-react";
+import Prism from "prismjs";
+import "prismjs/components/prism-clike";
+import "prismjs/components/prism-javascript";
+import "prismjs/components/prism-typescript";
+import "prismjs/components/prism-jsx";
+import "prismjs/components/prism-tsx";
+import "prismjs/components/prism-css";
+import "prismjs/components/prism-json";
+import "prismjs/components/prism-markdown";
+import "prismjs/components/prism-bash";
+import "prismjs/components/prism-python";
+import "prismjs/components/prism-yaml";
+import "prismjs/components/prism-sql";
 import { useProject } from "../context/ProjectContext";
 import { authenticatedHeaders } from "../lib/api";
 import { EmptyState } from "../components/EmptyState";
@@ -15,39 +28,93 @@ function formatDate(value: string) {
   return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
 }
 
-function highlightLine(line: string, language: string) {
-  const tokenPattern = /(\/\/.*$|#.*$)|([\"'`][^\"'`]*[\"'`])|(\b(?:const|let|var|function|return|import|from|export|default|class|if|else|for|while|async|await|new|throw|try|catch|interface|type|extends|implements|public|private|protected|def|func|fn|pub|struct|impl|package|use)\b)|(\b\d+(?:\.\d+)?\b)/g;
-  const nodes: React.ReactNode[] = [];
-  let last = 0;
-  for (const match of line.matchAll(tokenPattern)) {
-    const index = match.index ?? 0;
-    if (index > last) nodes.push(line.slice(last, index));
-    const value = match[0];
-    const tokenClass = match[1]
-      ? "text-zinc-500"
-      : match[2]
-      ? "text-amber-300"
-      : match[3]
-      ? "text-sky-300"
-      : "text-fuchsia-300";
-    nodes.push(<span key={`${index}-${language}`} className={tokenClass}>{value}</span>);
-    last = index + value.length;
-  }
-  if (last < line.length) nodes.push(line.slice(last));
-  return nodes.length ? nodes : line || " ";
+function formatTimeAgo(value?: string) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const diffSecs = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+  if (diffSecs < 60) return "just now";
+  if (diffSecs < 3600) return `${Math.floor(diffSecs / 60)}m ago`;
+  if (diffSecs < 86400) return `${Math.floor(diffSecs / 3600)}h ago`;
+  if (diffSecs < 2592000) return `${Math.floor(diffSecs / 86400)}d ago`;
+  if (diffSecs < 31536000) return `${Math.floor(diffSecs / 2592000)}mo ago`;
+  return `${Math.floor(diffSecs / 31536000)}y ago`;
 }
 
-function languageFromPath(path: string) {
-  const ext = path.split(".").pop()?.toLowerCase();
-  if (ext === "tsx" || ext === "jsx") return "typescript-react";
-  if (ext === "ts") return "typescript";
-  if (ext === "js" || ext === "mjs" || ext === "cjs") return "javascript";
-  if (ext === "py") return "python";
-  if (ext === "go") return "go";
-  if (ext === "rs") return "rust";
-  if (ext === "json") return "json";
-  if (ext === "css") return "css";
-  return ext || "text";
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function highlightLine(line: string, language: string): string {
+  if (!line || !line.trim()) return line ? escapeHtml(line) : "&nbsp;";
+  const lang = language.toLowerCase();
+  const grammar =
+    Prism.languages[lang] ||
+    (lang === "typescript-react" ? Prism.languages.tsx : null) ||
+    (lang === "javascript-react" ? Prism.languages.jsx : null) ||
+    Prism.languages.typescript ||
+    Prism.languages.javascript ||
+    Prism.languages.clike;
+
+  if (!grammar) {
+    return escapeHtml(line);
+  }
+
+  try {
+    const highlighted = Prism.highlight(line, grammar, lang);
+    return highlighted || "&nbsp;";
+  } catch {
+    return escapeHtml(line);
+  }
+}
+
+function languageFromPath(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase() || "";
+  switch (ext) {
+    case "ts":
+      return "typescript";
+    case "tsx":
+      return "tsx";
+    case "js":
+    case "mjs":
+    case "cjs":
+      return "javascript";
+    case "jsx":
+      return "jsx";
+    case "css":
+    case "scss":
+    case "sass":
+    case "less":
+      return "css";
+    case "json":
+      return "json";
+    case "md":
+    case "markdown":
+      return "markdown";
+    case "py":
+      return "python";
+    case "sh":
+    case "bash":
+    case "zsh":
+      return "bash";
+    case "yaml":
+    case "yml":
+      return "yaml";
+    case "sql":
+      return "sql";
+    case "html":
+    case "htm":
+    case "xml":
+    case "svg":
+      return "markup";
+    default:
+      return ext || "text";
+  }
 }
 
 export function RepositoryPage() {
@@ -76,6 +143,7 @@ export function RepositoryPage() {
   const [showBlame, setShowBlame] = useState(false);
   const [blameLoading, setBlameLoading] = useState(false);
   const [blame, setBlame] = useState<any[]>([]);
+  const [hoveredCommitSha, setHoveredCommitSha] = useState<string | null>(null);
   const [commitDetail, setCommitDetail] = useState<any>(null);
 
   const projectId = currentProject?.id;
@@ -151,9 +219,9 @@ export function RepositoryPage() {
     try {
       const [file, history] = await Promise.all([
         request(`/api/repository/file?projectId=${encodeURIComponent(projectId!)}&path=${encodeURIComponent(path)}&ref=${encodeURIComponent(currentProject.branch)}`),
-        request(`/api/repository/file-history?projectId=${encodeURIComponent(projectId!)}&path=${encodeURIComponent(path)}&ref=${encodeURIComponent(currentProject.branch)}&per_page=12`),
+        request(`/api/repository/file-history?projectId=${encodeURIComponent(projectId!)}&path=${encodeURIComponent(path)}&ref=${encodeURIComponent(currentProject.branch)}&per_page=12`).catch(() => ({ commits: [] })),
       ]);
-      setData((prev: any) => ({ ...prev, file, fileHistory: history.commits || [] }));
+      setData((prev: any) => ({ ...prev, file, fileHistory: history?.commits || [] }));
       setBlame([]);
       setShowBlame(false);
       setAiContext({
@@ -166,6 +234,18 @@ export function RepositoryPage() {
       setData((prev: any) => ({ ...prev, file: null, error: error instanceof Error ? error.message : String(error) }));
     }
   };
+
+  useEffect(() => {
+    if (tab === "code" && Array.isArray(data?.tree) && data.tree.length > 0 && !selectedFile) {
+      const preferred =
+        data.tree.find((f: any) => f.path === "README.md" || f.path === "src/App.tsx" || f.path === "package.json") ||
+        data.tree.find((f: any) => !f.path.includes("/")) ||
+        data.tree[0];
+      if (preferred && preferred.path) {
+        void openFile(preferred.path);
+      }
+    }
+  }, [tab, data?.tree, selectedFile]);
 
   const switchBranch = async (branch: string) => {
     if (!branch || branch === currentProject.branch) return;
@@ -410,6 +490,11 @@ export function RepositoryPage() {
       return;
     }
 
+    if (blame.length > 0) {
+      setShowBlame(true);
+      return;
+    }
+
     setBlameLoading(true);
     try {
       const body = await request(
@@ -418,8 +503,9 @@ export function RepositoryPage() {
       setBlame(Array.isArray(body.ranges) ? body.ranges : []);
       setShowBlame(true);
     } catch (error) {
+      console.warn("Could not retrieve blame data:", error);
       setBlame([]);
-      window.alert(error instanceof Error ? error.message : String(error));
+      setShowBlame(true);
     } finally {
       setBlameLoading(false);
     }
@@ -431,7 +517,7 @@ export function RepositoryPage() {
         `/api/repository/commits/${encodeURIComponent(sha)}?projectId=${encodeURIComponent(projectId!)}`
       ));
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : String(error));
+      console.warn("Could not load commit details:", error);
     }
   };
 
@@ -638,8 +724,28 @@ export function RepositoryPage() {
                     <button type="button" onClick={() => void copyFile()} className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-[11px]">
                       {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} {copied ? "Copied" : "Copy"}
                     </button>
-                    <button type="button" onClick={() => void toggleBlame()} disabled={blameLoading} className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] ${showBlame ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900" : "border-zinc-200 dark:border-zinc-700"}`}>
-                      {blameLoading ? "Blame…" : "Blame"}
+                    <button
+                      type="button"
+                      onClick={() => void toggleBlame()}
+                      disabled={blameLoading}
+                      className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-colors ${
+                        showBlame
+                          ? "border-sky-500 bg-sky-500/10 text-sky-400 dark:border-sky-400 dark:bg-sky-950/40 dark:text-sky-300"
+                          : "border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
+                      }`}
+                      title="Toggle git blame annotations to view authorship, commit hash, date, and commit message for each line"
+                    >
+                      {blameLoading ? (
+                        <RefreshCw className="w-3 h-3 animate-spin text-sky-400" />
+                      ) : (
+                        <GitCommit className="w-3 h-3" />
+                      )}
+                      <span>{blameLoading ? "Loading Blame…" : showBlame ? "Hide Blame" : "Git Blame"}</span>
+                      {showBlame && blame.length > 0 && (
+                        <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[9px] bg-sky-500/20 text-sky-300 font-mono">
+                          {blame.length}
+                        </span>
+                      )}
                     </button>
                     <button type="button" onClick={() => void analyzeChange({ path: data.file.path, question: "Analyze this file's current repository state, recent history, related graph relationships, and potential impact of changing it." })} className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-[11px]">
                       <Sparkles className="w-3 h-3" /> Analyze
@@ -653,24 +759,78 @@ export function RepositoryPage() {
               <div className="max-h-[62vh] overflow-auto bg-zinc-950">
                 {data.file?.content ? (
                   <div className="min-w-max font-mono text-[11px] leading-relaxed text-zinc-100">
+                    {showBlame && (
+                      <div className="sticky top-0 z-10 flex border-b border-zinc-800 bg-zinc-900/95 backdrop-blur text-[10px] uppercase tracking-wider font-mono text-zinc-400 py-1.5 select-none">
+                        <div className="w-64 shrink-0 px-3 flex items-center justify-between">
+                          <span>Author & Commit</span>
+                          <span className="text-[9px] text-zinc-500 lowercase">click to inspect</span>
+                        </div>
+                        <div className="w-12 shrink-0 text-right pr-3 text-zinc-500">Line</div>
+                        <div className="px-3 text-zinc-500">Source Code</div>
+                      </div>
+                    )}
                     {data.file.content.split("\n").map((line: string, index: number) => {
                       const lineNumber = index + 1;
                       const lineBlame = showBlame ? blameForLine(lineNumber) : null;
+                      const isHoveredCommit = Boolean(
+                        lineBlame?.commit?.oid && hoveredCommitSha === lineBlame.commit.oid
+                      );
+                      const prevBlame = showBlame && index > 0 ? blameForLine(lineNumber - 1) : null;
+                      const isRangeHeader = !prevBlame || prevBlame.commit?.oid !== lineBlame?.commit?.oid;
+                      const fileLang = languageFromPath(data.file.path);
+
                       return (
-                        <div key={index} id={`code-line-${lineNumber}`} className="flex scroll-mt-24">
+                        <div
+                          key={index}
+                          id={`code-line-${lineNumber}`}
+                          className={`flex scroll-mt-24 transition-colors ${
+                            isHoveredCommit ? "bg-sky-950/40" : "hover:bg-zinc-900/40"
+                          }`}
+                        >
                           {showBlame && (
                             <button
                               type="button"
                               onClick={() => lineBlame?.commit?.oid && void openCommit(lineBlame.commit.oid)}
-                              className="select-none w-56 shrink-0 px-3 py-1 text-left border-r border-zinc-800 text-[9px] leading-4 text-zinc-500 hover:text-zinc-200 truncate"
-                              title={lineBlame?.commit?.messageHeadline || "No blame data"}
+                              onMouseEnter={() => lineBlame?.commit?.oid && setHoveredCommitSha(lineBlame.commit.oid)}
+                              onMouseLeave={() => setHoveredCommitSha(null)}
+                              className={`select-none w-64 shrink-0 px-3 py-0.5 text-left border-r border-zinc-800/80 text-[10px] leading-5 font-mono flex items-center justify-between gap-1.5 transition-colors group ${
+                                isHoveredCommit ? "bg-sky-950/60 text-sky-200" : "hover:bg-zinc-800/60 text-zinc-400 hover:text-zinc-100"
+                              }`}
+                              title={
+                                lineBlame?.commit
+                                  ? `${lineBlame.commit.messageHeadline || "No message"}\n\nAuthor: ${lineBlame.commit.author?.name || lineBlame.commit.author?.login || "Unknown"}\nDate: ${formatDate(lineBlame.commit.committedDate)}\nSHA: ${lineBlame.commit.oid}\n\nClick to inspect commit details`
+                                  : "No blame data available for this line"
+                              }
                             >
-                              <span className="text-zinc-300">{lineBlame?.commit?.author?.login || lineBlame?.commit?.author?.name || "Unknown"}</span>
-                              {lineBlame?.commit?.abbreviatedOid && <span className="ml-2 text-zinc-600">{lineBlame.commit.abbreviatedOid}</span>}
+                              <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isRangeHeader ? "bg-sky-400" : "bg-zinc-600"}`} />
+                                <span className={`truncate text-[10px] ${isRangeHeader ? "font-medium text-zinc-200" : "text-zinc-400 opacity-80"}`}>
+                                  {lineBlame?.commit?.author?.login || lineBlame?.commit?.author?.name || "Unknown"}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {lineBlame?.commit?.committedDate && (
+                                  <span className="text-[9px] text-zinc-500 group-hover:text-zinc-400">
+                                    {formatTimeAgo(lineBlame.commit.committedDate)}
+                                  </span>
+                                )}
+                                {lineBlame?.commit?.abbreviatedOid ? (
+                                  <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-zinc-900 border border-zinc-800 text-sky-400/90 group-hover:border-sky-500/50">
+                                    {lineBlame.commit.abbreviatedOid}
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] text-zinc-600">-</span>
+                                )}
+                              </div>
                             </button>
                           )}
-                          <span className="select-none w-12 shrink-0 text-right pr-3 text-zinc-600">{lineNumber}</span>
-                          <code className="whitespace-pre px-3">{highlightLine(line, languageFromPath(data.file.path))}</code>
+                          <span className="select-none w-12 shrink-0 text-right pr-3 text-zinc-600 font-mono text-[10px] leading-5 pt-0.5">
+                            {lineNumber}
+                          </span>
+                          <code
+                            className={`whitespace-pre px-3 text-[11px] leading-5 language-${fileLang}`}
+                            dangerouslySetInnerHTML={{ __html: highlightLine(line, fileLang) }}
+                          />
                         </div>
                       );
                     })}

@@ -30,6 +30,8 @@ export function ProductGraphPage() {
     currentProject,
     setAiContext,
     setIsAskAfterOpen,
+    refreshAnalysis,
+    isAnalyzing,
   } = useProject();
   const { t, language } = useLanguage();
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
@@ -207,6 +209,15 @@ export function ProductGraphPage() {
               ? "Conecte um repositório GitHub para descobrir e mapear automaticamente páginas, componentes de UI, rotas de backend, configurações e pacotes externos sem dados falsos."
               : "Connect a GitHub repository to automatically discover and map pages, UI components, backend routes, configurations, and external packages without synthetic placeholders."}
           </p>
+          <button
+            type="button"
+            onClick={refreshAnalysis}
+            disabled={isAnalyzing}
+            className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 text-xs font-medium hover:opacity-90 transition-opacity cursor-pointer shadow-xs disabled:opacity-50"
+          >
+            <Sparkles className={`w-3.5 h-3.5 ${isAnalyzing ? "animate-spin" : ""}`} />
+            <span>{isAnalyzing ? (language === "pt" ? "Mapeando Arquitetura..." : "Mapping Architecture...") : (language === "pt" ? "Mapear Topologia Agora" : "Map Architecture Topology")}</span>
+          </button>
         </div>
       ) : (
         /* Main interactive area: Graph canvas + inspector */

@@ -8,7 +8,7 @@ import {
   persistGitHubToken,
   revokeGitHubSession,
 } from "../githubSession.js";
-import { loadProjectContext } from "../projectContext.js";
+import { loadProjectContext, listUserProjectsViaRest, fetchProjectViaRest } from "../projectContext.js";
 import { enqueueIncrementalAnalysis } from "../services/incrementalAnalysis.js";
 import { persistGraphSnapshot } from "../services/graphStore.js";
 import { analyzeSource } from "../services/codeAnalyzer.js";
@@ -210,7 +210,7 @@ projectsRouter.post("/webhook", requireFirebaseUser, async (req: AuthenticatedRe
     return res.status(503).json({ error: "GITHUB_WEBHOOK_SECRET is not configured." });
   }
 
-  const context = await loadProjectContext(projectId, req.user!.uid);
+  const context = await loadProjectContext(projectId, req.user!.uid, req.firebaseToken);
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
 
   const token = (await resolveGitHubToken(req, res)) || undefined;
@@ -401,14 +401,14 @@ projectsRouter.get("/", requireFirebaseUser, async (req: AuthenticatedRequest, r
       });
     }
 
-    // List all projects for current user
+    // List all projects for current user using authenticated token
     let projectsList: any[] = [];
-    try {
-      const db = getAdminFirestore();
-      const snapshot = await db.collection("projects").where("ownerId", "==", req.user!.uid).get();
-      projectsList = snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
-    } catch (fsErr: any) {
-      console.warn("Could not list projects via Admin Firestore:", fsErr?.message || fsErr);
+    if (req.firebaseToken) {
+      try {
+        projectsList = await listUserProjectsViaRest(req.user!.uid, req.firebaseToken);
+      } catch {
+        projectsList = [];
+      }
     }
 
     const projectsWithStats = await Promise.all(
@@ -1226,14 +1226,14 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
 
     let webhookConfigured = false;
     const requestedProjectId = validateFirestoreDocPath(req.body?.projectId);
-    if (requestedProjectId) {
+    if (requestedProjectId && req.firebaseToken) {
       try {
-        const docSnap = await getAdminFirestore().collection("projects").doc(requestedProjectId).get();
-        if (docSnap.exists) {
-          webhookConfigured = Boolean(docSnap.data()?.webhookConfigured);
+        const proj = await fetchProjectViaRest(requestedProjectId, req.firebaseToken);
+        if (proj) {
+          webhookConfigured = Boolean(proj.webhookConfigured);
         }
-      } catch (dbErr: any) {
-        console.warn("Could not check project webhook status from Firestore:", dbErr?.message || dbErr);
+      } catch {
+        // Non-blocking fallback
       }
     }
 
