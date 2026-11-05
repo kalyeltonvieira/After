@@ -51,7 +51,7 @@ function resolveFirestoreDatabaseId(): string {
   return "(default)";
 }
 
-const firebaseProjectId = resolveFirebaseProjectId();
+export const firebaseProjectId = resolveFirebaseProjectId();
 export const firestoreDatabaseId = resolveFirestoreDatabaseId();
 
 const adminApp = getApps().length
@@ -70,6 +70,7 @@ export function getAdminFirestore() {
 
 export interface AuthenticatedRequest extends Request {
   user?: { uid: string; email?: string; [key: string]: unknown };
+  firebaseToken?: string;
 }
 
 export async function requireFirebaseUser(
@@ -83,6 +84,7 @@ export async function requireFirebaseUser(
 
   try {
     req.user = await getAuth(adminApp).verifyIdToken(match[1]);
+    req.firebaseToken = match[1];
     next();
   } catch (error: any) {
     console.error("Firebase ID token verification failed:", {
@@ -102,6 +104,7 @@ export function optionalFirebaseUser(
   const header = req.headers.authorization || "";
   const match = header.match(/^Bearer\s+(.+)$/i);
   if (!match) return next();
+  req.firebaseToken = match[1];
   getAuth(adminApp)
     .verifyIdToken(match[1])
     .then((user) => {
