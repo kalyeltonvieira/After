@@ -15,6 +15,7 @@ import { useProject } from "../context/ProjectContext";
 import { useLanguage } from "../context/LanguageContext";
 import { StatusBadge, SeverityBadge } from "../components/StatusBadge";
 import { EmptyState } from "../components/EmptyState";
+import { DashboardWidget } from "../components/DashboardWidget";
 
 interface OverviewPageProps {
   onNavigate: (view: string) => void;
@@ -186,6 +187,9 @@ export function OverviewPage({ onNavigate, onOpenCreateProject }: OverviewPagePr
           </p>
         </div>
       </div>
+
+      {/* Repository Activity & Pulse Dashboard Widget */}
+      <DashboardWidget onNavigate={onNavigate} />
 
       {/* Two-Column Grid: Anomalies / Insights + Recent Changes */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

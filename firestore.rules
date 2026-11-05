@@ -7,16 +7,23 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/projects/$(projectId))
         && get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid;
     }
-    match /users/{userId} { allow read, create, update, delete: if signedIn() && request.auth.uid == userId; }
+
+    match /users/{userId} {
+      allow read, create, update, delete: if signedIn() && request.auth.uid == userId;
+    }
+
     match /usernames/{username} {
       allow read: if true;
       allow create: if signedIn() && request.resource.data.uid == request.auth.uid && username.matches('^[a-z0-9_]{3,30}$');
       allow update, delete: if signedIn() && resource.data.uid == request.auth.uid;
     }
+
     match /projects/{projectId} {
-      allow read, delete: if ownsProject(projectId);
+      allow get, list: if signedIn() && resource.data.ownerId == request.auth.uid;
       allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow update: if ownsProject(projectId) && request.resource.data.ownerId == resource.data.ownerId;
+      allow update: if signedIn() && resource.data.ownerId == request.auth.uid && request.resource.data.ownerId == resource.data.ownerId;
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+
       match /events/{id} { allow read, write: if ownsProject(projectId); }
       match /snapshots/{id} { allow read, write: if ownsProject(projectId); }
       match /insights/{id} { allow read, write: if ownsProject(projectId); }
@@ -24,9 +31,10 @@ service cloud.firestore {
       match /experiments/{id} { allow read, write: if ownsProject(projectId); }
       match /watchTargets/{id} { allow read, write: if ownsProject(projectId); }
       match /notifications/{id} { allow read, write: if ownsProject(projectId); }
-      match /analysisJobs/{id} { allow read, write: if ownsProject(projectId); }\n      match /webhookDeliveries/{id} { allow read: if ownsProject(projectId); allow write: if false; }
-      match /graphNodes/{id} { allow read: if ownsProject(projectId); allow write: if false; }
-      match /graphEdges/{id} { allow read: if ownsProject(projectId); allow write: if false; }
+      match /analysisJobs/{id} { allow read, write: if ownsProject(projectId); }
+      match /webhookDeliveries/{id} { allow read, write: if ownsProject(projectId); }
+      match /graphNodes/{id} { allow read, write: if ownsProject(projectId); }
+      match /graphEdges/{id} { allow read, write: if ownsProject(projectId); }
     }
   }
 }

@@ -69,36 +69,82 @@ export interface LinkRepositoryResult {
 }
 
 /**
- * Parses a GitHub repository string into owner and repo name.
- * Accepts formats:
- * - "owner/repo"
- * - "https://github.com/owner/repo"
- * - "github.com/owner/repo"
- * - "git@github.com:owner/repo.git"
+ * Validates whether an owner or repository name matches valid GitHub identifier syntax.
  */
-export function parseGitHubRepo(input: string): { owner: string; repo: string } | null {
-  if (!input) return null;
-  const clean = input.trim().replace(/\.git$/, "").replace(/\/$/, "");
+export function isValidGitHubIdentifier(val: string): boolean {
+  if (!val || typeof val !== "string") return false;
+  const trimmed = val.trim();
+  if (!trimmed || trimmed === "." || trimmed === ".." || trimmed.includes("/")) return false;
+  return /^[a-zA-Z0-9_.-]{1,100}$/.test(trimmed);
+}
 
-  // URL formats: https://github.com/owner/repo or http://...
-  const urlMatch = clean.match(/github\.com\/([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+)/i);
-  if (urlMatch) {
-    return { owner: urlMatch[1], repo: urlMatch[2] };
+/**
+ * Sanitizes GitHub repository URLs and strings into canonical 'owner/repo' format.
+ * - Strips protocol prefixes (e.g. 'https://', 'http://', 'git://', 'ssh://', 'git+https://')
+ * - Strips domain and credentials prefixes ('github.com/', 'www.github.com/', 'git@github.com:')
+ * - Strips path suffixes (e.g. '/tree/main', '/blob/master/...', '/pull/123', trailing slashes)
+ * - Strips file extensions ('.git')
+ * - Strips query strings ('?tab=readme') and hash fragments ('#readme')
+ * - Trims inner and surrounding whitespace
+ *
+ * Returns canonical 'owner/repo' string if valid, or null if empty or malformed.
+ */
+export function sanitizeGitHubRepo(input: string | null | undefined): string | null {
+  if (!input || typeof input !== "string") return null;
+  let clean = input.trim();
+  if (!clean) return null;
+
+  // Reject non-GitHub domains if a full URL was provided
+  if (/^https?:\/\/|^\w+:\/\//i.test(clean) && !/github\.com/i.test(clean)) {
+    return null;
   }
 
-  // SSH format: git@github.com:owner/repo
-  const sshMatch = clean.match(/github\.com:([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+)/i);
-  if (sshMatch) {
-    return { owner: sshMatch[1], repo: sshMatch[2] };
-  }
+  // Strip query parameters (?...) and hash fragments (#...)
+  clean = clean.split("#")[0].split("?")[0].trim();
 
-  // Shorthand format: owner/repo
-  const parts = clean.split("/");
-  if (parts.length === 2 && parts[0] && parts[1]) {
-    return { owner: parts[0], repo: parts[1] };
+  // Strip trailing .git and trailing slashes
+  clean = clean.replace(/\/+$/, "");
+  clean = clean.replace(/\.git$/i, "");
+  clean = clean.replace(/\/+$/, "");
+
+  // Strip protocol prefixes
+  clean = clean.replace(/^(?:git\+)?(?:https?|ssh|git):\/\//i, "");
+
+  // Strip domain and SSH prefixes
+  clean = clean.replace(/^(?:git@)?(?:www\.)?github\.com[:/]/i, "");
+
+  // Strip leading slashes
+  clean = clean.replace(/^\/+/, "");
+
+  const segments = clean.split("/").map((s) => s.trim().replace(/\.git$/i, "")).filter(Boolean);
+  if (segments.length >= 2) {
+    const owner = segments[0];
+    const repo = segments[1];
+    if (isValidGitHubIdentifier(owner) && isValidGitHubIdentifier(repo)) {
+      return `${owner}/${repo}`;
+    }
   }
 
   return null;
+}
+
+export const sanitizeGitHubRepository = sanitizeGitHubRepo;
+
+/**
+ * Parses a GitHub repository string into owner and repo name.
+ * Accepts formats:
+ * - "owner/repo"
+ * - " owner / repo "
+ * - "https://github.com/owner/repo"
+ * - "https://github.com/owner/repo/tree/main"
+ * - "github.com/owner/repo"
+ * - "git@github.com:owner/repo.git"
+ */
+export function parseGitHubRepo(input: string | null | undefined): { owner: string; repo: string } | null {
+  const sanitized = sanitizeGitHubRepo(input);
+  if (!sanitized) return null;
+  const [owner, repo] = sanitized.split("/");
+  return { owner, repo };
 }
 
 /**

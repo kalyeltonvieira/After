@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   RefreshCw,
   Search,
+  AlertCircle,
 } from "lucide-react";
 import { useProject } from "../context/ProjectContext";
 import { useAuth } from "../context/AuthContext";
@@ -20,6 +21,8 @@ import { useLanguage } from "../context/LanguageContext";
 import {
   getConnectedGitHubUser,
   listUserRepositories,
+  validateRepositoryInput,
+  sanitizeGitHubRepo,
   GitHubUser,
   GitHubRepositoryItem,
 } from "../services/githubService";
@@ -40,6 +43,11 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
   // GitHub connection fields
   const [repoInput, setRepoInput] = useState("");
   const [repoBranch, setRepoBranch] = useState("");
+
+  const trimmedRepoInput = repoInput.trim();
+  const repoValidation = trimmedRepoInput ? validateRepositoryInput(trimmedRepoInput, language as "en" | "pt") : null;
+  const isInvalid = Boolean(trimmedRepoInput && repoValidation && !repoValidation.isValid);
+  const isValid = Boolean(trimmedRepoInput && repoValidation && repoValidation.isValid);
 
   // GitHub User & Repositories state
   const [connectedUser, setConnectedUser] = useState<GitHubUser | null>(null);
@@ -131,26 +139,41 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
 
   const handleConnectGitHub = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!repoInput.trim()) {
-      setError("Please enter a repository (e.g. facebook/react or full GitHub URL)");
+    const sanitized = sanitizeGitHubRepo(repoInput);
+    if (!sanitized) {
+      const validation = validateRepositoryInput(repoInput, language as "en" | "pt");
+      setError(
+        validation.error ||
+          (language === "pt"
+            ? "Formato de repositório inválido. Use 'proprietário/repositório' ou URL do GitHub."
+            : "Invalid repository format. Please enter 'owner/repo' or full GitHub URL.")
+      );
       return;
     }
 
     setLoading(true);
     setError(null);
-    setLoadingStep("Querying repository metadata and branches...");
+    setLoadingStep(
+      language === "pt"
+        ? "Consultando metadados e branches no GitHub..."
+        : "Querying repository metadata and branches..."
+    );
 
     try {
-      setLoadingStep("Parsing file tree, dependencies, and architecture nodes...");
+      setLoadingStep(
+        language === "pt"
+          ? "Analisando árvore de arquivos, dependências e arquitetura..."
+          : "Parsing file tree, dependencies, and architecture nodes..."
+      );
       await connectRepository({
-        repository: repoInput.trim(),
+        repository: sanitized,
         branch: repoBranch.trim() || undefined,
       });
 
       onClose();
       if (onSuccess) onSuccess();
     } catch (err: any) {
-      setError(err?.message || "Failed to connect repository");
+      setError(err?.message || (language === "pt" ? "Falha ao conectar repositório" : "Failed to connect repository"));
     } finally {
       setLoading(false);
       setLoadingStep("");
@@ -349,20 +372,67 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                Repository Identifier or URL <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                value={repoInput}
-                onChange={(e) => setRepoInput(e.target.value)}
-                placeholder="e.g. facebook/react or https://github.com/vercel/next.js"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-750 bg-white dark:bg-zinc-800 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-hidden focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100 font-mono"
-              />
-              <p className="text-[11px] text-zinc-400 mt-1">
-                Works directly with any public GitHub repository.
-              </p>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                  {language === "pt" ? "Identificador do Repositório ou URL" : "Repository Identifier or URL"}{" "}
+                  <span className="text-red-500">*</span>
+                </label>
+                {isValid && repoValidation?.formatted && (
+                  <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    {repoValidation.formatted}
+                  </span>
+                )}
+              </div>
+              <div className="relative">
+                <input
+                  type="text"
+                  required
+                  value={repoInput}
+                  onChange={(e) => {
+                    setRepoInput(e.target.value);
+                    if (error) setError(null);
+                  }}
+                  placeholder="e.g. facebook/react or https://github.com/vercel/next.js"
+                  className={`w-full px-3.5 py-2.5 rounded-xl border bg-white dark:bg-zinc-800 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-hidden focus:ring-2 font-mono transition-colors ${
+                    isInvalid
+                      ? "border-amber-400 dark:border-amber-500/60 focus:ring-amber-500/30"
+                      : isValid
+                      ? "border-emerald-500 dark:border-emerald-500/70 focus:ring-emerald-500/30"
+                      : "border-zinc-200 dark:border-zinc-750 focus:ring-zinc-900 dark:focus:ring-zinc-100"
+                  }`}
+                />
+                {isValid && (
+                  <div className="absolute right-3 top-2.5 text-emerald-500 pointer-events-none">
+                    <CheckCircle2 className="w-4 h-4" />
+                  </div>
+                )}
+              </div>
+
+              {isInvalid && (
+                <div className="flex items-center space-x-1.5 text-[11px] text-amber-600 dark:text-amber-400 mt-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{repoValidation?.error}</span>
+                </div>
+              )}
+
+              {isValid && (
+                <div className="flex items-center space-x-1.5 text-[11px] text-emerald-600 dark:text-emerald-400 mt-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    {language === "pt" ? "Repositório válido: " : "Valid repository: "}
+                    <strong className="font-mono font-medium">{repoValidation?.formatted}</strong>
+                  </span>
+                </div>
+              )}
+
+              {!isInvalid && !isValid && (
+                <p className="text-[11px] text-zinc-400 mt-1">
+                  {language === "pt"
+                    ? "Aceita 'proprietário/repositório' ou URL do GitHub (ex: facebook/react)."
+                    : "Accepts 'owner/repo' or full GitHub URL (e.g. facebook/react)."}
+                </p>
+              )}
             </div>
 
             <div>
@@ -400,7 +470,7 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
                 <button
                   id="modal-connect-repo-submit-btn"
                   type="submit"
-                  disabled={loading || !repoInput.trim()}
+                  disabled={loading || !trimmedRepoInput || isInvalid}
                   className="px-5 py-2.5 rounded-xl bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 text-xs font-medium hover:opacity-90 transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
                 >
                   <span>

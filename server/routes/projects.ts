@@ -14,6 +14,7 @@ import { persistGraphSnapshot } from "../services/graphStore.js";
 import { analyzeSource } from "../services/codeAnalyzer.js";
 import {
   parseGitHubRepo,
+  sanitizeGitHubRepo,
   getAuthenticatedUser,
   listUserRepositories,
   getRepositoryBranches,
@@ -23,7 +24,20 @@ import {
 } from "../services/githubService.js";
 
 export const projectsRouter = Router();
-export { parseGitHubRepo };
+export { parseGitHubRepo, sanitizeGitHubRepo };
+
+/**
+ * Validates and sanitizes a candidate Firestore document ID or path segment.
+ * Ensures the value is a non-empty string without forward slashes or invalid references (., ..).
+ */
+export function validateFirestoreDocPath(docId: unknown): string | null {
+  if (typeof docId !== "string") return null;
+  const trimmed = docId.trim();
+  if (!trimmed || trimmed === "." || trimmed === ".." || trimmed.includes("/") || trimmed.length > 1500) {
+    return null;
+  }
+  return trimmed;
+}
 
 async function resolveGitHubToken(
   req: AuthenticatedRequest,
@@ -142,12 +156,16 @@ projectsRouter.get("/github-repos", requireFirebaseUser, async (req: Authenticat
 
 // List Branches for a repository
 projectsRouter.get("/github-branches", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
-  const repository = req.query.repository as string;
+  const repository = typeof req.query.repository === "string" ? req.query.repository.trim() : "";
   const token = (await resolveGitHubToken(req, res)) || undefined;
+
+  if (!repository) {
+    return res.status(400).json({ error: "Repository identifier or URL is required." });
+  }
 
   const parsed = parseGitHubRepo(repository);
   if (!parsed) {
-    return res.status(400).json({ error: "Invalid repository format" });
+    return res.status(400).json({ error: "Invalid repository format. Please enter as 'owner/repo' or a full GitHub URL." });
   }
 
   try {
@@ -160,16 +178,21 @@ projectsRouter.get("/github-branches", requireFirebaseUser, async (req: Authenti
 
 // Link Repository to AFTER platform
 projectsRouter.post("/github-link", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
-  const { repository, branch } = req.body;
+  const { repository, branch } = req.body || {};
   const token = (await resolveGitHubToken(req, res)) || undefined;
   const webhookBaseUrl = req.headers.origin || (req.headers.host ? `${req.protocol}://${req.headers.host}` : undefined);
 
-  if (!repository) {
-    return res.status(400).json({ error: "Repository is required" });
+  if (!repository || typeof repository !== "string" || !repository.trim()) {
+    return res.status(400).json({ error: "Repository identifier or URL is required." });
+  }
+
+  const parsed = parseGitHubRepo(repository);
+  if (!parsed) {
+    return res.status(400).json({ error: "Invalid repository format. Please enter as 'owner/repo' or a full GitHub URL." });
   }
 
   try {
-    const result = await linkRepositoryToAfter(repository, token, {
+    const result = await linkRepositoryToAfter(`${parsed.owner}/${parsed.repo}`, token, {
       requestedBranch: branch,
       webhookBaseUrl,
     });
@@ -181,8 +204,8 @@ projectsRouter.post("/github-link", requireFirebaseUser, async (req: Authenticat
 
 // Configure or repair the GitHub webhook used by Continuous Observation.
 projectsRouter.post("/webhook", requireFirebaseUser, async (req: AuthenticatedRequest, res: Response) => {
-  const projectId = String(req.body?.projectId || "");
-  if (!projectId) return res.status(400).json({ error: "projectId is required." });
+  const projectId = validateFirestoreDocPath(req.body?.projectId);
+  if (!projectId) return res.status(400).json({ error: "A valid, non-empty projectId is required." });
   if (!process.env.GITHUB_WEBHOOK_SECRET) {
     return res.status(503).json({ error: "GITHUB_WEBHOOK_SECRET is not configured." });
   }
@@ -202,10 +225,14 @@ projectsRouter.post("/webhook", requireFirebaseUser, async (req: AuthenticatedRe
       webhookBaseUrl,
     });
 
-    await getAdminFirestore().collection("projects").doc(projectId).set({
-      webhookConfigured: Boolean(result.webhookConfigured),
-      updatedAt: new Date().toISOString(),
-    }, { merge: true });
+    try {
+      await getAdminFirestore().collection("projects").doc(projectId).set({
+        webhookConfigured: Boolean(result.webhookConfigured),
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+    } catch (fsErr: any) {
+      console.warn("Could not save webhook status to Firestore:", fsErr?.message || fsErr);
+    }
 
     if (!result.webhookConfigured) {
       return res.status(502).json({
@@ -222,8 +249,8 @@ projectsRouter.post("/webhook", requireFirebaseUser, async (req: AuthenticatedRe
 
 // Persistent analysis job status and explicit incremental re-processing.
 projectsRouter.get("/analysis-jobs/latest", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
-  const projectId = String(req.query.projectId || "");
-  if (!projectId) return res.status(400).json({ error: "projectId is required." });
+  const projectId = validateFirestoreDocPath(req.query.projectId);
+  if (!projectId) return res.status(400).json({ error: "A valid, non-empty projectId is required." });
   const context = await loadProjectContext(projectId, req.user!.uid);
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
   const jobs = Array.isArray(context.project.analysisJobs)
@@ -236,8 +263,9 @@ projectsRouter.get("/analysis-jobs/latest", requireFirebaseUser, async (req: Aut
 
 projectsRouter.post("/analysis-jobs", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
   const { projectId, changedFiles, removedFiles, commitSha } = req.body || {};
-  if (!projectId) return res.status(400).json({ error: "projectId is required." });
-  const context = await loadProjectContext(String(projectId), req.user!.uid);
+  const cleanProjectId = validateFirestoreDocPath(projectId);
+  if (!cleanProjectId) return res.status(400).json({ error: "A valid, non-empty projectId is required." });
+  const context = await loadProjectContext(cleanProjectId, req.user!.uid);
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
   const project: any = context.project;
   const files = Array.isArray(changedFiles) ? changedFiles.filter((value: any) => typeof value === "string") : [];
@@ -245,7 +273,7 @@ projectsRouter.post("/analysis-jobs", requireFirebaseUser, async (req: Authentic
   if (files.length + removed.length === 0) return res.status(400).json({ error: "changedFiles or removedFiles is required." });
   const branch = String(project.branch || project.defaultBranch || "");
   const queued = await enqueueIncrementalAnalysis({
-    projectId: String(projectId),
+    projectId: cleanProjectId,
     ownerId: req.user!.uid,
     branch,
     changedFiles: files,
@@ -257,9 +285,10 @@ projectsRouter.post("/analysis-jobs", requireFirebaseUser, async (req: Authentic
 
 // Calculate direct and transitive impact from persisted, evidence-backed graph edges.
 projectsRouter.post("/impact", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
-  const { projectId, nodeId } = req.body;
-  if (!projectId || !nodeId) return res.status(400).json({ error: "projectId and nodeId are required." });
-  const context = await loadProjectContext(String(projectId), req.user!.uid);
+  const projectId = validateFirestoreDocPath(req.body?.projectId);
+  const nodeId = typeof req.body?.nodeId === "string" && req.body.nodeId.trim() ? req.body.nodeId.trim() : null;
+  if (!projectId || !nodeId) return res.status(400).json({ error: "A valid, non-empty projectId and nodeId are required." });
+  const context = await loadProjectContext(projectId, req.user!.uid);
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
   const node = context.graphNodes.find((item: any) => item.id === nodeId);
   if (!node) return res.status(404).json({ error: "Graph node not found." });
@@ -300,13 +329,20 @@ projectsRouter.post("/impact", requireFirebaseUser, async (req: AuthenticatedReq
 
 // Real Repository Analysis Engine
 projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
-  const { repository, branch: requestedBranch } = req.body;
+  const { repository, branch: requestedBranch } = req.body || {};
   const githubToken = (await resolveGitHubToken(req, res)) || undefined;
 
-  const parsed = parseGitHubRepo(repository);
+  const cleanRepo = sanitizeGitHubRepo(repository);
+  if (!cleanRepo) {
+    return res.status(400).json({
+      error: "Invalid repository format. Please enter as 'owner/repo' or a full GitHub URL (e.g., 'facebook/react' or 'https://github.com/facebook/react').",
+    });
+  }
+
+  const parsed = parseGitHubRepo(cleanRepo);
   if (!parsed) {
     return res.status(400).json({
-      error: "Invalid repository format. Please enter as 'owner/repo' or a full GitHub URL (e.g., 'facebook/react' or 'https://github.com/vercel/next.js').",
+      error: "Invalid repository format. Please enter as 'owner/repo' or a full GitHub URL (e.g., 'facebook/react' or 'https://github.com/facebook/react').",
     });
   }
 
@@ -948,9 +984,18 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
       });
     }
 
-    let webhookConfigured = Boolean(
-      (await getAdminFirestore().collection("projects").doc(String(req.body.projectId || "")).get()).data()?.webhookConfigured
-    );
+    let webhookConfigured = false;
+    const requestedProjectId = validateFirestoreDocPath(req.body?.projectId);
+    if (requestedProjectId) {
+      try {
+        const docSnap = await getAdminFirestore().collection("projects").doc(requestedProjectId).get();
+        if (docSnap.exists) {
+          webhookConfigured = Boolean(docSnap.data()?.webhookConfigured);
+        }
+      } catch (dbErr: any) {
+        console.warn("Could not check project webhook status from Firestore:", dbErr?.message || dbErr);
+      }
+    }
 
     if (
       githubToken &&
@@ -977,7 +1022,7 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
       project: {
         name: repoData.name,
         description: repoData.description || `Monitored GitHub repository (${repoData.full_name})`,
-        repository: repoData.full_name,
+        repository: sanitizeGitHubRepo(repoData.full_name) || `${owner}/${repo}`,
         branch,
         defaultBranch: repoData.default_branch || "main",
         framework: detectedFramework,
