@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { authenticatedHeaders } from "../lib/api";
 import {
   Network,
@@ -60,16 +60,25 @@ export function ProductGraphPage() {
     );
   }
 
-  const filteredNodes = graphNodes.filter((node) => {
-    if (filterLayer === "all") return true;
-    if (filterLayer === "frontend") return node.category === "frontend";
-    if (filterLayer === "backend") return node.category === "backend" || node.category === "logic";
-    if (filterLayer === "storage") return node.category === "storage";
-    if (filterLayer === "config") return node.category === "config";
-    if (filterLayer === "external") return node.category === "external";
-    if (filterLayer === "experiments") return node.type === "experiment";
-    return true;
-  });
+  const filteredNodes = useMemo(() => {
+    const list = graphNodes.filter((node) => {
+      if (filterLayer === "all") return true;
+      if (filterLayer === "frontend") return node.category === "frontend";
+      if (filterLayer === "backend") return node.category === "backend" || node.category === "logic";
+      if (filterLayer === "storage") return node.category === "storage";
+      if (filterLayer === "config") return node.category === "config";
+      if (filterLayer === "external") return node.category === "external";
+      if (filterLayer === "experiments") return node.type === "experiment";
+      return true;
+    });
+
+    const seen = new Set<string>();
+    return list.filter((node) => {
+      if (!node?.id || seen.has(node.id)) return false;
+      seen.add(node.id);
+      return true;
+    });
+  }, [graphNodes, filterLayer]);
 
   const getNodeIcon = (type: NodeType) => {
     switch (type) {
@@ -135,7 +144,7 @@ export function ProductGraphPage() {
   const graphCanvasWidth = Math.max(980, graphColumns * graphCellWidth + 60);
   const graphRows = Math.ceil(visibleGraphNodes.length / graphColumns);
   const graphCanvasHeight = Math.max(430, graphRows * graphCellHeight + 80);
-  const graphPositions = new Map(
+  const graphPositions = new Map<string, { x: number; y: number }>(
     visibleGraphNodes.map((node, index) => [
       node.id,
       {
@@ -288,6 +297,7 @@ export function ProductGraphPage() {
                         const highlighted = selectedNode
                           ? edge.from === selectedNode.id || edge.to === selectedNode.id
                           : false;
+                        if (!from || !to) return null;
                         return (
                           <line
                             key={`edge_${index}`}
@@ -303,7 +313,7 @@ export function ProductGraphPage() {
                       })}
 
                       {visibleGraphNodes.map((node) => {
-                        const pos = graphPositions.get(node.id)!;
+                        const pos = graphPositions.get(node.id) || { x: 40, y: 45 };
                         const selected = selectedNode?.id === node.id;
                         const connected = selectedNode
                           ? node.id === selectedNode.id ||
@@ -315,7 +325,7 @@ export function ProductGraphPage() {
                           : true;
                         return (
                           <g
-                            key={node.id}
+                            key={`svg_${node.id}`}
                             transform={`translate(${pos.x} ${pos.y})`}
                             onClick={() => setSelectedNode(node)}
                             className="cursor-pointer"
@@ -381,7 +391,7 @@ export function ProductGraphPage() {
 
                 return (
                   <div
-                    key={node.id}
+                    key={`card_${node.id}`}
                     onClick={() => setSelectedNode(node)}
                     className={`p-4 rounded-xl border transition-all cursor-pointer relative ${
                       isSelected

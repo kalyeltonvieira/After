@@ -243,6 +243,19 @@ export async function exchangeOAuthCode(code: string): Promise<{ token: string; 
   };
 }
 
+async function safeJson<T = any>(res: Response, fallbackDesc = "response"): Promise<T | null> {
+  try {
+    const text = await res.text();
+    const trimmed = text.trim();
+    if (trimmed.startsWith("<!DOCTYPE") || trimmed.startsWith("<html") || trimmed.startsWith("<")) {
+      return null;
+    }
+    return JSON.parse(trimmed) as T;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Fetches authenticated GitHub user profile
  */
@@ -258,7 +271,11 @@ export async function getAuthenticatedUser(token: string): Promise<GitHubUser> {
     throw new Error(`Failed to fetch GitHub user: ${res.statusText}`);
   }
 
-  return (await res.json()) as GitHubUser;
+  const data = await safeJson<GitHubUser>(res, "user profile");
+  if (!data) {
+    throw new Error(`GitHub returned an HTML page or invalid JSON for user profile (${res.status}).`);
+  }
+  return data;
 }
 
 /**
@@ -290,16 +307,17 @@ export async function listUserRepositories(
       if (res.status === 401) throw new Error("GitHub token is invalid or expired.");
       throw new Error(`Failed to list GitHub repositories: ${res.statusText}`);
     }
-    const repos = (await res.json()) as GitHubRepo[];
-    allRepos.push(...repos);
-    if (repos.length < perPage) break;
+    const repos = await safeJson<GitHubRepo[]>(res, "repos list");
+    if (Array.isArray(repos)) {
+      allRepos.push(...repos);
+      if (repos.length < perPage) break;
+    } else {
+      break;
+    }
   }
   return allRepos;
 }
 
-/**
- * Fetches a single repository's details
- */
 export async function getRepository(
   owner: string,
   repo: string,
@@ -325,7 +343,11 @@ export async function getRepository(
     throw new Error(`GitHub API error (${res.status}): ${res.statusText}`);
   }
 
-  return (await res.json()) as GitHubRepo;
+  const data = await safeJson<GitHubRepo>(res, `repository ${owner}/${repo}`);
+  if (!data) {
+    throw new Error(`GitHub returned non-JSON/HTML response for repository '${owner}/${repo}'.`);
+  }
+  return data;
 }
 
 /**
@@ -347,7 +369,8 @@ export async function getRepositoryBranches(
     return [];
   }
 
-  return (await res.json()) as GitHubBranch[];
+  const data = await safeJson<GitHubBranch[]>(res, "branches");
+  return Array.isArray(data) ? data : [];
 }
 
 /**
@@ -378,7 +401,8 @@ export async function getRepositoryCommits(
     return [];
   }
 
-  return (await res.json()) as any[];
+  const data = await safeJson<any[]>(res, "commits");
+  return Array.isArray(data) ? data : [];
 }
 
 /**
@@ -405,7 +429,8 @@ export async function getRepositoryTree(
       return { sha: ref, tree: [] };
     }
 
-    return (await res.json()) as { sha: string; tree: GitHubTreeItem[] };
+    const data = await safeJson<{ sha: string; tree: GitHubTreeItem[] }>(res, "tree");
+    return data && Array.isArray(data.tree) ? data : { sha: ref, tree: [] };
   });
 }
 
@@ -417,7 +442,7 @@ export async function getGitBlobContent(owner: string, repo: string, sha: string
     headers: getGitHubHeaders(token),
   });
   if (!res.ok) return null;
-  const data = await res.json();
+  const data = await safeJson<any>(res, "blob");
   if (data?.encoding !== "base64" || typeof data.content !== "string") return null;
   return {
     content: Buffer.from(data.content.replace(/\n/g, ""), "base64").toString("utf8"),
@@ -432,7 +457,7 @@ async function listDirectoryTree(owner: string, repo: string, path: string, ref:
   const urlPath = path ? `/${path.split("/").map(encodeURIComponent).join("/")}` : "";
   const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents${urlPath}?ref=${encodeURIComponent(ref)}`, { headers: getGitHubHeaders(token) });
   if (!res.ok) return;
-  const items = await res.json();
+  const items = await safeJson<any[]>(res, "directory items");
   if (!Array.isArray(items)) return;
   for (const item of items) {
     const normalized: GitHubTreeItem = {
@@ -453,7 +478,7 @@ export async function getCompleteRepositoryTree(owner: string, repo: string, sha
   const ref = shaOrBranch || repository.default_branch;
   const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`, { headers: getGitHubHeaders(token) });
   if (res.ok) {
-    const data = await res.json();
+    const data = await safeJson<any>(res, "tree");
     if (Array.isArray(data?.tree) && data.truncated !== true) return { sha: String(data.sha || ref), tree: data.tree as GitHubTreeItem[], truncated: false };
     if (Array.isArray(data?.tree) && data.tree.length) {
       const output = [...(data.tree as GitHubTreeItem[])];

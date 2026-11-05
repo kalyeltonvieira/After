@@ -41,24 +41,29 @@ export function validateFirestoreDocPath(docId: unknown): string | null {
 
 async function resolveGitHubToken(
   req: AuthenticatedRequest,
-  res: Response
+  res?: Response
 ): Promise<string | null> {
+  const headerToken = (req.headers["x-github-access-token"] as string | undefined)?.trim();
+  if (headerToken) return headerToken;
+
   const uid = req.user!.uid;
   const liveToken = getGitHubToken(req.cookies?.after_github_session, uid);
   if (liveToken) return liveToken;
 
-    try {
+  try {
     const persistedToken = await getPersistentGitHubToken(uid);
     if (!persistedToken) return null;
 
-    const sessionId = createGitHubSession(uid, persistedToken);
-    res.cookie("after_github_session", sessionId, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: "/",
-    });
+    if (res && typeof res.cookie === "function") {
+      const sessionId = createGitHubSession(uid, persistedToken);
+      res.cookie("after_github_session", sessionId, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: "/",
+      });
+    }
     return persistedToken;
   } catch (error: any) {
     console.warn("Could not restore persisted GitHub token:", error?.message || error);
@@ -618,7 +623,15 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
       });
     }
 
-    const repoData = await repoRes.json();
+    const repoText = await repoRes.text();
+    let repoData: any = null;
+    try {
+      repoData = JSON.parse(repoText);
+    } catch {
+      return res.status(502).json({
+        error: `GitHub returned an HTML/non-JSON response for '${owner}/${repo}'. Please verify repository permissions.`,
+      });
+    }
     const branch = requestedBranch || repoData.default_branch || "main";
 
     // 2. Fetch Recent Real Commits for Timeline
@@ -626,7 +639,9 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
     try {
       const commitsRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits?sha=${branch}&per_page=15`, { headers });
       if (commitsRes.ok) {
-        const commits = await commitsRes.json();
+        const commitsText = await commitsRes.text();
+        let commits: any = null;
+        try { commits = JSON.parse(commitsText); } catch { commits = []; }
         if (Array.isArray(commits)) {
           realEvents = commits.map((c: any, index: number) => {
             const dateStr = c.commit?.author?.date || c.commit?.committer?.date || new Date().toISOString();
@@ -788,8 +803,10 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
     try {
       const pkgRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/package.json?ref=${branch}`, { headers });
       if (pkgRes.ok) {
-        const pkgData = await pkgRes.json();
-        if (pkgData.content) {
+        const pkgText = await pkgRes.text();
+        let pkgData: any = null;
+        try { pkgData = JSON.parse(pkgText); } catch { pkgData = null; }
+        if (pkgData?.content) {
           const raw = Buffer.from(pkgData.content, "base64").toString("utf-8");
           packageJson = JSON.parse(raw);
         }
@@ -849,6 +866,31 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
     // 6. Construct Real Architecture Graph Nodes from actual files
     const graphNodes: any[] = [];
     const graphEdges: any[] = [];
+    const seenNodeIds = new Set<string>();
+    const seenFilePaths = new Set<string>();
+    const seenEdgeKeys = new Set<string>();
+
+    const addGraphNode = (node: any) => {
+      if (!node || !node.id) return false;
+      if (seenNodeIds.has(node.id)) return false;
+      if (node.filePath && !node.parentId && seenFilePaths.has(node.filePath)) return false;
+
+      seenNodeIds.add(node.id);
+      if (node.filePath && !node.parentId) {
+        seenFilePaths.add(node.filePath);
+      }
+      graphNodes.push(node);
+      return true;
+    };
+
+    const addGraphEdge = (edge: any) => {
+      if (!edge || !edge.from || !edge.to) return false;
+      const key = `${edge.from}_${edge.to}_${edge.label || "link"}`;
+      if (seenEdgeKeys.has(key)) return false;
+      seenEdgeKeys.add(key);
+      graphEdges.push(edge);
+      return true;
+    };
 
     // Filter file blobs only. Source content is fetched only for bounded, analyzable files.
     const fileBlobs = treeItems.filter((t) => t.type === "blob");
@@ -888,7 +930,7 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
     for (const file of pageFiles.slice(0, 8)) {
       const baseName = file.path.split("/").pop() || file.path;
       const nodeId = `page_${file.path.replace(/[^a-zA-Z0-9_]/g, "_")}`;
-      graphNodes.push({
+      addGraphNode({
         id: nodeId,
         label: baseName,
         type: "page",
@@ -899,7 +941,6 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
         symbol: baseName.replace(/\.[^/.]+$/, ""),
         line: 1,
         description: `Application view file mapped directly from repository.`,
-
       });
     }
 
@@ -917,7 +958,7 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
     for (const file of compFiles.slice(0, 10)) {
       const baseName = file.path.split("/").pop() || file.path;
       const nodeId = `comp_${file.path.replace(/[^a-zA-Z0-9_]/g, "_")}`;
-      graphNodes.push({
+      addGraphNode({
         id: nodeId,
         label: baseName,
         type: "component",
@@ -948,7 +989,7 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
     for (const file of apiFiles.slice(0, 8)) {
       const baseName = file.path.split("/").pop() || file.path;
       const nodeId = `api_${file.path.replace(/[^a-zA-Z0-9_]/g, "_")}`;
-      graphNodes.push({
+      addGraphNode({
         id: nodeId,
         label: baseName,
         type: "api",
@@ -981,7 +1022,7 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
     for (const file of logicFiles.slice(0, 8)) {
       const baseName = file.path.split("/").pop() || file.path;
       const nodeId = `fn_${file.path.replace(/[^a-zA-Z0-9_]/g, "_")}`;
-      graphNodes.push({
+      addGraphNode({
         id: nodeId,
         label: baseName,
         type: "function",
@@ -1013,7 +1054,7 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
     for (const file of configFiles.slice(0, 6)) {
       const baseName = file.path.split("/").pop() || file.path;
       const nodeId = `cfg_${file.path.replace(/[^a-zA-Z0-9_]/g, "_")}`;
-      graphNodes.push({
+      addGraphNode({
         id: nodeId,
         label: baseName,
         type: "config",
@@ -1044,7 +1085,7 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
           if (seenDependencyNames.has(depName)) continue;
           seenDependencyNames.add(depName);
           const nodeId = `dep_${depName.replace(/[^a-zA-Z0-9_]/g, "_")}`;
-          graphNodes.push({
+          addGraphNode({
             id: nodeId,
             label: `${depName}@${version}`,
             type: "dependency",
@@ -1069,7 +1110,7 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
       for (const symbol of analysis.symbols.slice(0, 24)) {
         const symbolId = `symbol_${filePath.replace(/[^a-zA-Z0-9_]/g, "_")}_${symbol.name.replace(/[^a-zA-Z0-9_]/g, "_")}`;
         if (graphNodes.some((node: any) => node.id === symbolId)) continue;
-        graphNodes.push({
+        addGraphNode({
           id: symbolId,
           label: symbol.name,
           type: symbol.type === "variable" && /^(tsx|jsx)$/.test(filePath.split(".").pop() || "") && /^[A-Z]/.test(symbol.name) ? "component" : symbol.type,
@@ -1086,7 +1127,7 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
           certainty: analysis.certainty,
           description: `Symbol ${symbol.name} observed in ${filePath}.`,
         });
-        graphEdges.push({
+        addGraphEdge({
           from: parentNode.id,
           to: symbolId,
           label: "contains",
@@ -1102,7 +1143,7 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
       if (node.filePath && !node.parentId) nodeByPath.set(node.filePath, node);
     }
     for (const file of sourceCandidates) {
-      if (!nodeByPath.has(file.path)) {
+      if (!nodeByPath.has(file.path) && !seenFilePaths.has(file.path)) {
         const node = {
           id: `file_${file.path.replace(/[^a-zA-Z0-9_]/g, "_")}`,
           label: file.path.split("/").pop() || file.path,
@@ -1110,8 +1151,9 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
           filePath: file.path, symbol: file.path.split("/").pop()?.replace(/\.[^/.]+$/, ""), line: 1,
           description: "Source file observed in the repository tree.",
         };
-        graphNodes.push(node);
-        nodeByPath.set(file.path, node);
+        if (addGraphNode(node)) {
+          nodeByPath.set(file.path, node);
+        }
       }
     }
     const dependencyByName = new Map(graphNodes.filter((n) => n.type === "dependency").map((n) => [n.dependency, n]));
@@ -1135,10 +1177,10 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
         const targetPath = resolveImport(filePath, specifier);
         if (targetPath) {
           const target = nodeByPath.get(targetPath);
-          if (target && !graphEdges.some((e) => e.from === from.id && e.to === target.id && e.label === "imports")) graphEdges.push({ from: from.id, to: target.id, label: "imports", evidence: `${filePath} imports ${specifier}` });
+          if (target) addGraphEdge({ from: from.id, to: target.id, label: "imports", evidence: `${filePath} imports ${specifier}` });
         } else {
           const dep = dependencyByName.get(specifier.split("/").slice(0, specifier.startsWith("@") ? 2 : 1).join("/"));
-          if (dep && !graphEdges.some((e) => e.from === from.id && e.to === dep.id && e.label === "imports")) graphEdges.push({ from: from.id, to: dep.id, label: "imports", evidence: `${filePath} imports ${specifier}` });
+          if (dep) addGraphEdge({ from: from.id, to: dep.id, label: "imports", evidence: `${filePath} imports ${specifier}` });
         }
       }
     }

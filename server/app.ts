@@ -21,3 +21,14 @@ apiRouter.get("/health", (req, res) => {
 apiRouter.use("/gemini", aiRouter);
 apiRouter.use("/projects", projectsRouter);
 apiRouter.use("/repository", repositoryRouter);
+
+// Catch-all 404 for API routes to prevent HTML error leaks
+apiRouter.use((req, res) => {
+  res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl}` });
+});
+
+// Global API error handler returning structured JSON
+apiRouter.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("API Error:", err?.message || err);
+  res.status(Number(err?.status) || 500).json({ error: err?.message || "Internal API error" });
+});

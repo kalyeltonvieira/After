@@ -7,6 +7,7 @@ interface GitHubSession {
 }
 
 const sessions = new Map<string, GitHubSession>();
+const userSessions = new Map<string, { token: string; expiresAt: number }>();
 const states = new Map<string, { uid: string; expiresAt: number }>();
 const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;
 const STATE_TTL = 10 * 60 * 1000;
@@ -26,22 +27,39 @@ export function consumeOAuthState(state: string) {
 
 export function createGitHubSession(uid: string, token: string) {
   const sessionId = crypto.randomBytes(32).toString("hex");
-  sessions.set(sessionId, { uid, token, expiresAt: Date.now() + SESSION_TTL });
+  const expiresAt = Date.now() + SESSION_TTL;
+  sessions.set(sessionId, { uid, token, expiresAt });
+  userSessions.set(uid, { token, expiresAt });
   return sessionId;
 }
 
 export function getGitHubToken(sessionId: string | undefined, uid: string) {
-  if (!sessionId) return null;
-  const session = sessions.get(sessionId);
-  if (!session || session.uid !== uid || session.expiresAt < Date.now()) {
-    if (session?.expiresAt && session.expiresAt < Date.now()) sessions.delete(sessionId);
-    return null;
+  // 1. Try session ID cookie
+  if (sessionId) {
+    const session = sessions.get(sessionId);
+    if (session && session.uid === uid && session.expiresAt > Date.now()) {
+      return session.token;
+    }
+    if (session?.expiresAt && session.expiresAt <= Date.now()) {
+      sessions.delete(sessionId);
+    }
   }
-  return session.token;
+
+  // 2. Fallback to memory map for iframe environments where third-party cookies are partitioned
+  const userSession = userSessions.get(uid);
+  if (userSession && userSession.expiresAt > Date.now()) {
+    return userSession.token;
+  }
+  if (userSession?.expiresAt && userSession.expiresAt <= Date.now()) {
+    userSessions.delete(uid);
+  }
+
+  return null;
 }
 
-export function revokeGitHubSession(sessionId: string | undefined) {
+export function revokeGitHubSession(sessionId: string | undefined, uid?: string) {
   if (sessionId) sessions.delete(sessionId);
+  if (uid) userSessions.delete(uid);
 }
 
 

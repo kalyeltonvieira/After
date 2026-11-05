@@ -3,6 +3,7 @@ import {
   GitBranch, FileCode2, GitCommit, GitPullRequest, CircleDot, Package, Users,
   Search, Plus, Eye, ExternalLink, RefreshCw, Sparkles, X, Tag, Activity,
   Copy, Check, GitCompare, MessageSquare, Save, ChevronRight, Clock3, Folder,
+  ShieldAlert, AlertTriangle, AlertCircle, RotateCcw, ChevronDown, ChevronUp, Terminal,
 } from "lucide-react";
 import Prism from "prismjs";
 import "prismjs/components/prism-clike";
@@ -18,6 +19,7 @@ import "prismjs/components/prism-python";
 import "prismjs/components/prism-yaml";
 import "prismjs/components/prism-sql";
 import { useProject } from "../context/ProjectContext";
+import { useAuth } from "../context/AuthContext";
 import { authenticatedHeaders } from "../lib/api";
 import { EmptyState } from "../components/EmptyState";
 
@@ -844,8 +846,8 @@ export function RepositoryPage() {
                 <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-3">
                   <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">Symbols</div>
                   <div className="mt-2 space-y-1 max-h-36 overflow-auto">
-                    {fileSymbols.length ? fileSymbols.map((symbol: any) => (
-                      <button key={symbol.id} type="button" onClick={() => document.getElementById(`code-line-${symbol.line || 1}`)?.scrollIntoView({ behavior: "smooth", block: "center" })} className="w-full text-left rounded-lg px-2 py-1 text-[10px] font-mono hover:bg-zinc-100 dark:hover:bg-zinc-900">
+                    {fileSymbols.length ? fileSymbols.map((symbol: any, idx: number) => (
+                      <button key={`sym_${symbol.id}_${idx}`} type="button" onClick={() => document.getElementById(`code-line-${symbol.line || 1}`)?.scrollIntoView({ behavior: "smooth", block: "center" })} className="w-full text-left rounded-lg px-2 py-1 text-[10px] font-mono hover:bg-zinc-100 dark:hover:bg-zinc-900">
                         {symbol.symbol} <span className="text-zinc-400">L{symbol.line || 1}</span>
                       </button>
                     )) : <div className="text-xs text-zinc-400">No symbol-level evidence for this file.</div>}
@@ -854,13 +856,13 @@ export function RepositoryPage() {
                 <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-3">
                   <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">Dependencies</div>
                   <div className="mt-2 space-y-1 max-h-36 overflow-auto">
-                    {fileDependencies.length ? fileDependencies.map((node: any) => <button key={node.id} type="button" onClick={() => setAiContext({ type: "node", label: node.label, path: node.filePath })} className="w-full text-left rounded-lg px-2 py-1 text-[10px] font-mono hover:bg-zinc-100 dark:hover:bg-zinc-900 truncate">{node.label}</button>) : <div className="text-xs text-zinc-400">No recorded import relationship.</div>}
+                    {fileDependencies.length ? fileDependencies.map((node: any, idx: number) => <button key={`dep_${node.id}_${idx}`} type="button" onClick={() => setAiContext({ type: "node", label: node.label, path: node.filePath })} className="w-full text-left rounded-lg px-2 py-1 text-[10px] font-mono hover:bg-zinc-100 dark:hover:bg-zinc-900 truncate">{node.label}</button>) : <div className="text-xs text-zinc-400">No recorded import relationship.</div>}
                   </div>
                 </div>
                 <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-3">
                   <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">Dependents</div>
                   <div className="mt-2 space-y-1 max-h-36 overflow-auto">
-                    {fileDependents.length ? fileDependents.map((node: any) => <button key={node.id} type="button" onClick={() => setAiContext({ type: "node", label: node.label, path: node.filePath })} className="w-full text-left rounded-lg px-2 py-1 text-[10px] font-mono hover:bg-zinc-100 dark:hover:bg-zinc-900 truncate">{node.label}</button>) : <div className="text-xs text-zinc-400">No recorded dependent relationship.</div>}
+                    {fileDependents.length ? fileDependents.map((node: any, idx: number) => <button key={`dependents_${node.id}_${idx}`} type="button" onClick={() => setAiContext({ type: "node", label: node.label, path: node.filePath })} className="w-full text-left rounded-lg px-2 py-1 text-[10px] font-mono hover:bg-zinc-100 dark:hover:bg-zinc-900 truncate">{node.label}</button>) : <div className="text-xs text-zinc-400">No recorded dependent relationship.</div>}
                   </div>
                 </div>
               </div>

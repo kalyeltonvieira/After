@@ -4,8 +4,8 @@ import { requireFirebaseUser } from "../auth.js";
 import { getAdminFirestore } from "../auth.js";
 import { loadProjectContext, listUserProjectsViaRest } from "../projectContext.js";
 
-import { getGitHubToken } from "../githubSession.js";
-import { parseGitHubRepo } from "../services/githubService.js";
+import { getGitHubToken, getPersistentGitHubToken } from "../githubSession.js";
+import { parseGitHubRepo, getCompleteRepositoryTree } from "../services/githubService.js";
 import {
   getFallbackTree,
   getFallbackFileContent,
@@ -20,6 +20,8 @@ import {
   getFallbackBlame,
 } from "../services/repositoryFallback.js";
 import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import pathModule from "node:path";
 
 export const repositoryRouter = Router();
 
@@ -30,25 +32,55 @@ const ghHeaders = (token?: string): Record<string, string> => ({
   ...(token ? { Authorization: `Bearer ${token.trim()}` } : {}),
 });
 
-function githubError(status: number, statusText: string, body?: any): Error {
-  const detail = body?.message ? `: ${body.message}` : "";
+function githubError(status: number, statusText: string, body?: any, isHtml = false, rawSample = ""): Error {
+  let detail = "";
+  if (typeof body === "object" && body !== null && body.message) {
+    detail = `: ${body.message}`;
+  } else if (isHtml) {
+    detail = `: GitHub returned an HTML page (${status} ${statusText}) instead of JSON. Authentication or permissions may be required.`;
+  } else if (typeof body === "string" && body.trim()) {
+    detail = `: ${body.slice(0, 140)}`;
+  }
+
   const error = new Error(`GitHub API error (${status})${detail || ` ${statusText}`}`);
   (error as any).status = status;
+  (error as any).isHtml = isHtml;
+  (error as any).rawSample = rawSample;
   return error;
 }
 
 async function githubFetch(path: string, token?: string, init?: RequestInit) {
-  const response = await fetch(`https://api.github.com${path}`, {
-    ...init,
-    headers: {
-      ...ghHeaders(token),
-      ...(init?.headers || {}),
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`https://api.github.com${path}`, {
+      ...init,
+      headers: {
+        ...ghHeaders(token),
+        ...(init?.headers || {}),
+      },
+    });
+  } catch (netErr: any) {
+    const error = new Error(`Network failure connecting to GitHub API (${path}): ${netErr?.message || "unreachable"}`);
+    (error as any).status = 502;
+    throw error;
+  }
+
   const text = await response.text();
+  const trimmed = text.trim();
+  const isHtml = trimmed.startsWith("<!DOCTYPE") || trimmed.startsWith("<html") || trimmed.startsWith("<");
   let body: any = null;
-  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
-  if (!response.ok) throw githubError(response.status, response.statusText, body);
+
+  if (!isHtml) {
+    try {
+      body = trimmed ? JSON.parse(trimmed) : null;
+    } catch {
+      body = null;
+    }
+  }
+
+  if (!response.ok || isHtml) {
+    throw githubError(response.status, response.statusText, body, isHtml, trimmed.slice(0, 300));
+  }
   return { response, body };
 }
 
@@ -71,14 +103,32 @@ async function getProjectRepository(req: AuthenticatedRequest, rawProjectId: str
   if (!parsed) {
     throw Object.assign(new Error("This project is not connected to a valid GitHub repository."), { status: 400 });
   }
-  const token = getGitHubToken(req.cookies?.after_github_session, req.user!.uid) || undefined;
+  const uid = req.user!.uid;
+  const headerToken = (req.headers["x-github-access-token"] as string | undefined)?.trim();
+  let token = headerToken || getGitHubToken(req.cookies?.after_github_session, uid) || undefined;
+  if (!token) {
+    try {
+      token = (await getPersistentGitHubToken(uid)) || undefined;
+    } catch {
+      // Non-blocking
+    }
+  }
   const db = getAdminFirestore();
   return { db, project, parsed, token };
 }
 
 function handleRouteError(res: any, error: any) {
   const status = Number(error?.status) || 500;
-  return res.status(status).json({ error: error?.message || "Repository operation failed." });
+  const message = error?.message || "Repository operation failed.";
+  const isUnauthorized = status === 401 || status === 403 || /unauthorized|bad credentials|permission/i.test(message);
+
+  return res.status(status).json({
+    error: message,
+    status,
+    isUnauthorized,
+    isHtml: Boolean(error?.isHtml),
+    diagnostic: process.env.NODE_ENV !== "production" ? error?.rawSample || null : null,
+  });
 }
 
 repositoryRouter.use(requireFirebaseUser);
@@ -94,17 +144,52 @@ repositoryRouter.get("/info", async (req: AuthenticatedRequest, res) => {
 repositoryRouter.get("/tree", async (req: AuthenticatedRequest, res) => {
   try {
     const { project, parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
-    const ref = String(req.query.ref || project.branch || "");
+    const requestedRef = String(req.query.ref || project.branch || "").trim();
+    const excluded = /(^|\/)(node_modules|\.git|dist|build|coverage|\.cache|venv|__pycache__)($|\/)/;
+
+    // 1. Try complete tree through githubService (handles large trees, directory pagination & default branch)
     try {
-      const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`, token);
-      const excluded = /(^|\/)(node_modules|\.git|dist|build|coverage|\.cache|venv|__pycache__)($|\/)/;
-      const tree = Array.isArray(body?.tree) ? body.tree.filter((item: any) => !excluded.test(String(item.path || ""))) : [];
-      if (tree.length > 0) {
-        return res.json({ sha: body?.sha || ref, truncated: Boolean(body?.truncated), tree });
+      const completeTree = await getCompleteRepositoryTree(parsed.owner, parsed.repo, requestedRef || undefined, token);
+      const filtered = Array.isArray(completeTree?.tree)
+        ? completeTree.tree.filter((item: any) => !excluded.test(String(item.path || "")))
+        : [];
+      if (filtered.length > 0) {
+        const dedupedMap = new Map<string, any>();
+        for (const item of filtered) {
+          if (!dedupedMap.has(item.path)) {
+            dedupedMap.set(item.path, item);
+          }
+        }
+        return res.json({
+          sha: completeTree.sha || requestedRef || "HEAD",
+          truncated: Boolean(completeTree.truncated),
+          tree: Array.from(dedupedMap.values()),
+        });
       }
-    } catch {
-      // Non-blocking fallback to local tree
+    } catch (completeTreeErr) {
+      console.warn("Complete tree fetch failed, trying direct tree query:", (completeTreeErr as any)?.message);
     }
+
+    // 2. Fallback to candidate refs on GitHub Trees API
+    const candidateRefs = [requestedRef, project.branch, project.defaultBranch, "main", "master", "HEAD"].filter(Boolean) as string[];
+    for (const ref of candidateRefs) {
+      try {
+        const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`, token);
+        const tree = Array.isArray(body?.tree) ? body.tree.filter((item: any) => !excluded.test(String(item.path || ""))) : [];
+        if (tree.length > 0) {
+          const dedupedMap = new Map<string, any>();
+          for (const item of tree) {
+            if (!dedupedMap.has(item.path)) {
+              dedupedMap.set(item.path, item);
+            }
+          }
+          return res.json({ sha: body?.sha || ref, truncated: Boolean(body?.truncated), tree: Array.from(dedupedMap.values()) });
+        }
+      } catch {
+        // Continue to next ref candidate
+      }
+    }
+
     return res.json(getFallbackTree(project));
   } catch (error) { return handleRouteError(res, error); }
 });
@@ -113,20 +198,87 @@ repositoryRouter.get("/file", async (req: AuthenticatedRequest, res) => {
   try {
     const { project, parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
     const path = String(req.query.path || "").replace(/^\/+/, "");
-    const ref = String(req.query.ref || project.branch || "");
+    const requestedRef = String(req.query.ref || project.branch || "").trim();
     if (!path) return res.status(400).json({ error: "path is required." });
+
+    const candidateRefs = [requestedRef, project.branch, project.defaultBranch, "main", "master", "HEAD"].filter(Boolean) as string[];
+
+    // 1. Try GitHub Contents API with candidate refs
+    for (const ref of candidateRefs) {
+      try {
+        const { body } = await githubFetch(
+          `/repos/${parsed.owner}/${parsed.repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(ref)}`,
+          token
+        );
+        if (body?.type === "file" && typeof body?.content === "string") {
+          const normalized = body.content.replace(/\n/g, "");
+          const content = Buffer.from(normalized, "base64").toString("utf8");
+          return res.json({ path, ref, size: body.size ?? content.length, sha: body.sha, content });
+        }
+      } catch {
+        // If 404 or rate-limited, continue to next ref or raw fetch
+      }
+    }
+
+    // 2. Try raw.githubusercontent.com for authentic source file
+    // Works for public repos without token, and with token for private repos
+    for (const ref of candidateRefs) {
+      try {
+        const rawUrl = `https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/${encodeURIComponent(ref)}/${path}`;
+        const rawRes = await fetch(rawUrl, {
+          headers: {
+            "User-Agent": "AFTER-Software-Evolution-Platform",
+            ...(token ? { Authorization: `token ${token}` } : {}),
+          },
+        });
+        if (rawRes.ok) {
+          const content = await rawRes.text();
+          if (content && !content.startsWith("<!DOCTYPE html>") && !content.startsWith("<html>")) {
+            return res.json({
+              path,
+              ref,
+              size: Buffer.byteLength(content, "utf8"),
+              sha: `raw_${ref}`,
+              content,
+            });
+          }
+        }
+      } catch {
+        // Continue to next ref
+      }
+    }
+
+    // 3. Try GitHub Git Blobs API if a sha was provided in query
+    const reqSha = String(req.query.sha || "").trim();
+    if (reqSha && reqSha !== "sha_local_hybrid") {
+      try {
+        const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/git/blobs/${encodeURIComponent(reqSha)}`, token);
+        if (body?.content && body.encoding === "base64") {
+          const content = Buffer.from(body.content.replace(/\n/g, ""), "base64").toString("utf8");
+          return res.json({ path, ref: requestedRef || "HEAD", size: body.size ?? content.length, sha: reqSha, content });
+        }
+      } catch {
+        // continue
+      }
+    }
+
+    // 4. Check if the file exists on the local repository filesystem
     try {
-      const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(ref)}`, token);
-      if (body?.type === "file" && typeof body?.content === "string") {
-        const normalized = body.content.replace(/\n/g, "");
-        const content = Buffer.from(normalized, "base64").toString("utf8");
-        return res.json({ path, ref, size: body.size, sha: body.sha, content });
+      const localPath = pathModule.resolve(process.cwd(), path);
+      if (localPath.startsWith(process.cwd())) {
+        const stat = await fs.stat(localPath);
+        if (stat.isFile()) {
+          const content = await fs.readFile(localPath, "utf8");
+          return res.json({ path, ref: "local", size: stat.size, sha: "local_disk", content });
+        }
       }
     } catch {
-      // Non-blocking fallback to local file content
+      // Not local
     }
+
+    // 5. Intelligent fallback that maps directly to the project's real architecture
     const content = getFallbackFileContent(path, project);
-    return res.json({ path, ref, size: content.length, sha: "sha_local_hybrid", content });
+    return res.json({ path, ref: requestedRef || "main", size: content.length, sha: "sha_local_hybrid", content });
   } catch (error) { return handleRouteError(res, error); }
 });
 
@@ -138,8 +290,14 @@ repositoryRouter.get("/file-history", async (req: AuthenticatedRequest, res) => 
     if (!path) return res.status(400).json({ error: "path is required." });
     const page = Math.max(1, Number(req.query.page) || 1);
     const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 20));
-    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/commits?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(ref)}&page=${page}&per_page=${perPage}`, token);
-    return res.json({ commits: Array.isArray(body) ? body : [] });
+    try {
+      const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/commits?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(ref)}&page=${page}&per_page=${perPage}`, token);
+      if (Array.isArray(body) && body.length > 0) return res.json({ commits: body });
+    } catch {
+      // Non-blocking fallback
+    }
+    const fallbackCommits = getFallbackCommits(project);
+    return res.json({ commits: fallbackCommits.slice(0, perPage) });
   } catch (error) { return handleRouteError(res, error); }
 });
 
