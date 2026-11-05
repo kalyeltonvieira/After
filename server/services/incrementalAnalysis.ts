@@ -47,7 +47,7 @@ async function githubGet(url: string, token?: string) {
 }
 
 async function fetchChangedFiles(owner: string, repo: string, ref: string, paths: string[], token?: string) {
-  const results = new Map<string, { status: number; body: any }>();
+  const results = new Map<string, { status: number; ok: boolean; body: any }>();
   const tree = await getCompleteRepositoryTree(owner, repo, ref, token);
   const byPath = new Map(tree.tree.map((item: any) => [String(item.path), item]));
   const concurrency = 8;
@@ -59,15 +59,16 @@ async function fetchChangedFiles(owner: string, repo: string, ref: string, paths
         if (item?.sha) {
           const blob = await getGitBlobContent(owner, repo, String(item.sha), token);
           if (blob) {
-            results.set(path, { status: 200, body: { encoding: "utf-8", content: blob.content, size: blob.size } });
+            results.set(path, { status: 200, ok: true, body: { encoding: "utf-8", content: blob.content, size: blob.size } });
             return;
           }
         }
         const encoded = path.split("/").map(encodeURIComponent).join("/");
         const url = "https://api.github.com/repos/" + owner + "/" + repo + "/contents/" + encoded + "?ref=" + encodeURIComponent(ref);
-        results.set(path, await githubGet(url, token));
+        const { response, body } = await githubGet(url, token);
+        results.set(path, { status: response.status, ok: response.ok, body });
       } catch {
-        results.set(path, { status: 500, body: null });
+        results.set(path, { status: 500, ok: false, body: null });
       }
     }));
   }
@@ -182,13 +183,12 @@ export async function enqueueIncrementalAnalysis(input: IncrementalInput) {
   const jobId = `incremental_${crypto.createHash("sha256").update(`${input.projectId}:${identity}`).digest("hex").slice(0, 24)}`;
   const projectRef = db.collection("projects").doc(input.projectId);
   const projectSnapshot = await projectRef.get();
-  const projectData = projectSnapshot.data() || {};
-  if (!projectSnapshot.exists || projectData.ownerId !== input.ownerId) {
+  if (!projectSnapshot.exists || projectSnapshot.data()?.ownerId !== input.ownerId) {
     throw new Error("Project no longer exists or is not owned by the event owner.");
   }
 
-  const existingJobs = Array.isArray(projectData.analysisJobs)
-    ? projectData.analysisJobs
+  const existingJobs = Array.isArray(projectSnapshot.data()?.analysisJobs)
+    ? (projectSnapshot.data()?.analysisJobs || [])
     : [];
   const existing = existingJobs.find((job: any) => job.id === jobId);
   if (existing && ["queued", "fetching", "analyzing", "building_graph"].includes(String(existing.status))) {
@@ -263,14 +263,14 @@ async function runIncrementalAnalysis(input: IncrementalInput & { jobId: string 
     const sourceContents = new Map<string, string>();
     const contentByPath = await fetchChangedFiles(parsed.owner, parsed.repo, String(ref), files, token || undefined);
     for (const path of files) {
-      const result = contentByPath.get(path) || { status: 404, body: null };
+      const result = contentByPath.get(path) || { status: 404, ok: false, body: null };
       const existingNode = nodeForPath(path);
 
-      if (result.response.status === 404) {
+      if (result.status === 404) {
         removePath(path);
         continue;
       }
-      if (!result.response.ok) throw new Error(`GitHub content lookup failed for ${path} (${result.response.status}).`);
+      if (!result.ok) throw new Error(`GitHub content lookup failed for ${path} (${result.status}).`);
 
       const body = result.body || {};
       let parent = existingNode;
@@ -289,11 +289,18 @@ async function runIncrementalAnalysis(input: IncrementalInput & { jobId: string 
         if ((edges[i].from === parent.id || edges[i].to === parent.id) && edges[i].label === "imports") edges.splice(i, 1);
       }
 
-      if (sourceExtensions.test(path) && body.encoding === "base64" && typeof body.content === "string") {
-        const source = Buffer.from(body.content.replace(/\n/g, ""), "base64").toString("utf8");
-        if (source.length <= 250_000) {
-          sourceContents.set(path, source);
-          const analysis = analyzeSource(path, source);
+      let source: string | null = null;
+      if (sourceExtensions.test(path)) {
+        if (body.encoding === "base64" && typeof body.content === "string") {
+          source = Buffer.from(body.content.replace(/\n/g, ""), "base64").toString("utf8");
+        } else if (body.encoding === "utf-8" && typeof body.content === "string") {
+          source = body.content;
+        }
+      }
+
+      if (source && source.length <= 250_000) {
+        sourceContents.set(path, source);
+        const analysis = analyzeSource(path, source);
           const symbols = analysis.symbols.slice(0, 24).map((symbol) => ({
             id: `symbol_${path.replace(/[^a-zA-Z0-9_]/g, "_")}_${symbol.name.replace(/[^a-zA-Z0-9_]/g, "_")}`,
             label: symbol.name,
@@ -320,7 +327,6 @@ async function runIncrementalAnalysis(input: IncrementalInput & { jobId: string 
           }
         }
       }
-    }
 
     await setJob(input.projectId, input.jobId, { status: "analyzing", updatedAt: new Date().toISOString() });
 

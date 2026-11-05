@@ -38,8 +38,16 @@ async function githubFetch(path: string, token?: string, init?: RequestInit) {
   return { response, body };
 }
 
-async function getProjectRepository(req: AuthenticatedRequest, projectId: string) {
-  if (!projectId) throw Object.assign(new Error("projectId is required."), { status: 400 });
+function safeDocPath(id: unknown): string | null {
+  if (typeof id !== "string") return null;
+  const trimmed = id.trim();
+  if (!trimmed || trimmed === "." || trimmed === ".." || trimmed.includes("/")) return null;
+  return trimmed;
+}
+
+async function getProjectRepository(req: AuthenticatedRequest, rawProjectId: string) {
+  const projectId = safeDocPath(rawProjectId);
+  if (!projectId) throw Object.assign(new Error("Valid non-empty projectId is required."), { status: 400 });
   const db = getAdminFirestore();
   const snap = await db.collection("projects").doc(projectId).get();
   if (!snap.exists || snap.data()?.ownerId !== req.user!.uid) {
@@ -683,8 +691,7 @@ repositoryRouter.delete("/watch/:id", async (req: AuthenticatedRequest, res) => 
     const id = String(req.params.id);
     const projectRef = db.collection("projects").doc(projectId);
     const snap = await projectRef.get();
-    const data = snap.data() || {};
-    const current = Array.isArray(data.watchTargets) ? data.watchTargets : [];
+    const current = Array.isArray(snap.data()?.watchTargets) ? snap.data()?.watchTargets : [];
     const next = current.filter((watch: any) => watch.id !== id);
     await projectRef.set({ watchTargets: next, updatedAt: new Date().toISOString() }, { merge: true });
     return res.json({ watching: false, watchTargets: next });

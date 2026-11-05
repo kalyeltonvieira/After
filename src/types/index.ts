@@ -234,6 +234,7 @@ export interface SoftwareMemoryEntry {
   };
   relatedFiles?: string[];
   relatedNodes?: string[];
+  author?: string;
   createdAt: string;
   observedAt?: string;
 }

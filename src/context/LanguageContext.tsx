@@ -54,6 +54,17 @@ export interface Translations {
   overview_running_experiments: string;
   overview_view_all: string;
   overview_ask_cta: string;
+  widget_repo_metrics_title: string;
+  widget_repo_metrics_subtitle: string;
+  widget_total_commits: string;
+  widget_active_contributors: string;
+  widget_open_pull_requests: string;
+  widget_view_repository: string;
+  widget_total_activity: string;
+  widget_total_activity_subtitle: string;
+  widget_health_trend_growing: string;
+  widget_health_trend_declining: string;
+  widget_health_trend_stable: string;
 
   // Projects Page
   projects_title: string;
@@ -218,6 +229,17 @@ const translations: Record<Language, Translations> = {
     overview_running_experiments: "Experimentos Ativos",
     overview_view_all: "Ver todos",
     overview_ask_cta: "Fazer uma pergunta ao AFTER sobre o sistema",
+    widget_repo_metrics_title: "Pulso do Repositório & Métricas Chave",
+    widget_repo_metrics_subtitle: "Telemetria contínua derivada do histórico de commits, colaboradores e pull requests",
+    widget_total_commits: "Total de Commits",
+    widget_active_contributors: "Contribuidores Ativos",
+    widget_open_pull_requests: "Pull Requests Abertos",
+    widget_view_repository: "Explorar Repositório",
+    widget_total_activity: "Atividade Total",
+    widget_total_activity_subtitle: "Consolidação agregada de métricas e telemetria para avaliar a saúde do repositório",
+    widget_health_trend_growing: "Velocidade em Alta",
+    widget_health_trend_declining: "Velocidade em Queda",
+    widget_health_trend_stable: "Ritmo Estável",
 
     // Projects Page
     projects_title: "Repositórios & Projetos",
@@ -414,6 +436,17 @@ const translations: Record<Language, Translations> = {
     overview_running_experiments: "Running Experiments",
     overview_view_all: "View all",
     overview_ask_cta: "Ask AFTER a question about your system",
+    widget_repo_metrics_title: "Repository Pulse & Key Metrics",
+    widget_repo_metrics_subtitle: "Continuous telemetry derived from commits, collaborators, and pull request history",
+    widget_total_commits: "Total Commits",
+    widget_active_contributors: "Active Contributors",
+    widget_open_pull_requests: "Open Pull Requests",
+    widget_view_repository: "Explore Repository",
+    widget_total_activity: "Total Activity",
+    widget_total_activity_subtitle: "Aggregated sum of commits, pull requests, and collaborator actions",
+    widget_health_trend_growing: "Velocity Accelerating",
+    widget_health_trend_declining: "Velocity Decelerating",
+    widget_health_trend_stable: "Cadence Stable",
 
     // Projects Page
     projects_title: "Repositories & Projects",

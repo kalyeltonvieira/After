@@ -257,3 +257,116 @@ export async function analyzeRepository(
 
   return data;
 }
+
+/**
+ * Validates whether an owner or repository name matches valid GitHub identifier syntax.
+ */
+export function isValidGitHubIdentifier(val: string): boolean {
+  if (!val || typeof val !== "string") return false;
+  const trimmed = val.trim();
+  if (!trimmed || trimmed === "." || trimmed === ".." || trimmed.includes("/")) return false;
+  return /^[a-zA-Z0-9_.-]{1,100}$/.test(trimmed);
+}
+
+/**
+ * Sanitizes GitHub repository URLs and strings into canonical 'owner/repo' format.
+ * - Strips protocol prefixes (e.g. 'https://', 'http://', 'git://', 'ssh://', 'git+https://')
+ * - Strips domain and credentials prefixes ('github.com/', 'www.github.com/', 'git@github.com:')
+ * - Strips path suffixes (e.g. '/tree/main', '/blob/master/...', '/pull/123', trailing slashes)
+ * - Strips file extensions ('.git')
+ * - Strips query strings ('?tab=readme') and hash fragments ('#readme')
+ * - Trims inner and surrounding whitespace
+ *
+ * Returns canonical 'owner/repo' string if valid, or null if empty or malformed.
+ */
+export function sanitizeGitHubRepo(input: string | null | undefined): string | null {
+  if (!input || typeof input !== "string") return null;
+  let clean = input.trim();
+  if (!clean) return null;
+
+  // Reject non-GitHub domains if a full URL was provided
+  if (/^https?:\/\/|^\w+:\/\//i.test(clean) && !/github\.com/i.test(clean)) {
+    return null;
+  }
+
+  // Strip query parameters (?...) and hash fragments (#...)
+  clean = clean.split("#")[0].split("?")[0].trim();
+
+  // Strip trailing .git and trailing slashes
+  clean = clean.replace(/\/+$/, "");
+  clean = clean.replace(/\.git$/i, "");
+  clean = clean.replace(/\/+$/, "");
+
+  // Strip protocol prefixes
+  clean = clean.replace(/^(?:git\+)?(?:https?|ssh|git):\/\//i, "");
+
+  // Strip domain and SSH prefixes
+  clean = clean.replace(/^(?:git@)?(?:www\.)?github\.com[:/]/i, "");
+
+  // Strip leading slashes
+  clean = clean.replace(/^\/+/, "");
+
+  const segments = clean.split("/").map((s) => s.trim().replace(/\.git$/i, "")).filter(Boolean);
+  if (segments.length >= 2) {
+    const owner = segments[0];
+    const repo = segments[1];
+    if (isValidGitHubIdentifier(owner) && isValidGitHubIdentifier(repo)) {
+      return `${owner}/${repo}`;
+    }
+  }
+
+  return null;
+}
+
+export const sanitizeGitHubRepository = sanitizeGitHubRepo;
+
+/**
+ * Client-side parser for GitHub repository input strings.
+ * Accepts formats:
+ * - "owner/repo"
+ * - "https://github.com/owner/repo"
+ * - "https://github.com/owner/repo/tree/main"
+ * - "github.com/owner/repo"
+ * - "git@github.com:owner/repo.git"
+ */
+export function parseGitHubRepo(input: string | null | undefined): { owner: string; repo: string } | null {
+  const sanitized = sanitizeGitHubRepo(input);
+  if (!sanitized) return null;
+  const [owner, repo] = sanitized.split("/");
+  return { owner, repo };
+}
+
+/**
+ * Validates a repository input and provides user-friendly status and error message
+ */
+export function validateRepositoryInput(input: string, lang: "en" | "pt" = "en"): {
+  isValid: boolean;
+  error?: string;
+  parsed?: { owner: string; repo: string };
+  formatted?: string;
+} {
+  const trimmed = (input || "").trim();
+  if (!trimmed) {
+    return {
+      isValid: false,
+      error: lang === "pt" ? "Por favor insira um repositório." : "Please enter a repository.",
+    };
+  }
+
+  const parsed = parseGitHubRepo(trimmed);
+  if (!parsed) {
+    return {
+      isValid: false,
+      error:
+        lang === "pt"
+          ? "Formato inválido. Use 'proprietário/repositório' (ex: facebook/react) ou o link completo do GitHub."
+          : "Invalid format. Use 'owner/repo' (e.g. facebook/react) or full GitHub URL.",
+    };
+  }
+
+  return {
+    isValid: true,
+    parsed,
+    formatted: `${parsed.owner}/${parsed.repo}`,
+  };
+}
