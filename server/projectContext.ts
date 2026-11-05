@@ -1,6 +1,12 @@
 import { getAdminFirestore, firebaseProjectId, firestoreDatabaseId } from "./auth.js";
 import { loadPersistedGraph } from "./services/graphStore.js";
 
+let adminFirestoreKnownUnavailable = true; // In Cloud Run without ambient IAM role, default to true to avoid noisy gRPC logs
+
+export function setAdminFirestoreStatus(available: boolean) {
+  adminFirestoreKnownUnavailable = !available;
+}
+
 function decodeValue(val: any): any {
   if (!val || typeof val !== "object") return val;
   if ("stringValue" in val) return val.stringValue;
@@ -20,7 +26,7 @@ function decodeValue(val: any): any {
   return val;
 }
 
-function decodeFields(fields: any): Record<string, any> {
+export function decodeFields(fields: any): Record<string, any> {
   if (!fields || typeof fields !== "object") return {};
   const res: Record<string, any> = {};
   for (const [k, v] of Object.entries(fields)) {
@@ -29,8 +35,8 @@ function decodeFields(fields: any): Record<string, any> {
   return res;
 }
 
-async function fetchProjectViaRest(projectId: string, token: string): Promise<Record<string, any> | null> {
-  if (!firebaseProjectId) return null;
+export async function fetchProjectViaRest(projectId: string, token: string): Promise<Record<string, any> | null> {
+  if (!firebaseProjectId || !token) return null;
   const dbId = firestoreDatabaseId || "(default)";
   const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(firebaseProjectId)}/databases/${encodeURIComponent(dbId)}/documents/projects/${encodeURIComponent(projectId)}`;
   try {
@@ -43,9 +49,78 @@ async function fetchProjectViaRest(projectId: string, token: string): Promise<Re
     if (!response.ok) return null;
     const data = await response.json();
     return decodeFields(data?.fields);
-  } catch (err: any) {
-    console.warn("Firestore REST fallback failed:", err?.message || err);
+  } catch {
     return null;
+  }
+}
+
+export async function fetchSubcollectionViaRest(
+  projectId: string,
+  collectionName: string,
+  token: string
+): Promise<any[]> {
+  if (!firebaseProjectId || !token) return [];
+  const dbId = firestoreDatabaseId || "(default)";
+  const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(firebaseProjectId)}/databases/${encodeURIComponent(dbId)}/documents/projects/${encodeURIComponent(projectId)}/${encodeURIComponent(collectionName)}?pageSize=50`;
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    if (!Array.isArray(data?.documents)) return [];
+    return data.documents.map((doc: any) => ({
+      ...decodeFields(doc.fields),
+      id: doc.name ? doc.name.split("/").pop() : undefined,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function listUserProjectsViaRest(uid: string, token: string): Promise<any[]> {
+  if (!firebaseProjectId || !token) return [];
+  const dbId = firestoreDatabaseId || "(default)";
+  const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(firebaseProjectId)}/databases/${encodeURIComponent(dbId)}/documents:runQuery`;
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        structuredQuery: {
+          from: [{ collectionId: "projects" }],
+          where: {
+            fieldFilter: {
+              field: { fieldPath: "ownerId" },
+              op: "EQUAL",
+              value: { stringValue: uid },
+            },
+          },
+        },
+      }),
+    });
+    if (!response.ok) return [];
+    const items = await response.json();
+    if (!Array.isArray(items)) return [];
+    return items
+      .filter((item: any) => Boolean(item.document?.fields))
+      .map((item: any) => {
+        const doc = item.document;
+        const id = doc.name ? doc.name.split("/").pop() : undefined;
+        return {
+          ...decodeFields(doc.fields),
+          id,
+        };
+      });
+  } catch {
+    return [];
   }
 }
 
@@ -65,34 +140,53 @@ export async function loadProjectContext(
   let project: Record<string, any> | null = null;
   let projectSnap: any = null;
 
-  // 1. Try Firebase Admin SDK first
-  try {
-    const db = getAdminFirestore();
-    const snap = await db.collection("projects").doc(projectId).get();
-    if (snap.exists) {
-      projectSnap = snap;
-      project = snap.data() || {};
-    }
-  } catch (adminError: any) {
-    console.warn("Admin Firestore get failed, trying REST fallback:", adminError?.message || adminError);
+  // 1. If user ID token is provided, prioritize authenticated Firestore REST API
+  if (token) {
+    project = await fetchProjectViaRest(projectId, token);
   }
 
-  // 2. If Admin SDK did not return data and user token is available, try REST API
-  if (!project && token) {
-    project = await fetchProjectViaRest(projectId, token);
+  // 2. Only attempt Firebase Admin SDK if token was not provided or REST returned null,
+  // and we haven't already verified that the ambient service account lacks IAM permissions.
+  if (!project && !adminFirestoreKnownUnavailable) {
+    try {
+      const db = getAdminFirestore();
+      const snap = await db.collection("projects").doc(projectId).get();
+      if (snap.exists) {
+        projectSnap = snap;
+        project = snap.data() || {};
+      }
+    } catch {
+      adminFirestoreKnownUnavailable = true;
+    }
   }
 
   if (!project) return null;
   if (project.ownerId && project.ownerId !== uid) return null;
 
-  let timeline: any[] = project.events || [];
-  let insights: any[] = project.insights || [];
-  let experiments: any[] = project.experiments || [];
-  let memoryEntries: any[] = project.memoryEntries || [];
-  let graphNodes: any[] = project.graphNodes || [];
-  let graphEdges: any[] = project.graphEdges || [];
+  let timeline: any[] = Array.isArray(project.events) ? project.events : [];
+  let insights: any[] = Array.isArray(project.insights) ? project.insights : [];
+  let experiments: any[] = Array.isArray(project.experiments) ? project.experiments : [];
+  let memoryEntries: any[] = Array.isArray(project.memoryEntries) ? project.memoryEntries : [];
+  let graphNodes: any[] = Array.isArray(project.graphNodes) ? project.graphNodes : [];
+  let graphEdges: any[] = Array.isArray(project.graphEdges) ? project.graphEdges : [];
 
-  if (projectSnap) {
+  // If subcollections exist in Firestore and we have token or adminSnap:
+  if (token && timeline.length === 0) {
+    try {
+      const [restEvents, restInsights, restExperiments, restMemory] = await Promise.all([
+        fetchSubcollectionViaRest(projectId, "events", token),
+        fetchSubcollectionViaRest(projectId, "insights", token),
+        fetchSubcollectionViaRest(projectId, "experiments", token),
+        fetchSubcollectionViaRest(projectId, "memoryEntries", token),
+      ]);
+      if (restEvents.length) timeline = restEvents;
+      if (restInsights.length) insights = restInsights;
+      if (restExperiments.length) experiments = restExperiments;
+      if (restMemory.length) memoryEntries = restMemory;
+    } catch {
+      // Non-blocking fallback to embedded arrays
+    }
+  } else if (projectSnap) {
     try {
       const [graphResult, ...results] = await Promise.allSettled([
         loadPersistedGraph(projectId),
@@ -118,18 +212,21 @@ export async function loadProjectContext(
         graphNodes = graphResult.value.nodes;
         graphEdges = graphResult.value.edges;
       }
-    } catch (subErr: any) {
-      console.warn("Subcollection fetch had partial error, using root project fields:", subErr?.message || subErr);
+    } catch {
+      // Non-blocking fallback
     }
-  } else {
+  }
+
+  // Load persisted graph from store if not already on project
+  if (graphNodes.length === 0) {
     try {
-      const persistedGraph = await loadPersistedGraph(projectId);
-      if (persistedGraph.nodes.length) {
-        graphNodes = persistedGraph.nodes;
-        graphEdges = persistedGraph.edges;
+      const persisted = await loadPersistedGraph(projectId);
+      if (persisted.nodes?.length) {
+        graphNodes = persisted.nodes;
+        graphEdges = persisted.edges;
       }
     } catch {
-      // Ignore
+      // Non-blocking
     }
   }
 

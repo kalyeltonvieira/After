@@ -521,8 +521,7 @@ export async function recoverQueuedIncrementalAnalyses() {
   let snapshot;
   try {
     snapshot = await db.collection("projects").limit(100).get();
-  } catch (error: any) {
-    console.warn("Skipping queued analysis recovery because Firestore is unavailable:", error?.message || error);
+  } catch {
     return 0;
   }
 
