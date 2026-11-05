@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useProject } from "../context/ProjectContext";
 import { useLanguage } from "../context/LanguageContext";
+import { ProjectStatistics } from "../components/ProjectStatistics";
 
 interface ProjectsPageProps {
   onOpenCreateProject: () => void;
@@ -51,6 +52,11 @@ export function ProjectsPage({ onOpenCreateProject, onNavigate }: ProjectsPagePr
           <span>{language === "pt" ? "Conectar Novo Projeto" : "Connect New Project"}</span>
         </button>
       </div>
+
+      {/* Highlighted Project Statistics for Currently Selected Project */}
+      {currentProject && projects.length > 0 && (
+        <ProjectStatistics onNavigate={onNavigate} />
+      )}
 
       {/* Grid of Projects */}
       {projects.length === 0 ? (

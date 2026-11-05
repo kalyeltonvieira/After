@@ -16,6 +16,7 @@ import { useLanguage } from "../context/LanguageContext";
 import { StatusBadge, SeverityBadge } from "../components/StatusBadge";
 import { EmptyState } from "../components/EmptyState";
 import { DashboardWidget } from "../components/DashboardWidget";
+import { ProjectStatistics } from "../components/ProjectStatistics";
 
 interface OverviewPageProps {
   onNavigate: (view: string) => void;
@@ -187,6 +188,9 @@ export function OverviewPage({ onNavigate, onOpenCreateProject }: OverviewPagePr
           </p>
         </div>
       </div>
+
+      {/* Project Statistics (/api/projects key metrics: Lines of Code, Total Commits, Active Contributors) */}
+      <ProjectStatistics onNavigate={onNavigate} />
 
       {/* Repository Activity & Pulse Dashboard Widget */}
       <DashboardWidget onNavigate={onNavigate} />
