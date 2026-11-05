@@ -35,7 +35,7 @@ interface CreateProjectModalProps {
 
 export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProjectModalProps) {
   const { connectRepository, createProject } = useProject();
-  const { refreshGitHubSession } = useAuth();
+  const { user: firebaseUser, refreshGitHubSession } = useAuth();
   const { t, language } = useLanguage();
 
   const [activeTab, setActiveTab] = useState<"github" | "manual">("github");
@@ -53,6 +53,7 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
   const [connectedUser, setConnectedUser] = useState<GitHubUser | null>(null);
   const [userRepos, setUserRepos] = useState<GitHubRepositoryItem[]>([]);
   const [repoSearch, setRepoSearch] = useState("");
+  const [needsReconnect, setNeedsReconnect] = useState(false);
   const filteredRepos = userRepos.filter((repo) => {
     const q = repoSearch.trim().toLowerCase();
     return !q || repo.full_name.toLowerCase().includes(q) || (repo.description || "").toLowerCase().includes(q);
@@ -68,6 +69,21 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  // Instant preview of GitHub user identity from Firebase session
+  useEffect(() => {
+    if (!connectedUser && firebaseUser?.photoURL) {
+      setConnectedUser({
+        id: 0,
+        login: firebaseUser.displayName || "github-user",
+        name: firebaseUser.displayName || null,
+        email: firebaseUser.email || null,
+        avatar_url: firebaseUser.photoURL,
+        html_url: `https://github.com/${firebaseUser.displayName || ""}`,
+        public_repos: 0,
+      });
+    }
+  }, [firebaseUser, connectedUser]);
 
   // Close on Escape key press
   useEffect(() => {
@@ -85,47 +101,51 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
   useEffect(() => {
     if (!isOpen) return;
     setError(null);
-    void loadGitHubUserData();
+    void loadGitHubUserData(false);
   }, [isOpen]);
 
-  const loadGitHubUserData = async () => {
+  const loadGitHubUserData = async (forceFresh = false) => {
     setLoadingRepos(true);
     setError(null);
-
-    const load = async () => {
-      const [user, repos] = await Promise.all([
-        getConnectedGitHubUser(),
-        listUserRepositories(),
-      ]);
-      setConnectedUser(user);
-      setUserRepos(repos);
-    };
+    setNeedsReconnect(false);
 
     try {
-      await load();
+      const [ghUser, repos] = await Promise.all([
+        getConnectedGitHubUser(forceFresh),
+        listUserRepositories(forceFresh),
+      ]);
+      setConnectedUser(ghUser);
+      setUserRepos(repos);
+      setNeedsReconnect(false);
     } catch (firstError: any) {
       const message = String(firstError?.message || "");
-      const shouldRefreshSession =
-        /Connect GitHub first|Invalid or expired Firebase session|Firebase authentication is required|Invalid or expired GitHub access token|GitHub token is invalid or expired/i.test(message);
+      const isAuthIssue = /Connect GitHub first|Invalid or expired|unauthorized|401/i.test(message);
 
-      if (shouldRefreshSession) {
-        try {
-          await refreshGitHubSession();
-          await load();
-        } catch (refreshError: any) {
-          const refreshMessage = String(refreshError?.message || "");
-          setConnectedUser(null);
-          setUserRepos([]);
-          setError(
-            refreshMessage ||
-              "A conexão com o GitHub expirou. Conecte o GitHub novamente para carregar seus repositórios."
-          );
-        }
+      if (isAuthIssue) {
+        setNeedsReconnect(true);
+        setError(
+          language === "pt"
+            ? "A autorização do GitHub precisa ser renovada para listar repositórios privados."
+            : "GitHub authorization must be refreshed to list your repositories."
+        );
       } else {
         setConnectedUser(null);
         setUserRepos([]);
         setError(message || "Não foi possível carregar seus repositórios do GitHub.");
       }
+    } finally {
+      setLoadingRepos(false);
+    }
+  };
+
+  const handleManualReconnect = async () => {
+    try {
+      setLoadingRepos(true);
+      setError(null);
+      await refreshGitHubSession();
+      await loadGitHubUserData(true);
+    } catch (err: any) {
+      setError(err?.message || (language === "pt" ? "Falha ao renovar conexão GitHub." : "Failed to renew GitHub connection."));
     } finally {
       setLoadingRepos(false);
     }
@@ -291,23 +311,45 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
                 <div className="flex items-center space-x-2">
                   <ShieldCheck className="w-4 h-4 text-emerald-500" />
                   <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-                    GitHub conectado
+                    {needsReconnect ? (language === "pt" ? "GitHub (Reconexão Necessária)" : "GitHub (Reconnect Required)") : (language === "pt" ? "GitHub Conectado" : "GitHub Connected")}
                   </span>
                 </div>
                 {connectedUser && (
                   <div className="flex items-center space-x-2">
-                    <img
-                      src={connectedUser.avatar_url}
-                      alt={connectedUser.login}
-                      className="w-5 h-5 rounded-full border border-zinc-200 dark:border-zinc-700"
-                      referrerPolicy="no-referrer"
-                    />
+                    {connectedUser.avatar_url && (
+                      <img
+                        src={connectedUser.avatar_url}
+                        alt={connectedUser.login}
+                        className="w-5 h-5 rounded-full border border-zinc-200 dark:border-zinc-700"
+                        referrerPolicy="no-referrer"
+                      />
+                    )}
                     <span className="text-xs font-mono font-medium text-emerald-600 dark:text-emerald-400">
                       @{connectedUser.login}
                     </span>
                   </div>
                 )}
               </div>
+
+              {needsReconnect && (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-between gap-3 text-xs text-amber-700 dark:text-amber-400">
+                  <div className="flex items-center space-x-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-500" />
+                    <span>
+                      {language === "pt"
+                        ? "Permissão do GitHub expirada ou incompleta."
+                        : "GitHub permissions expired or incomplete."}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleManualReconnect}
+                    className="px-3 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors cursor-pointer shrink-0"
+                  >
+                    {language === "pt" ? "Reconectar GitHub" : "Reconnect GitHub"}
+                  </button>
+                </div>
+              )}
 
               <div className="space-y-2 pt-1 border-t border-zinc-200/60 dark:border-zinc-800/60">
                 <div className="flex items-center justify-between">
@@ -316,11 +358,11 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
                   </span>
                   <button
                     type="button"
-                    onClick={() => loadGitHubUserData()}
+                    onClick={() => loadGitHubUserData(true)}
                     className="text-[11px] text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 flex items-center space-x-1 cursor-pointer"
                   >
                     <RefreshCw className={`w-3 h-3 ${loadingRepos ? "animate-spin" : ""}`} />
-                    <span>Atualizar</span>
+                    <span>{language === "pt" ? "Atualizar" : "Refresh"}</span>
                   </button>
                 </div>
 

@@ -258,14 +258,22 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const nodes: GraphNode[] = [...(currentProject.graphNodes || [])];
-    const edges: GraphEdge[] = [...(currentProject.graphEdges || [])];
+    const rawNodes: GraphNode[] = [...(currentProject.graphNodes || [])];
+    const rawEdges: GraphEdge[] = [...(currentProject.graphEdges || [])];
+
+    // Deduplicate nodes by unique id
+    const nodeMap = new Map<string, GraphNode>();
+    for (const node of rawNodes) {
+      if (node && node.id) {
+        nodeMap.set(node.id, node);
+      }
+    }
 
     // Append dynamic experiment nodes if any exist
     experiments.forEach((exp) => {
       const expNodeId = `exp_${exp.id}`;
-      if (!nodes.some((n) => n.id === expNodeId)) {
-        nodes.push({
+      if (!nodeMap.has(expNodeId)) {
+        nodeMap.set(expNodeId, {
           id: expNodeId,
           label: exp.title,
           type: "experiment",
@@ -278,8 +286,17 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    setGraphNodes(nodes);
-    setGraphEdges(edges);
+    // Deduplicate edges by from_to_label
+    const edgeMap = new Map<string, GraphEdge>();
+    for (const edge of rawEdges) {
+      if (edge && edge.from && edge.to) {
+        const edgeKey = `${edge.from}_${edge.to}_${edge.label || "link"}`;
+        edgeMap.set(edgeKey, edge);
+      }
+    }
+
+    setGraphNodes(Array.from(nodeMap.values()));
+    setGraphEdges(Array.from(edgeMap.values()));
   }, [currentProject, experiments]);
 
   // Connect a Real Repository Flow
@@ -309,12 +326,19 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ repository, branch, projectId }),
       });
 
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed to analyze repository");
+      const text = await res.text();
+      let data: any;
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error(
+          `Repository analysis returned unexpected response (${res.status}). Please verify GitHub authorization or repository permissions.`
+        );
       }
 
-      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || `Failed to analyze repository (${res.status})`);
+      }
 
       const nextEvents: ProjectEvent[] = (data.events || []).map((ev: ProjectEvent) => ({
         ...ev,
@@ -618,14 +642,21 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
           }),
         });
 
-        if (!res.ok) {
-          const errorBody = await res.json().catch(() => ({}));
+        const text = await res.text();
+        let data: any;
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch {
           throw new Error(
-            errorBody.error || `Repository analysis failed (${res.status}).`
+            `Repository analysis returned non-JSON response (${res.status}).`
           );
         }
 
-        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(
+            data?.error || `Repository analysis failed (${res.status}).`
+          );
+        }
         setScanStage("architecture");
 
         if (data.graphNodes && data.graphNodes.length > 0) {

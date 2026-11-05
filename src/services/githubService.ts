@@ -7,14 +7,44 @@ import { authenticatedHeaders } from "../lib/api";
  */
 
 
-const GITHUB_SESSION_STORAGE_KEY = "after.github.access_token";
+export const GITHUB_SESSION_STORAGE_KEY = "after.github.access_token";
 
-function getCachedGitHubAccessToken(): string | null {
+export function getCachedGitHubAccessToken(): string | null {
   try {
-    return sessionStorage.getItem(GITHUB_SESSION_STORAGE_KEY);
+    return (
+      sessionStorage.getItem(GITHUB_SESSION_STORAGE_KEY) ||
+      localStorage.getItem(GITHUB_SESSION_STORAGE_KEY) ||
+      sessionStorage.getItem("github_token") ||
+      localStorage.getItem("github_token") ||
+      sessionStorage.getItem("after_github_token") ||
+      localStorage.getItem("after_github_token")
+    );
   } catch {
     return null;
   }
+}
+
+export function cacheGitHubAccessToken(token: string): void {
+  try {
+    sessionStorage.setItem(GITHUB_SESSION_STORAGE_KEY, token);
+  } catch {}
+  try {
+    localStorage.setItem(GITHUB_SESSION_STORAGE_KEY, token);
+  } catch {}
+}
+
+export function clearCachedGitHubAccessToken(): void {
+  clearGitHubMemoryCache();
+  try {
+    sessionStorage.removeItem(GITHUB_SESSION_STORAGE_KEY);
+    sessionStorage.removeItem("github_token");
+    sessionStorage.removeItem("after_github_token");
+  } catch {}
+  try {
+    localStorage.removeItem(GITHUB_SESSION_STORAGE_KEY);
+    localStorage.removeItem("github_token");
+    localStorage.removeItem("after_github_token");
+  } catch {}
 }
 
 async function githubRequest(path: string, init: RequestInit = {}) {
@@ -170,10 +200,21 @@ export function openGitHubOAuthPopup(authUrl: string): Promise<{ code: string | 
   });
 }
 
+let memoryCachedUser: GitHubUser | null = null;
+let memoryCachedRepos: GitHubRepositoryItem[] | null = null;
+
+export function clearGitHubMemoryCache() {
+  memoryCachedUser = null;
+  memoryCachedRepos = null;
+}
+
 /**
  * Fetch authenticated GitHub user details
  */
-export async function getConnectedGitHubUser(): Promise<GitHubUser> {
+export async function getConnectedGitHubUser(forceFresh = false): Promise<GitHubUser> {
+  if (!forceFresh && memoryCachedUser) {
+    return memoryCachedUser;
+  }
   const res = await githubRequest("/api/projects/github-user");
 
   const data = await res.json();
@@ -181,13 +222,17 @@ export async function getConnectedGitHubUser(): Promise<GitHubUser> {
     throw new Error(data.error || "Failed to load GitHub user profile.");
   }
 
+  memoryCachedUser = data.user;
   return data.user;
 }
 
 /**
  * List repositories accessible to the user
  */
-export async function listUserRepositories(): Promise<GitHubRepositoryItem[]> {
+export async function listUserRepositories(forceFresh = false): Promise<GitHubRepositoryItem[]> {
+  if (!forceFresh && memoryCachedRepos && memoryCachedRepos.length > 0) {
+    return memoryCachedRepos;
+  }
   const res = await githubRequest("/api/projects/github-repos");
 
   const data = await res.json();
@@ -195,7 +240,8 @@ export async function listUserRepositories(): Promise<GitHubRepositoryItem[]> {
     throw new Error(data.error || "Failed to load user repositories.");
   }
 
-  return data.repos || [];
+  memoryCachedRepos = data.repos || [];
+  return memoryCachedRepos;
 }
 
 /**
