@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Sparkles,
   Activity,
@@ -10,8 +10,12 @@ import {
   HelpCircle,
   FolderGit2,
   CheckCircle2,
+  Github,
+  Search,
+  ArrowRight,
 } from "lucide-react";
 import { useProject } from "../context/ProjectContext";
+import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { StatusBadge, SeverityBadge } from "../components/StatusBadge";
 import { EmptyState } from "../components/EmptyState";
@@ -36,16 +40,74 @@ export function OverviewPage({ onNavigate, onOpenCreateProject }: OverviewPagePr
     analysisJobs,
   } = useProject();
   const { t, language } = useLanguage();
+  const { connectGitHub, isGitHubConnected } = useAuth();
+  const [connectingGitHub, setConnectingGitHub] = useState(false);
+  const [githubError, setGithubError] = useState<string | null>(null);
 
   if (!currentProject) {
+    const isPt = language === "pt";
+    const handleConnectGitHub = async () => {
+      setConnectingGitHub(true);
+      setGithubError(null);
+      try {
+        await connectGitHub();
+        onOpenCreateProject();
+      } catch (error: any) {
+        setGithubError(error?.message || (isPt ? "Não foi possível conectar sua conta GitHub." : "Could not connect your GitHub account."));
+      } finally {
+        setConnectingGitHub(false);
+      }
+    };
+
     return (
-      <div className="p-8 max-w-4xl mx-auto">
-        <EmptyState
-          title={t("empty_no_project_title")}
-          description={t("empty_no_project_desc")}
-          actionLabel={t("empty_no_project_action")}
-          onAction={onOpenCreateProject}
-        />
+      <div className="relative min-h-full overflow-hidden px-6 py-12 sm:px-10 sm:py-16">
+        <div className="pointer-events-none absolute -right-24 top-12 h-80 w-80 rounded-full bg-lime-300/[0.06] blur-[100px]" />
+        <div className="relative mx-auto max-w-5xl">
+          <div className="mb-10 max-w-2xl">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/60 px-3 py-1.5 text-[10px] font-mono uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-lime-400" />
+              {isPt ? "Seu espaço está pronto" : "Your workspace is ready"}
+            </div>
+            <h1 className="text-3xl sm:text-5xl font-semibold tracking-[-0.045em] leading-[1.08] text-zinc-950 dark:text-zinc-50">
+              {isPt ? <>Vamos dar contexto ao seu <span className="text-lime-500 dark:text-lime-300">código.</span></> : <>Let's give your <span className="text-lime-500 dark:text-lime-300">code context.</span></>}
+            </h1>
+            <p className="mt-4 max-w-xl text-sm sm:text-base leading-relaxed text-zinc-500 dark:text-zinc-400">
+              {isPt ? "Comece conectando sua conta GitHub ou explorando um repositório público. Você escolhe o que compartilhar com o AFTER." : "Start by connecting your GitHub account or exploring a public repository. You choose what to share with AFTER."}
+            </p>
+          </div>
+
+          {githubError && <div role="alert" className="mb-6 max-w-2xl rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/20 px-4 py-3 text-xs text-rose-700 dark:text-rose-300">{githubError}</div>}
+
+          <div className="grid max-w-4xl grid-cols-1 gap-4 md:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => void handleConnectGitHub()}
+              disabled={connectingGitHub || isGitHubConnected}
+              className="group rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/50 p-6 text-left transition-all hover:-translate-y-0.5 hover:border-lime-400/70 hover:shadow-xl hover:shadow-lime-950/5 disabled:cursor-default disabled:hover:translate-y-0"
+            >
+              <div className="flex items-start justify-between">
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-zinc-950 text-white dark:bg-zinc-100 dark:text-zinc-950"><Github className="h-5 w-5" /></span>
+                {isGitHubConnected ? <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">{isPt ? "Conectado" : "Connected"}</span> : <ArrowRight className="h-4 w-4 text-zinc-400 transition-transform group-hover:translate-x-1" />}
+              </div>
+              <h2 className="mt-6 text-base font-semibold text-zinc-900 dark:text-zinc-100">{isGitHubConnected ? (isPt ? "GitHub já conectado" : "GitHub connected") : (isPt ? "Conectar minha conta GitHub" : "Connect my GitHub account")}</h2>
+              <p className="mt-2 min-h-12 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{isPt ? "Liste seus repositórios e autorize o acesso a projetos privados. A conexão fica vinculada à sua conta AFTER." : "List your repositories and authorize access to private projects. The integration is linked to your AFTER account."}</p>
+              {!isGitHubConnected && <span className="mt-5 inline-flex items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100">{connectingGitHub ? (isPt ? "Aguardando autorização..." : "Waiting for authorization...") : (isPt ? "Conectar GitHub" : "Connect GitHub")}<ArrowRight className="h-3.5 w-3.5" /></span>}
+            </button>
+
+            <button
+              type="button"
+              onClick={onOpenCreateProject}
+              className="group rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/50 p-6 text-left transition-all hover:-translate-y-0.5 hover:border-lime-400/70 hover:shadow-xl hover:shadow-lime-950/5"
+            >
+              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"><Search className="h-5 w-5" /></span>
+              <h2 className="mt-6 text-base font-semibold text-zinc-900 dark:text-zinc-100">{isPt ? "Explorar repositórios públicos" : "Explore public repositories"}</h2>
+              <p className="mt-2 min-h-12 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{isPt ? "Pesquise projetos de qualquer pessoa ou organização sem conectar sua conta GitHub." : "Search projects from any person or organization without connecting your GitHub account."}</p>
+              <span className="mt-5 inline-flex items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100">{isPt ? "Pesquisar projetos" : "Search projects"}<ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" /></span>
+            </button>
+          </div>
+
+          <p className="mt-8 text-[11px] text-zinc-400 dark:text-zinc-500">{isPt ? "Você pode conectar o GitHub depois nas configurações. Nenhum repositório é adicionado automaticamente." : "You can connect GitHub later in settings. No repository is added automatically."}</p>
+        </div>
       </div>
     );
   }
