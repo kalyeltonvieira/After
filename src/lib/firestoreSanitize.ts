@@ -43,7 +43,8 @@ export function buildCommitMemoryEntries(
 
   for (const event of events) {
     const metadata = event.metadata || {};
-    if (metadata.type && metadata.type !== "commit") continue;
+    const isCommitEvent = metadata.type === "commit" || (!metadata.type && event.id.startsWith("commit_"));
+    if (!isCommitEvent) continue;
 
     const shaValue = metadata.fullSha || metadata.sha;
     if (typeof shaValue !== "string" || !shaValue.trim()) continue;
