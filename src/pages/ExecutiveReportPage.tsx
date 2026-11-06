@@ -88,7 +88,7 @@ export function ExecutiveReportPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-6 sm:p-8">
+    <div id="after-executive-report" className="mx-auto max-w-5xl space-y-6 p-6 sm:p-8">
       <header className="flex flex-wrap items-end justify-between gap-4 border-b border-zinc-200 pb-5 dark:border-zinc-800">
         <div>
           <div className="mb-2 flex items-center gap-2 text-[10px] font-mono uppercase tracking-widest text-zinc-400"><FileText className="h-3.5 w-3.5" /> AFTER / EXECUTIVE REPORT</div>
