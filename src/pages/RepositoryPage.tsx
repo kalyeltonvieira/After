@@ -54,6 +54,8 @@ function escapeHtml(text: string): string {
 
 function highlightLine(line: string, language: string): string {
   if (!line || !line.trim()) return line ? escapeHtml(line) : "&nbsp;";
+  // Avoid blocking the main thread on generated/minified one-line files.
+  if (line.length > 20_000) return escapeHtml(line);
   const lang = language.toLowerCase();
   const grammar =
     Prism.languages[lang] ||
@@ -147,6 +149,7 @@ export function RepositoryPage() {
   const [blame, setBlame] = useState<any[]>([]);
   const [hoveredCommitSha, setHoveredCommitSha] = useState<string | null>(null);
   const [commitDetail, setCommitDetail] = useState<any>(null);
+  const [codeScrollTop, setCodeScrollTop] = useState(0);
 
   const projectId = currentProject?.id;
   const tabs = useMemo(() => [
@@ -592,7 +595,27 @@ export function RepositoryPage() {
   const tags = data.tags || [];
   const contributors = data.contributors || [];
   const activity = data.events || [];
-  const lineCount = String(data.file?.content || "").split("\n").length;
+  const codeLines = useMemo(
+    () => (data.file?.content ? String(data.file.content).split("\n") : []),
+    [data.file?.content]
+  );
+  const lineCount = codeLines.length;
+  const codeLineHeight = 20;
+  const codeHeaderHeight = showBlame ? 36 : 0;
+  const codeWindow = useMemo(() => {
+    const viewportHeight = 720;
+    const firstVisible = Math.max(0, Math.floor(Math.max(0, codeScrollTop - codeHeaderHeight) / codeLineHeight) - 80);
+    const lastVisible = Math.min(
+      codeLines.length,
+      Math.ceil(Math.max(0, codeScrollTop - codeHeaderHeight + viewportHeight) / codeLineHeight) + 80
+    );
+    return {
+      start: firstVisible,
+      end: Math.max(firstVisible, lastVisible),
+      top: firstVisible * codeLineHeight,
+      bottom: Math.max(0, (codeLines.length - lastVisible) * codeLineHeight),
+    };
+  }, [codeLines.length, codeHeaderHeight, codeScrollTop]);
   const selectedNodeIds = useMemo(
     () => new Set((graphNodes || []).filter((node: any) => node.filePath === data.file?.path).map((node: any) => node.id)),
     [graphNodes, data.file?.path]
@@ -769,7 +792,11 @@ export function RepositoryPage() {
                   </div>
                 )}
               </div>
-              <div className="h-[min(64vh,720px)] min-h-[360px] overflow-auto overscroll-contain bg-zinc-950">
+              <div
+                key={data.file?.path || "empty-code-view"}
+                className="h-[min(64vh,720px)] min-h-[360px] overflow-auto overscroll-contain bg-zinc-950"
+                onScroll={(event) => setCodeScrollTop(event.currentTarget.scrollTop)}
+              >
                 {data.file?.content ? (
                   <div className="min-w-max font-mono text-[11px] leading-relaxed text-zinc-100">
                     {showBlame && (
@@ -782,7 +809,9 @@ export function RepositoryPage() {
                         <div className="px-3 text-zinc-500">Source Code</div>
                       </div>
                     )}
-                    {data.file.content.split("\n").map((line: string, index: number) => {
+                    <div style={{ height: codeWindow.top }} aria-hidden="true" />
+                    {codeLines.slice(codeWindow.start, codeWindow.end).map((line: string, visibleIndex: number) => {
+                      const index = codeWindow.start + visibleIndex;
                       const lineNumber = index + 1;
                       const lineBlame = showBlame ? blameForLine(lineNumber) : null;
                       const isHoveredCommit = Boolean(
@@ -847,6 +876,7 @@ export function RepositoryPage() {
                         </div>
                       );
                     })}
+                    <div style={{ height: codeWindow.bottom }} aria-hidden="true" />
                   </div>
                 ) : <div className="p-8 text-xs text-zinc-500">No file selected.</div>}
               </div>
