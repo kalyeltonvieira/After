@@ -367,6 +367,7 @@ export async function searchPublicRepositories(
     minimumStars?: number;
     language?: string;
     license?: string;
+    topic?: string;
   }
 ): Promise<{ total_count: number; items: GitHubRepo[] }> {
   const trimmed = query.trim();
@@ -378,11 +379,16 @@ export async function searchPublicRepositories(
   const allowedLanguages = new Set(["TypeScript", "JavaScript", "Python", "Go", "Rust"]);
   const allowedLicenses = new Set(["mit", "apache-2.0", "gpl-3.0", "bsd-3-clause", "mpl-2.0"]);
   const minimumStars = Number(options?.minimumStars);
+  const topicQualifier = options?.topic && typeof options.topic === "string" && options.topic.trim()
+    ? `topic:${options.topic.trim().replace(/\s+/g, "-")}`
+    : "";
+
   const qualifiers = [
     trimmed,
     Number.isFinite(minimumStars) && minimumStars > 0 ? `stars:>=${Math.floor(minimumStars)}` : "",
     options?.language && allowedLanguages.has(options.language) ? `language:${options.language}` : "",
     options?.license && allowedLicenses.has(options.license) ? `license:${options.license}` : "",
+    topicQualifier,
   ].filter(Boolean);
 
   const searchParams = new URLSearchParams({
