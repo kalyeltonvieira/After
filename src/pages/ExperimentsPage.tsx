@@ -1,5 +1,5 @@
-import { authenticatedHeaders } from "../lib/api";
 import React, { useState } from "react";
+import { authenticatedHeaders } from "../lib/api";
 import {
   FlaskConical,
   Plus,
@@ -466,3 +466,5 @@ export function ExperimentsPage() {
     </div>
   );
 }
+
+export default ExperimentsPage;
