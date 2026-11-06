@@ -846,7 +846,6 @@ repositoryRouter.post("/compare-architecture", async (req: AuthenticatedRequest,
     const baseAnalysis = new Map<string, ReturnType<typeof analyzeSource>>();
     const headAnalysis = new Map<string, ReturnType<typeof analyzeSource>>();
     const work: Array<Promise<void>> = [];
-    let active = 0;
     let cursor = 0;
     const queue = candidates.flatMap((filePath) => [
       { filePath, side: "base" as const, sha: baseFiles.get(filePath)?.sha },
