@@ -196,9 +196,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const alreadyLinked = user.providerData.some(
       (provider) => provider.providerId === "github.com"
     );
-    const result = alreadyLinked
-      ? await reauthenticateWithPopup(user, githubProvider)
-      : await linkWithPopup(user, githubProvider);
+    let result;
+    try {
+      result = alreadyLinked
+        ? await reauthenticateWithPopup(user, githubProvider)
+        : await linkWithPopup(user, githubProvider);
+    } catch (error: any) {
+      if (error?.code === "auth/operation-not-allowed") {
+        throw new Error(
+          "Para conectar o GitHub como integração, habilite o provedor GitHub em Firebase Authentication. Ele continuará sem aparecer como opção de login na tela do AFTER."
+        );
+      }
+      throw error;
+    }
 
     const githubAccessToken =
       GithubAuthProvider.credentialFromResult(result)?.accessToken || null;
