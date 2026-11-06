@@ -1,95 +1,89 @@
-# Plano de Implementação: Plataforma Inteligente AFTER - Módulo de Arquitetura, Relatórios & Busca Avançada
+# Mega Plano de Implementação: Product Graph Interativo, Simulação de Impacto & Observação ao Vivo
 
-Plano detalhado para a implementação do Comparador Visual de Arquitetura entre Branches/Tags, Exportação de Relatórios Executivos de Integridade (PDF e JSON), e Filtros Avançados de Busca Pública de Repositórios GitHub no AFTER.
+Plano abrangente para evolução do **Product Graph**, **Simulador de Impacto Arquitetural** e **Feed de Atividade ao Vivo** no AFTER.
 
 ## Decisões Confirmadas pelo Usuário
 
 > [!IMPORTANT]
 > As escolhas abaixo foram explicitamente confirmadas pelo usuário na etapa de alinhamento interativo (Fase 1):
 
-- **Funcionalidades Prioritárias**: Comparador de arquitetura entre branches/tags e exportação de relatórios executivos de integridade em múltiplos formatos.
-- **Formatos de Exportação**: Ambos PDF interativo (com layout de relatório executivo e opções de impressão/download) e JSON estruturado (para pipeline e documentação técnica).
-- **Filtros Avançados de Busca Pública**: Filtros combinados por contagem mínima de estrelas, linguagem principal, licença do repositório (MIT, Apache-2.0, GPL-3.0, etc.) e busca contextual por tópicos.
+- **Foco de Funcionalidades**: Mapeamento interativo de alto desempenho do Product Graph e motor de simulação de impacto em tempo real.
+- **Evolução da Visualização Gráfica**: Canvas interativo 2D/3D com agrupamento por pastas, filtros de nós, zoom/pan e simulação física de forças (force-directed layout).
+- **Observação Contínua**: Feed de atividade ao vivo em tempo real com estado de sincronização contínua e raio de impacto de cada alteração.
 
 ---
 
-## 1. Visão Geral & Conceito do Produto
+## 1. Visão Geral do Produto
 
-O **AFTER** é a camada de inteligência contínua que compreende a evolução do código ao longo do tempo. Nesta iteração, completamos os recursos fundamentais de análise comparativa, inteligência executiva e navegação avançada:
+O **AFTER** é a camada de inteligência contínua sobre o código. Este **Mega Plano** transforma a exploração do código de uma tabela estática em um ecossistema vivo e interativo:
 
-1. **Comparador Visual de Arquitetura (Branch/Tag Diff Engine)**:
-   - Permite comparar grafos de dependência e nós de arquitetura entre duas branches (ex: `main` vs `dev`) ou tags/releases.
-   - Destaca nós adicionados, removidos ou modificados no Product Graph com código de cores suíço elegante e estatísticas de impacto.
+1. **Product Graph 2.0 (Canvas Interativo com Física de Forças)**:
+   - Visualização do mapa completo de nós (Páginas, Componentes, APIs, Serviços, Configurações, Dependências) com motor de física de forças.
+   - Agrupamento visual por diretórios e pastas do projeto, permitindo expandir/recolher módulos com animações fluida de transição.
+   - Seleção contextual de nós para inspeção imediata com o assistente Ask AFTER.
 
-2. **Relatório Executivo de Integridade do Software (Executive Integrity Report)**:
-   - Geração de relatórios com diagnósticos de saúde arquitetural, métricas de complexidade, evidências conhecidas/inferidas/desconhecidas e análise de risco de dependências.
-   - Exportação em **PDF Interativo** (com layout limpo pronto para impressão) e **JSON Estruturado** completo.
+2. **Simulador de Impacto Arquitetural ("What Happens If I Change This?")**:
+   - Ferramenta interativa onde o usuário seleciona qualquer elemento do grafo e simula o raio de impacto de uma alteração (dependentes diretos, dependentes transitivos e APIs/testes potencialmente afetados).
+   - Cálculo visual com cadeia de impacto destacada em cores semânticas.
 
-3. **Filtros Avançados de Busca no Diretório Público**:
-   - Painel de filtros retrátil em `ProjectsPage.tsx` permitindo filtrar por intervalo de estrelas, linguagem (TypeScript, Rust, Python, Go, etc.), licenças de código livre e tags de tópicos.
-
----
-
-## 2. Experiência do Usuário & Design Visual (Vercel / Linear Minimal Swiss)
-
-- **Estética Visual**: Suíça minimalista, tipografia nítida (Plus Jakarta Sans / JetBrains Mono), paleta monocromática com acentos semânticos de baixo contraste (Verde nominal, Âmbar aviso, Carmim risco, Azul alteração).
-- **Comparador de Arquitetura**:
-  - Modal/View fluida com seletores sincronizados para `Branch Base` vs `Branch Comparada`.
-  - Visualização gráfica em modo Split ou Overlay com contagem de delta (`+X nós adicionados`, `-Y nós removidos`, `~Z conexões alteradas`).
-- **Relatório Executivo**:
-  - Painel de visualização prévia com métricas executivas (Índice de Saúde Arquitetural, Cobertura de Evidências, Densidade de Dependências).
-  - Ações diretas de exportação: `Exportar PDF` e `Exportar JSON`.
-- **Filtros de Busca**:
-  - Barra de controle minimalista com seletores de filtro em segmented control, dropdown de licenças e badge-tags limpas sem pílulas excessivas.
+3. **Feed de Atividade ao Vivo & Observação Contínua (`WatchPage.tsx`)**:
+   - Feed dinâmico ao vivo com indicadores de status de sincronização (Online / Observando), rastreamento de commits, PRs e issues.
+   - Painel de alvos observados ("Watched Targets") com alertas instantâneos de alteração de arquitetura.
 
 ---
 
-## 3. Arquitetura Técnica & Fluxo de Dados
+## 2. Design Visual & Experiência do Usuário (Vercel / Linear Minimal Swiss)
+
+- **Canvas do Grafo**: Fundo neutro com grade sutil, nós em superfícies lisas com bordas hairline (`1px border-zinc-200 dark:border-zinc-800`), cores de linguagem de programação oficiais e indicadores semânticos.
+- **Física de Forças**: Repulsão suave de nós e atração por dependência para evitar sobreposição de texto, com suporte a drag & drop de nós.
+- **Painel de Simulação de Impacto**: Visualização em arborescência da cadeia de impacto com destaque para os arquivos em risco e nível de confiança.
+
+---
+
+## 3. Arquitetura Técnica & Componentes
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                             AFTER FRONTEND (React)                          │
 ├───────────────────────────────────┬─────────────────────────────────────────┤
-│          ProjectsPage             │            RepositoryPage               │
-│  - Advanced Filters Bar           │  - Architecture Compare View            │
-│  - GitHub Public Search Hook      │  - Executive Integrity Report Panel     │
-└─────────────────┬─────────────────┴────────────────────┬────────────────────┘
-                  │                                      │
-                  ▼                                      ▼
+│         ProductGraphPage          │               WatchPage                 │
+│  - Interactive Force Canvas       │  - Live Activity Stream                 │
+│  - Folder Grouping Controls       │  - Continuous Observation Status        │
+│  - Node Inspection Modal          │  - Watched Targets Manager              │
+├───────────────────────────────────┴─────────────────────────────────────────┤
+│                       ImpactSimulator Component                             │
+│  - Interactive Node Picker & Chain Calculation                              │
+└───────────────────────────────────┬─────────────────────────────────────────┘
+                                    │
+                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                             EXPRESS BACKEND SERVER                          │
+│                           EXPRESS BACKEND SERVER                            │
 ├───────────────────────────────────┬─────────────────────────────────────────┤
-│   /api/projects/github-search     │    /api/projects/:id/compare-branches │
-│   - Star ranges, language,        │    - Git tree diff & node graph diff    │
-│     license, topic filters        │    - Impact & dependency matrix         │
-├───────────────────────────────────┼─────────────────────────────────────────┤
-│   /api/projects/:id/report        │    /api/projects/:id/export-pdf         │
-│   - Integrity report JSON builder │    - Executive HTML-to-PDF print layout │
+│   /api/projects/impact            │   /api/projects/graph-topology          │
+│   - Transitive dependent graph    │   - Complete graph nodes & edges        │
+│     calculator                    │     hierarchical tree                   │
 └───────────────────────────────────┴─────────────────────────────────────────┘
 ```
 
 ---
 
-## 4. Tarefas de Implementação
+## 4. Etapas de Implementação
 
-### Etapa 1: Comparador Visual de Arquitetura (`ArchitectureCompareModal.tsx` & Backend Diff)
-- Criar endpoint no Express `/api/projects/:id/compare-branches?base=:base&head=:head` para computar a diferença de árvore de código, dependências e nós do Product Graph entre branches/tags.
-- Desenvolver componente React `ArchitectureCompareModal.tsx` integrado à página do repositório (`RepositoryPage.tsx`), com seletores de branches e visualização de nós modificados.
+### Etapa 1: Product Graph 2.0 (`ProductGraphPage.tsx` / `ProductGraphView.tsx`)
+- Implementar canvas interativo baseado em física de forças (force simulation) com SVG/Canvas.
+- Adicionar suporte a agrupamento por pastas e nós colapsáveis por módulo.
+- Integrar busca e filtros por tipo de nó (Páginas, Componentes, APIs, Lógica, Configs).
 
-### Etapa 2: Gerador e Exportador de Relatório Executivo de Integridade (`ExecutiveReportModal.tsx`)
-- Implementar construtor de dados do relatório integrando métricas reais de código, dependências, histórico de commits, dados de PII/segurança e evidências (Known, Inferred, Unknown).
-- Desenvolver modal de relatório com pré-visualização executiva e botões de download:
-  - **JSON**: Download imediato do arquivo `.json` com o esquema completo de integridade.
-  - **PDF**: Layout formatado com `@media print` CSS ou gerador PDF limpo sem dependências externas quebradas.
+### Etapa 2: Motor de Simulação de Impacto (`ImpactSimulator.tsx` + Endpoint `/api/projects/impact`)
+- Criar visualizador dedicado para simulação de impacto quando o usuário clica em "O que acontece se eu mudar isso?".
+- Destacar dependentes diretos e indiretos com matriz de evidências (Known, Inferred, Unknown).
 
-### Etapa 3: Filtros Avançados na Busca Pública de Repositórios (`ProjectsPage.tsx`)
-- Expandir o endpoint `/api/projects/github-search` para aceitar parâmetros `language`, `stars`, `license` e `topic`.
-- Adicionar barra de filtros interativa no `ProjectsPage.tsx` com estado reativo e integração com o Infinite Scroll.
+### Etapa 3: Feed de Atividade ao Vivo & Status de Observação (`WatchPage.tsx`)
+- Aprimorar o feed de observação contínua com atualização em tempo real, status da conexão com GitHub e lista interativa de alvos monitorados.
 
 ---
 
-## 5. Plano de Verificação & Testes
+## 5. Plano de Verificação
 
-1. **Compilação e Linting**: Executar `compile_applet` e `lint_applet` simultaneamente para garantir ausência de erros de build ou TypeScript.
-2. **Testes Unitários**: Garantir a execução de `npm test` para todos os fluxos do backend e frontend.
-3. **Verificação Visual**: Confirmar a coerência do estilo minimalista Vercel/Linear e fluidez das animações com Motion.
+1. **Compilação e Linting**: Co-executar `compile_applet` e `lint_applet` para garantir 0 erros de build ou TypeScript.
+2. **Suíte de Testes**: Executar `npm test` para assegurar que todas as suítes passam.
