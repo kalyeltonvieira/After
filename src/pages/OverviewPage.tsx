@@ -81,8 +81,8 @@ export function OverviewPage({ onNavigate, onOpenCreateProject }: OverviewPagePr
           <div className="grid max-w-4xl grid-cols-1 gap-4 md:grid-cols-2">
             <button
               type="button"
-              onClick={() => void handleConnectGitHub()}
-              disabled={connectingGitHub || isGitHubConnected}
+              onClick={() => { if (isGitHubConnected) onOpenCreateProject(); else void handleConnectGitHub(); }}
+              disabled={connectingGitHub}
               className="group rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/50 p-6 text-left transition-all hover:-translate-y-0.5 hover:border-lime-400/70 hover:shadow-xl hover:shadow-lime-950/5 disabled:cursor-default disabled:hover:translate-y-0"
             >
               <div className="flex items-start justify-between">
@@ -91,7 +91,7 @@ export function OverviewPage({ onNavigate, onOpenCreateProject }: OverviewPagePr
               </div>
               <h2 className="mt-6 text-base font-semibold text-zinc-900 dark:text-zinc-100">{isGitHubConnected ? (isPt ? "GitHub já conectado" : "GitHub connected") : (isPt ? "Conectar minha conta GitHub" : "Connect my GitHub account")}</h2>
               <p className="mt-2 min-h-12 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{isPt ? "Liste seus repositórios e autorize o acesso a projetos privados. A conexão fica vinculada à sua conta AFTER." : "List your repositories and authorize access to private projects. The integration is linked to your AFTER account."}</p>
-              {!isGitHubConnected && <span className="mt-5 inline-flex items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100">{connectingGitHub ? (isPt ? "Aguardando autorização..." : "Waiting for authorization...") : (isPt ? "Conectar GitHub" : "Connect GitHub")}<ArrowRight className="h-3.5 w-3.5" /></span>}
+              <span className="mt-5 inline-flex items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100">{isGitHubConnected ? (isPt ? "Ver meus repositórios" : "View my repositories") : connectingGitHub ? (isPt ? "Aguardando autorização..." : "Waiting for authorization...") : (isPt ? "Conectar GitHub" : "Connect GitHub")}<ArrowRight className="h-3.5 w-3.5" /></span>
             </button>
 
             <button
