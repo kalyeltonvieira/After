@@ -14,7 +14,13 @@ import {
   RefreshCw,
   Search,
   AlertCircle,
+  CalendarDays,
+  GitPullRequest,
+  ExternalLink,
+  Layers3,
+  ChevronLeft,
 } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useProject } from "../context/ProjectContext";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
@@ -59,6 +65,8 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
   const [publicSearchQuery, setPublicSearchQuery] = useState("");
   const [publicSearchResults, setPublicSearchResults] = useState<GitHubRepositoryItem[]>([]);
   const [searchingPublic, setSearchingPublic] = useState(false);
+  const [selectedRepo, setSelectedRepo] = useState<GitHubRepositoryItem | null>(null);
+  const [visibleRepoCount, setVisibleRepoCount] = useState(12);
 
   const filteredRepos = userRepos.filter((repo) => {
     const q = repoSearch.trim().toLowerCase();
@@ -160,6 +168,12 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
   const handleSelectRepo = (repo: GitHubRepositoryItem) => {
     setRepoInput(repo.full_name);
     setRepoBranch(repo.default_branch || "main");
+    setSelectedRepo(repo);
+    setError(null);
+  };
+
+  const handleBackToRepoList = () => {
+    setSelectedRepo(null);
     setError(null);
   };
 
@@ -257,14 +271,14 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
       {/* Backdrop: click to close */}
       <div
         className="fixed inset-0 bg-black/75 backdrop-blur-xs transition-opacity"
         onClick={onClose}
       />
 
-      <div className="relative w-full max-w-lg max-h-[90vh] flex flex-col bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl z-50 overflow-hidden">
+      <motion.div initial={{ opacity: 0, y: 18, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }} className="relative w-full max-w-lg max-h-[90vh] flex flex-col bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl z-50 overflow-hidden">
         {/* Sticky Header with prominent close button */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 shrink-0 bg-white dark:bg-zinc-900">
           <div className="flex items-center space-x-2">
@@ -375,6 +389,7 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
                 </div>
               )}
 
+              {!selectedRepo ? (
               <div className="space-y-3 pt-1 border-t border-zinc-200/60 dark:border-zinc-800/60">
                 {/* Switcher: User repos vs Public GitHub search */}
                 <div className="flex items-center gap-1 p-0.5 bg-zinc-200/70 dark:bg-zinc-800 rounded-lg text-[11px]">
@@ -439,8 +454,13 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
                           />
                           <span className="text-[10px] text-zinc-400">{filteredRepos.length}</span>
                         </div>
-                        <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
-                          {filteredRepos.map((repo) => (
+                        <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1 scroll-smooth" onScroll={(event) => {
+                          const element = event.currentTarget;
+                          if (element.scrollTop + element.clientHeight >= element.scrollHeight - 48) {
+                            setVisibleRepoCount((count) => Math.min(count + 12, filteredRepos.length));
+                          }
+                        }}>
+                          {filteredRepos.slice(0, visibleRepoCount).map((repo) => (
                             <button
                               key={repo.id}
                               type="button"
@@ -466,6 +486,12 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
                               </div>
                             </button>
                           ))}
+                          {visibleRepoCount < filteredRepos.length && (
+                            <div className="flex items-center justify-center gap-2 py-3 text-[10px] text-zinc-400 font-mono">
+                              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
+                              {language === "pt" ? "Role para carregar mais" : "Scroll to load more"}
+                            </div>
+                          )}
                         </div>
                       </>
                     ) : (
@@ -574,6 +600,55 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
                   </div>
                 )}
               </div>
+              ) : (
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={selectedRepo?.full_name}
+                    initial={{ opacity: 0, x: 18 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -18 }}
+                    transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                    className="space-y-4"
+                  >
+                    <button type="button" onClick={handleBackToRepoList} className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 cursor-pointer">
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                      {language === "pt" ? "Voltar para repositórios" : "Back to repositories"}
+                    </button>
+                    {selectedRepo && (
+                      <>
+                        <div className="relative overflow-hidden rounded-2xl border border-sky-200/70 dark:border-sky-900/60 bg-gradient-to-br from-sky-50 via-white to-violet-50 dark:from-sky-950/50 dark:via-zinc-900 dark:to-violet-950/40 p-5">
+                          <div className="absolute -right-8 -top-10 h-32 w-32 rounded-full bg-sky-400/20 blur-3xl" />
+                          <div className="relative space-y-4">
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex items-start gap-3 min-w-0">
+                                <img src={selectedRepo.owner.avatar_url} alt="" className="h-10 w-10 rounded-xl border border-white/70 dark:border-zinc-700 shadow-sm" referrerPolicy="no-referrer" />
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <h4 className="truncate text-base font-semibold text-zinc-950 dark:text-zinc-50">{selectedRepo.name}</h4>
+                                    {selectedRepo.private ? <Lock className="h-3.5 w-3.5 text-amber-500" /> : <Globe className="h-3.5 w-3.5 text-emerald-500" />}
+                                  </div>
+                                  <p className="truncate text-[11px] font-mono text-zinc-500 dark:text-zinc-400">{selectedRepo.full_name}</p>
+                                </div>
+                              </div>
+                              <a href={selectedRepo.html_url} target="_blank" rel="noreferrer" className="shrink-0 rounded-lg border border-white/80 dark:border-zinc-700 bg-white/70 dark:bg-zinc-900/60 p-2 text-zinc-500 hover:text-zinc-950 dark:hover:text-white" title="Open on GitHub"><ExternalLink className="h-3.5 w-3.5" /></a>
+                            </div>
+                            <p className="min-h-10 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">{selectedRepo.description || (language === "pt" ? "Este repositório ainda não possui uma descrição no GitHub." : "This repository does not have a GitHub description yet.")}</p>
+                            <div className="grid grid-cols-3 gap-2">
+                              <div className="rounded-xl border border-white/70 dark:border-zinc-800 bg-white/60 dark:bg-zinc-900/40 p-2.5"><span className="block text-[10px] text-zinc-400">{language === "pt" ? "Linguagem" : "Language"}</span><span className="mt-1 block truncate text-xs font-semibold text-zinc-800 dark:text-zinc-100">{selectedRepo.language || "—"}</span></div>
+                              <div className="rounded-xl border border-white/70 dark:border-zinc-800 bg-white/60 dark:bg-zinc-900/40 p-2.5"><span className="block text-[10px] text-zinc-400">Stars</span><span className="mt-1 flex items-center gap-1 text-xs font-semibold text-zinc-800 dark:text-zinc-100"><Star className="h-3 w-3 fill-amber-400 text-amber-400" />{selectedRepo.stargazers_count.toLocaleString()}</span></div>
+                              <div className="rounded-xl border border-white/70 dark:border-zinc-800 bg-white/60 dark:bg-zinc-900/40 p-2.5"><span className="block text-[10px] text-zinc-400">{language === "pt" ? "Atualizado" : "Updated"}</span><span className="mt-1 flex items-center gap-1 text-xs font-semibold text-zinc-800 dark:text-zinc-100"><CalendarDays className="h-3 w-3" />{new Date(selectedRepo.updated_at).toLocaleDateString(language === "pt" ? "pt-BR" : "en-US", { month: "short", day: "numeric" })}</span></div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+                          <div className="flex items-center gap-2 rounded-xl border border-zinc-200/80 dark:border-zinc-800 p-3"><GitPullRequest className="h-4 w-4 text-sky-500" /><span>{language === "pt" ? "Branches e histórico" : "Branches & history"}</span></div>
+                          <div className="flex items-center gap-2 rounded-xl border border-zinc-200/80 dark:border-zinc-800 p-3"><Layers3 className="h-4 w-4 text-violet-500" /><span>{language === "pt" ? "Arquitetura e dependências" : "Architecture & dependencies"}</span></div>
+                        </div>
+                      </>
+                    )}
+                  </motion.div>
+                </AnimatePresence>
+              )}
             </div>
             <div>
               <div className="flex items-center justify-between mb-1">
@@ -772,9 +847,8 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
             </div>
           </form>
         )}
-
-      </div>
-    </div>
-  </div>
+        </div>
+      </motion.div>
+    </motion.div>
 );
 }
