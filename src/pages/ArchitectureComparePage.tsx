@@ -113,11 +113,11 @@ export function ArchitectureComparePage() {
   const selectClass = "w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2.5 text-xs text-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-900/10";
   const summaryLabels: Record<string, string> = isPt ? {
     filesChanged: "Arquivos alterados", filesAdded: "Adicionados", filesRemoved: "Removidos",
-    filesModified: "Modificados", symbolsAdded: "Símbolos adicionados", symbolsRemoved: "Símbolos removidos",
+    filesModified: "Modificados", symbolsAdded: "Símbolos adicionados", symbolsRemoved: "Símbolos removidos", symbolsModified: "Símbolos modificados",
     dependenciesAdded: "Dependências adicionadas", dependenciesRemoved: "Dependências removidas",
   } : {
     filesChanged: "Files changed", filesAdded: "Added", filesRemoved: "Removed",
-    filesModified: "Modified", symbolsAdded: "Symbols added", symbolsRemoved: "Symbols removed",
+    filesModified: "Modified", symbolsAdded: "Symbols added", symbolsRemoved: "Symbols removed", symbolsModified: "Symbols modified",
     dependenciesAdded: "Dependencies added", dependenciesRemoved: "Dependencies removed",
   };
 
@@ -197,12 +197,13 @@ export function ArchitectureComparePage() {
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-zinc-500">
                         <span>+{file.symbols.added.length} {isPt ? "símbolos" : "symbols"}</span>
                         <span>-{file.symbols.removed.length} {isPt ? "símbolos" : "symbols"}</span>
+                        <span>~{file.symbols.modified.length} {isPt ? "símbolos" : "symbols"}</span>
                         <span>+{file.dependencies.added.length} {isPt ? "dependências" : "dependencies"}</span>
                         <span>-{file.dependencies.removed.length} {isPt ? "dependências" : "dependencies"}</span>
                       </div>
-                      {(file.symbols.added.length + file.symbols.removed.length + file.dependencies.added.length + file.dependencies.removed.length > 0) && (
+                      {(file.symbols.added.length + file.symbols.removed.length + file.symbols.modified.length + file.dependencies.added.length + file.dependencies.removed.length > 0) && (
                         <div className="grid gap-2 text-[10px] sm:grid-cols-2">
-                          <div>{file.symbols.added.map((symbol) => <p key={symbol.name} className="text-emerald-700 dark:text-emerald-400">+ {symbol.type} {symbol.name}</p>)}{file.dependencies.added.map((dep) => <p key={dep} className="text-emerald-700 dark:text-emerald-400">+ import {dep}</p>)}</div>
+                          <div>{file.symbols.modified.map((symbol, index) => <p key={`${symbol.before?.name || "before"}-${index}`} className="text-amber-700 dark:text-amber-400">~ {symbol.before?.name || "symbol"} → {symbol.after?.name || "symbol"}</p>)}{file.symbols.added.map((symbol) => <p key={symbol.name} className="text-emerald-700 dark:text-emerald-400">+ {symbol.type} {symbol.name}</p>)}{file.dependencies.added.map((dep) => <p key={dep} className="text-emerald-700 dark:text-emerald-400">+ import {dep}</p>)}</div>
                           <div>{file.symbols.removed.map((symbol) => <p key={symbol.name} className="text-red-700 dark:text-red-400">− {symbol.type} {symbol.name}</p>)}{file.dependencies.removed.map((dep) => <p key={dep} className="text-red-700 dark:text-red-400">− import {dep}</p>)}</div>
                         </div>
                       )}
