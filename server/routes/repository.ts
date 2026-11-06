@@ -23,6 +23,27 @@ const ghHeaders = (token?: string): Record<string, string> => ({
 });
 
 const EXTERNAL_REQUEST_TIMEOUT_MS = 15_000;
+const BINARY_FILE_EXTENSIONS = new Set([
+  "7z", "avi", "bin", "bmp", "class", "doc", "docx", "eot", "gif", "gz", "ico", "jar", "jpeg", "jpg",
+  "mov", "mp3", "mp4", "ogg", "otf", "pdf", "png", "ppt", "pptx", "rar", "svgz", "tar", "tif", "tiff",
+  "ttf", "wasm", "wav", "webm", "webp", "woff", "woff2", "xls", "xlsb", "xlsm", "xlsx", "zip",
+]);
+
+function isBinaryFilePath(filePath: string) {
+  const extension = filePath.split(".").pop()?.toLowerCase() || "";
+  return BINARY_FILE_EXTENSIONS.has(extension);
+}
+
+function contentTypeForPath(filePath: string) {
+  const extension = filePath.split(".").pop()?.toLowerCase() || "";
+  const types: Record<string, string> = {
+    pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp",
+    svg: "image/svg+xml", mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", mp4: "video/mp4", webm: "video/webm",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", xls: "application/vnd.ms-excel",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  };
+  return types[extension] || "application/octet-stream";
+}
 
 function githubError(status: number, statusText: string, body?: any, isHtml = false, rawSample = ""): Error {
   let detail = "";
@@ -199,6 +220,31 @@ repositoryRouter.get("/tree", async (req: AuthenticatedRequest, res) => {
   } catch (error) { return handleRouteError(res, error); }
 });
 
+repositoryRouter.put("/file", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { project, parsed, token } = await getProjectRepository(req, String(req.body?.projectId || ""));
+    const path = sanitizeRepoRelativePath(String(req.body?.path || ""));
+    const branch = String(req.body?.branch || project.branch || project.defaultBranch || "").trim();
+    const content = String(req.body?.content || "");
+    const sha = String(req.body?.sha || "").trim();
+    const message = String(req.body?.message || `Update ${path}`).trim().slice(0, 200);
+    if (!path) return res.status(400).json({ error: "A valid repository path is required." });
+    if (!branch) return res.status(400).json({ error: "A branch is required." });
+    if (!token) return res.status(401).json({ error: "Connect GitHub first to edit files." });
+    if (isSensitiveFilePath(path)) return res.status(403).json({ error: "Editing sensitive files is restricted by AFTER security policies." });
+    if (Buffer.byteLength(content, "utf8") > 2_000_000) return res.status(413).json({ error: "CSV files must be 2 MB or smaller for inline editing." });
+
+    const payload: Record<string, string> = { message, content: Buffer.from(content, "utf8").toString("base64"), branch };
+    if (sha) payload.sha = sha;
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}`, token, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return res.json({ path, branch, sha: body?.content?.sha || null, commit: body?.commit || null });
+  } catch (error) { return handleRouteError(res, error); }
+});
+
 repositoryRouter.get("/file", async (req: AuthenticatedRequest, res) => {
   try {
     const { project, parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
@@ -225,7 +271,11 @@ repositoryRouter.get("/file", async (req: AuthenticatedRequest, res) => {
         );
         if (body?.type === "file" && typeof body?.content === "string") {
           const normalized = body.content.replace(/\n/g, "");
-          const content = Buffer.from(normalized, "base64").toString("utf8");
+          const bytes = Buffer.from(normalized, "base64");
+          if (isBinaryFilePath(path)) {
+            return res.json({ path, ref, size: body.size ?? bytes.length, sha: body.sha, contentBase64: bytes.toString("base64"), contentType: contentTypeForPath(path), isBinary: true });
+          }
+          const content = bytes.toString("utf8");
           return res.json({ path, ref, size: body.size ?? content.length, sha: body.sha, content });
         }
       } catch {
@@ -246,14 +296,17 @@ repositoryRouter.get("/file", async (req: AuthenticatedRequest, res) => {
           },
         });
         if (rawRes.ok) {
-          const content = await rawRes.text();
-          if (content && !content.startsWith("<!DOCTYPE html>") && !content.startsWith("<html>")) {
+          const bytes = Buffer.from(await rawRes.arrayBuffer());
+          const content = isBinaryFilePath(path) ? "" : bytes.toString("utf8");
+          if (bytes.length && !content.startsWith("<!DOCTYPE html>") && !content.startsWith("<html>")) {
             return res.json({
               path,
               ref,
-              size: Buffer.byteLength(content, "utf8"),
-              sha: `raw_${ref}`,
-              content,
+              size: bytes.length,
+              sha: null,
+              ...(isBinaryFilePath(path)
+                ? { contentBase64: bytes.toString("base64"), contentType: contentTypeForPath(path), isBinary: true }
+                : { content }),
             });
           }
         }
@@ -268,7 +321,11 @@ repositoryRouter.get("/file", async (req: AuthenticatedRequest, res) => {
       try {
         const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/git/blobs/${encodeURIComponent(reqSha)}`, token);
         if (body?.content && body.encoding === "base64") {
-          const content = Buffer.from(body.content.replace(/\n/g, ""), "base64").toString("utf8");
+          const bytes = Buffer.from(body.content.replace(/\n/g, ""), "base64");
+          if (isBinaryFilePath(path)) {
+            return res.json({ path, ref: requestedRef || "HEAD", size: body.size ?? bytes.length, sha: reqSha, contentBase64: bytes.toString("base64"), contentType: contentTypeForPath(path), isBinary: true });
+          }
+          const content = bytes.toString("utf8");
           return res.json({ path, ref: requestedRef || "HEAD", size: body.size ?? content.length, sha: reqSha, content });
         }
       } catch {
