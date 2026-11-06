@@ -27,8 +27,8 @@ process.on("uncaughtException", (error: any) => {
 async function startServer() {
   const app = express();
   app.disable("x-powered-by");
-  app.use(requestIdMiddleware);
-  const PORT = Number(process.env.PORT) || 3000;
+  const envPort = Number(process.env.APP_PORT || process.env.PORT);
+  const PORT = envPort && envPort !== 8080 ? envPort : 3000;
 
   app.post(
     "/api/projects/github-webhook",

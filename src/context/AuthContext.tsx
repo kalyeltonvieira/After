@@ -59,13 +59,8 @@ const DEFAULT_PREFERENCES: UserPreferences = {
 const GITHUB_LOGIN_ERROR = "GitHub login did not complete.";
 const GITHUB_SESSION_STORAGE_KEY = "after.github.access_token";
 
-function cacheGitHubAccessToken(token: string) {
-  try {
-    sessionStorage.setItem(GITHUB_SESSION_STORAGE_KEY, token);
-  } catch {}
-  try {
-    localStorage.setItem(GITHUB_SESSION_STORAGE_KEY, token);
-  } catch {}
+function cacheGitHubAccessToken(_token: string) {
+  // No-op: Tokens are secured server-side only
 }
 
 function clearCachedGitHubAccessToken() {
@@ -180,24 +175,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     cacheGitHubAccessToken(githubAccessToken);
-
-    // Save token in the user profile doc directly from client SDK (authenticated as request.auth.uid == currentUser.uid)
-    try {
-      await setDoc(
-        doc(db, "users", firebaseUser.uid),
-        {
-          githubIntegration: {
-            accessToken: githubAccessToken,
-            connected: true,
-            updatedAt: new Date().toISOString(),
-          },
-        },
-        { merge: true }
-      );
-    } catch (fsErr) {
-      console.warn("Client-side GitHub token persistence to Firestore:", fsErr);
-    }
-
     const idToken = await firebaseUser.getIdToken();
     const response = await fetch("/api/projects/github-session", {
       method: "POST",
@@ -205,7 +182,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${idToken}`,
-        "X-GitHub-Access-Token": githubAccessToken,
       },
       body: JSON.stringify({ githubAccessToken }),
     });
@@ -235,22 +211,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     cacheGitHubAccessToken(githubAccessToken);
 
-    try {
-      await setDoc(
-        doc(db, "users", user.uid),
-        {
-          githubIntegration: {
-            accessToken: githubAccessToken,
-            connected: true,
-            updatedAt: new Date().toISOString(),
-          },
-        },
-        { merge: true }
-      );
-    } catch (fsErr) {
-      console.warn("Client-side GitHub token refresh to Firestore:", fsErr);
-    }
-
     const idToken = await result.user.getIdToken(true);
     const response = await fetch("/api/projects/github-session", {
       method: "POST",
@@ -258,7 +218,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${idToken}`,
-        "X-GitHub-Access-Token": githubAccessToken,
       },
       body: JSON.stringify({ githubAccessToken }),
     });

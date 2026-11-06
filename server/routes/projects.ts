@@ -12,6 +12,7 @@ import { loadProjectContext, listUserProjectsViaRest, fetchProjectViaRest } from
 import { enqueueIncrementalAnalysis } from "../services/incrementalAnalysis.js";
 import { persistGraphSnapshot } from "../services/graphStore.js";
 import { analyzeSource } from "../services/codeAnalyzer.js";
+import { calculateImpact } from "../services/graphAnalysis.js";
 import {
   parseGitHubRepo,
   sanitizeGitHubRepo,
@@ -43,9 +44,6 @@ async function resolveGitHubToken(
   req: AuthenticatedRequest,
   res?: Response
 ): Promise<string | null> {
-  const headerToken = (req.headers["x-github-access-token"] as string | undefined)?.trim();
-  if (headerToken) return headerToken;
-
   const uid = req.user!.uid;
   const liveToken = getGitHubToken(req.cookies?.after_github_session, uid);
   if (liveToken) return liveToken;
@@ -307,19 +305,9 @@ async function computeProjectStatistics(
   } else if (project.statistics?.activeContributors) {
     activeContributors = Math.max(activeContributors, Number(project.statistics.activeContributors));
   }
-  if (activeContributors === 0) activeContributors = 1;
 
-  // 3. Lines of Code calculation: from analysis, graph source nodes, or byte breakdown
+  // 3. Lines of Code calculation: from analysis or verified language byte breakdown
   let linesOfCode = Number(project.linesOfCode) || Number(project.statistics?.linesOfCode) || 0;
-  if (!linesOfCode) {
-    if (graphNodes.length > 0) {
-      // Average 115 lines of code per analyzed module/AST component node
-      linesOfCode = graphNodes.length * 115;
-    } else {
-      // Realistic baseline based on events and project metadata
-      linesOfCode = Math.max(1450, (events.length || 8) * 120);
-    }
-  }
 
   // GitHub telemetry enrichment when token is present
   let languagesBreakdown: Record<string, number> = project.languages || {};
@@ -360,7 +348,7 @@ async function computeProjectStatistics(
     linesOfCode,
     totalCommits,
     activeContributors,
-    fileCount: graphNodes.length || project.fileCount || 14,
+    fileCount: graphNodes.length || Number(project.fileCount) || 0,
     architectureNodes: graphNodes.length,
     architectureEdges: context.graphEdges?.length || 0,
     insightsCount: context.insights?.length || 0,
@@ -1332,4 +1320,29 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
       error: `Failed to analyze repository: ${err.message || "Unknown error occurred."}`,
     });
   }
+});
+
+/**
+ * Impact Analysis Engine Endpoint
+ * Computes direct and transitive dependencies, affected tests/APIs, and blast radius.
+ */
+projectsRouter.post("/impact-analysis", requireFirebaseUser, async (req: AuthenticatedRequest, res: Response) => {
+  const projectId = validateFirestoreDocPath(req.body?.projectId);
+  const nodeId = String(req.body?.nodeId || "").trim();
+
+  if (!projectId || !nodeId) {
+    return res.status(400).json({ error: "projectId and nodeId are required." });
+  }
+
+  const context = await loadProjectContext(projectId, req.user!.uid, req.firebaseToken);
+  if (!context) {
+    return res.status(404).json({ error: "Project not found or not owned by the current user." });
+  }
+
+  const impact = calculateImpact(nodeId, context.graphNodes, context.graphEdges);
+  if (!impact) {
+    return res.status(404).json({ error: `Node ${nodeId} not found in the project's product graph.` });
+  }
+
+  return res.json({ impact });
 });

@@ -4,6 +4,7 @@ import { requireFirebaseUser, type AuthenticatedRequest } from "../auth.js";
 import { loadProjectContext } from "../projectContext.js";
 import { getGitHubToken } from "../githubSession.js";
 import { parseGitHubRepo } from "../services/githubService.js";
+import { isSensitiveFilePath, redactSecrets } from "../services/sensitiveFileFilter.js";
 
 export const aiRouter = Router();
 
@@ -34,7 +35,7 @@ aiRouter.post("/why", requireFirebaseUser, async (req: AuthenticatedRequest, res
 
   let fileHistory: any[] = [];
   let focusedFileContent = "";
-  if (node?.filePath) {
+  if (node?.filePath && !isSensitiveFilePath(String(node.filePath))) {
     const parsedRepo = parseGitHubRepo(String(projectContext?.repository || ""));
     const token = resolveRequestGitHubToken(req);
     const headers: Record<string, string> = {
@@ -62,9 +63,8 @@ aiRouter.post("/why", requireFirebaseUser, async (req: AuthenticatedRequest, res
         if (fileRes.ok) {
           const file = await fileRes.json();
           if (typeof file?.content === "string") {
-            focusedFileContent = Buffer.from(file.content.replace(/\n/g, ""), "base64")
-              .toString("utf8")
-              .slice(0, 20000);
+            const raw = Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf8");
+            focusedFileContent = redactSecrets(raw).slice(0, 20000);
           }
         }
 
