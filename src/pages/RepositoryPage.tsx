@@ -122,6 +122,114 @@ function languageFromPath(path: string): string {
   }
 }
 
+function binaryExtension(path: string): string {
+  return path.split(".").pop()?.toLowerCase() || "";
+}
+
+function BinaryFallback({ file, label }: { file: any; label: string }) {
+  const name = String(file?.path || "file").split("/").pop() || "file";
+  const href = file?.contentBase64 ? `data:${file.contentType || "application/octet-stream"};base64,${file.contentBase64}` : "#";
+  return <div className="h-full min-h-[360px] flex flex-col items-center justify-center gap-3 p-8 text-center bg-zinc-950 text-zinc-300"><div className="text-sm font-medium">{name}</div><p className="max-w-md text-xs text-zinc-500">{label}</p><a href={href} download={name} className="rounded-xl bg-white text-zinc-900 px-4 py-2 text-xs font-medium">Download file</a></div>;
+}
+
+function parseCsv(text: string): { rows: string[][]; delimiter: string } {
+  const sample = text.split(/\r?\n/, 5).join("\n");
+  const candidates = [",", ";", "\t", "|"];
+  const delimiter = candidates.sort((a, b) => sample.split(b).length - sample.split(a).length)[0] || ",";
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '"') {
+      if (quoted && text[index + 1] === '"') { cell += '"'; index += 1; } else quoted = !quoted;
+    } else if (char === delimiter && !quoted) {
+      row.push(cell); cell = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && text[index + 1] === "\n") index += 1;
+      row.push(cell); rows.push(row); row = []; cell = "";
+    } else cell += char;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return { rows: rows.length ? rows : [[]], delimiter };
+}
+
+function serializeCsv(rows: string[][], delimiter: string): string {
+  return rows.map((row) => row.map((cell) => {
+    const value = String(cell ?? "");
+    return /["\n\r]/.test(value) || value.includes(delimiter) ? `"${value.replace(/"/g, '""')}"` : value;
+  }).join(delimiter)).join("\n");
+}
+
+function CsvFilePreview({ file, onSave }: { file: any; onSave: (content: string) => Promise<void> }) {
+  const [rows, setRows] = useState<string[][]>(() => parseCsv(String(file?.content || "")).rows);
+  const [delimiter, setDelimiter] = useState(",");
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    const parsed = parseCsv(String(file?.content || ""));
+    setRows(parsed.rows); setDelimiter(parsed.delimiter); setDirty(false);
+  }, [file?.path, file?.content]);
+  const columnCount = Math.max(1, Math.min(100, rows.reduce((largest, row) => Math.max(largest, row.length), 0)));
+  const updateCell = (rowIndex: number, columnIndex: number, value: string) => {
+    setRows((current) => current.map((row, index) => index === rowIndex ? Object.assign([...row], { [columnIndex]: value }) : row));
+    setDirty(true);
+  };
+  const addRow = () => { setRows((current) => [...current, Array(columnCount).fill("")]); setDirty(true); };
+  const addColumn = () => { setRows((current) => current.map((row) => [...row, ""])); setDirty(true); };
+  const deleteRow = () => { if (rows.length > 1) { setRows((current) => current.slice(0, -1)); setDirty(true); } };
+  const download = () => { const blob = new Blob([serializeCsv(rows, delimiter)], { type: "text/csv;charset=utf-8" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = String(file?.path || "data.csv").split("/").pop() || "data.csv"; anchor.click(); URL.revokeObjectURL(url); };
+  const save = async () => { setSaving(true); try { await onSave(serializeCsv(rows, delimiter)); setDirty(false); } finally { setSaving(false); } };
+  return <div className="h-full min-h-[360px] flex flex-col bg-white dark:bg-zinc-950">
+    <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-xs">
+      <span className="font-semibold mr-auto">CSV editor</span><span className="text-zinc-400">{rows.length} rows · {columnCount} columns</span>
+      <select value={delimiter} onChange={(event) => { setDelimiter(event.target.value); setDirty(true); }} className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-2 py-1 text-[11px]"><option value=",">Comma</option><option value=";">Semicolon</option><option value="\t">Tab</option><option value="|">Pipe</option></select>
+      <button type="button" onClick={addRow} className="rounded-lg border border-zinc-200 dark:border-zinc-700 px-2 py-1">+ Row</button><button type="button" onClick={addColumn} className="rounded-lg border border-zinc-200 dark:border-zinc-700 px-2 py-1">+ Column</button><button type="button" onClick={deleteRow} className="rounded-lg border border-zinc-200 dark:border-zinc-700 px-2 py-1">− Row</button><button type="button" onClick={download} className="rounded-lg border border-zinc-200 dark:border-zinc-700 px-2 py-1">Download</button><button type="button" onClick={() => void save()} disabled={!dirty || saving} className="rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-3 py-1 disabled:opacity-40">{saving ? "Saving…" : "Save to GitHub"}</button>
+    </div>
+    <div className="flex-1 overflow-auto"><table className="min-w-max border-collapse text-xs"><tbody>{rows.slice(0, 5000).map((row, rowIndex) => <tr key={rowIndex} className="hover:bg-sky-50 dark:hover:bg-sky-950/20"><th className="sticky left-0 z-10 border-r border-b border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900 px-2 py-1 text-[10px] text-zinc-400 font-mono">{rowIndex + 1}</th>{Array.from({ length: columnCount }).map((_, columnIndex) => <td key={columnIndex} className="border-r border-b border-zinc-200 dark:border-zinc-800 p-0"><input value={row[columnIndex] || ""} onChange={(event) => updateCell(rowIndex, columnIndex, event.target.value)} className="w-40 bg-transparent px-2 py-1.5 outline-none focus:bg-sky-50 dark:focus:bg-sky-950/40" aria-label={`Row ${rowIndex + 1}, column ${columnIndex + 1}`} /></td>)}</tr>)}</tbody></table>{rows.length > 5000 && <div className="p-3 text-[10px] text-zinc-400">Showing the first 5,000 rows. Saving preserves the complete CSV.</div>}</div>
+  </div>;
+}
+
+function BinaryFilePreview({ file }: { file: any }) {
+  const extension = binaryExtension(String(file?.path || ""));
+  const dataUrl = file?.contentBase64
+    ? `data:${file.contentType || "application/octet-stream"};base64,${file.contentBase64}`
+    : "";
+  const downloadName = String(file?.path || "file").split("/").pop() || "file";
+  const [spreadsheet, setSpreadsheet] = useState<{ sheetName: string; sheetCount: number; rows: any[][] } | null>(null);
+  useEffect(() => {
+    let active = true;
+    setSpreadsheet(null);
+    if (file?.contentBase64 && ["xlsx", "xls", "xlsm", "xlsb"].includes(extension)) {
+      void import("xlsx").then((XLSX) => {
+        try {
+          const bytes = Uint8Array.from(atob(file.contentBase64), (char) => char.charCodeAt(0));
+          const workbook = XLSX.read(bytes, { type: "array", cellDates: true });
+          const sheetName = workbook.SheetNames[0];
+          const rows = sheetName ? XLSX.utils.sheet_to_json<any[]>(workbook.Sheets[sheetName], { header: 1, raw: false }) : [];
+          if (active && sheetName) setSpreadsheet({ sheetName, sheetCount: workbook.SheetNames.length, rows });
+        } catch {
+          if (active) setSpreadsheet(null);
+        }
+      });
+    }
+    return () => { active = false; };
+  }, [file?.contentBase64, extension]);
+
+  if (["xlsx", "xls", "xlsm", "xlsb"].includes(extension)) {
+    const sheet = spreadsheet?.sheetName;
+    const rows = spreadsheet?.rows || [];
+    const columnCount = Math.min(80, Math.max(1, ...rows.slice(0, 1000).map((row) => row.length)));
+    return <div className="h-full overflow-auto bg-white dark:bg-zinc-950 p-4">{spreadsheet && sheet ? <div className="min-w-max rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden"><div className="px-3 py-2 bg-zinc-100 dark:bg-zinc-900 text-xs font-semibold border-b border-zinc-200 dark:border-zinc-800">{sheet} · {spreadsheet.sheetCount} {spreadsheet.sheetCount === 1 ? "sheet" : "sheets"}</div><table className="border-collapse text-xs"><tbody>{rows.slice(0, 1000).map((row, rowIndex) => <tr key={rowIndex} className="hover:bg-sky-50 dark:hover:bg-sky-950/30">{Array.from({ length: columnCount }).map((_, columnIndex) => <td key={columnIndex} className="border-r border-b border-zinc-200 dark:border-zinc-800 px-3 py-2 whitespace-nowrap">{row[columnIndex] == null ? "" : String(row[columnIndex])}</td>)}</tr>)}</tbody></table>{rows.length > 1000 && <div className="px-3 py-2 text-[10px] text-zinc-400 border-t border-zinc-200 dark:border-zinc-800">Preview limited to the first 1,000 rows.</div>}</div> : <BinaryFallback file={file} label="Não foi possível interpretar esta planilha." />}</div>;
+  }
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(extension)) return <div className="h-full overflow-auto flex items-center justify-center p-8 bg-zinc-100 dark:bg-zinc-950"><img src={dataUrl} alt={downloadName} className="max-w-full max-h-full object-contain rounded-lg shadow-xl" /></div>;
+  if (extension === "pdf") return <iframe title={downloadName} src={dataUrl} className="w-full h-full min-h-[560px] bg-white" />;
+  if (["mp3", "wav", "ogg"].includes(extension)) return <div className="h-full flex items-center justify-center p-8 bg-zinc-950"><audio controls src={dataUrl} className="w-full max-w-xl" /></div>;
+  if (["mp4", "webm", "mov"].includes(extension)) return <div className="h-full flex items-center justify-center p-8 bg-zinc-950"><video controls src={dataUrl} className="max-w-full max-h-full rounded-xl" /></div>;
+  return <BinaryFallback file={file} label="Este formato pode ser baixado, mas não possui um visualizador web nativo." />;
+}
+
 export function RepositoryPage() {
   const { currentProject, setAiContext, setIsAskAfterOpen, updateCurrentProject, graphNodes, graphEdges } = useProject();
   const [tab, setTab] = useState<Tab>("code");
@@ -527,6 +635,26 @@ export function RepositoryPage() {
     }
   };
 
+  const saveCsv = async (content: string) => {
+    if (!data.file?.path || !projectId) return;
+    const body = await request("/api/repository/file", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId,
+        path: data.file.path,
+        branch: currentProject.branch,
+        sha: data.file.sha,
+        content,
+        message: `Update ${data.file.path}`,
+      }),
+    });
+    setData((previous: any) => ({
+      ...previous,
+      file: { ...previous.file, content, sha: body.sha || previous.file.sha, size: new Blob([content]).size },
+    }));
+  };
+
   const toggleBlame = async () => {
     if (!data.file?.path) return;
     if (showBlame) {
@@ -839,10 +967,10 @@ export function RepositoryPage() {
                 </div>
                 {data.file?.path && (
                   <div className="flex flex-wrap items-center justify-end gap-1.5">
-                    <button type="button" onClick={() => void copyFile()} className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-[11px]">
+                    {!data.file.isBinary && <button type="button" onClick={() => void copyFile()} className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-[11px]">
                       {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} {copied ? "Copied" : "Copy"}
-                    </button>
-                    <button
+                    </button>}
+                    {!data.file.isBinary && binaryExtension(data.file.path) !== "csv" && <button
                       type="button"
                       onClick={() => void toggleBlame()}
                       disabled={blameLoading}
@@ -864,7 +992,7 @@ export function RepositoryPage() {
                           {blame.length}
                         </span>
                       )}
-                    </button>
+                    </button>}
                     <button type="button" onClick={() => void analyzeChange({ path: data.file.path, question: "Analyze this file's current repository state, recent history, related graph relationships, and potential impact of changing it." })} className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-[11px]">
                       <Sparkles className="w-3 h-3" /> Analyze
                     </button>
@@ -879,7 +1007,7 @@ export function RepositoryPage() {
                 className="h-[min(64vh,720px)] min-h-[360px] overflow-auto overscroll-contain bg-zinc-950"
                 onScroll={(event) => setCodeScrollTop(event.currentTarget.scrollTop)}
               >
-                {data.file?.content ? (
+                {data.file?.isBinary ? <BinaryFilePreview file={data.file} /> : binaryExtension(data.file?.path || "") === "csv" ? <CsvFilePreview file={data.file} onSave={saveCsv} /> : data.file?.content ? (
                   <div className="min-w-max font-mono text-[11px] leading-relaxed text-zinc-100">
                     {showBlame && (
                       <div className="sticky top-0 z-10 flex border-b border-zinc-800 bg-zinc-900/95 backdrop-blur text-[10px] uppercase tracking-wider font-mono text-zinc-400 py-1.5 select-none">
