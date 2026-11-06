@@ -11,7 +11,6 @@ import {
   linkWithCredential,
   EmailAuthProvider,
   signOut as firebaseSignOut,
-  updateProfile as firebaseUpdateProfile,
 } from "firebase/auth";
 import {
   doc,
