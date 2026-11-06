@@ -1,4 +1,5 @@
 import { authenticatedHeaders } from "../lib/api";
+import { buildCommitMemoryEntries, sanitizeFirestoreData } from "../lib/firestoreSanitize";
 import React, { createContext, useContext, useEffect, useState } from "react";
 import {
   collection,
@@ -309,95 +310,144 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   }): Promise<Project> => {
     if (!user) throw new Error("Must be signed in to connect a repository");
 
+    const normalizedRepository = repository.trim();
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(normalizedRepository)) {
+      throw new Error("Invalid repository. Use the format owner/repository.");
+    }
+
     setIsAnalyzing(true);
     const projectId = `proj_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const now = new Date().toISOString();
-    await setDoc(doc(db, "projects", projectId), {
-      id: projectId, ownerId: user.uid, name: repository.split("/").pop() || repository,
-      description: "Repository analysis in progress", repository, branch: branch || "main",
-      githubConnected: false, graphNodes: [], graphEdges: [], events: [], insights: [],
-      memoryEntries: [], experiments: [], watchTargets: [], notifications: [], analysisJobs: [],
-      createdAt: now, updatedAt: now,
-    });
+    const projectRef = doc(db, "projects", projectId);
+
     try {
+      // Persist a truthful pending state before starting network analysis.
+      const pendingProject = {
+        id: projectId,
+        ownerId: user.uid,
+        name: normalizedRepository.split("/").pop() || normalizedRepository,
+        description: "Repository analysis in progress",
+        repository: normalizedRepository,
+        branch: branch?.trim() || "main",
+        githubConnected: false,
+        analysisStatus: "pending" as const,
+        graphNodes: [],
+        graphEdges: [],
+        events: [],
+        insights: [],
+        memoryEntries: [],
+        experiments: [],
+        watchTargets: [],
+        notifications: [],
+        analysisJobs: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      await setDoc(projectRef, sanitizeFirestoreData(pendingProject));
+
       const res = await fetch("/api/projects/analyze-repository", {
         method: "POST",
+        credentials: "include",
         headers: await authenticatedHeaders({}, true),
-        body: JSON.stringify({ repository, branch, projectId }),
+        body: JSON.stringify({
+          repository: normalizedRepository,
+          ...(branch?.trim() ? { branch: branch.trim() } : {}),
+          projectId,
+        }),
       });
 
-      const text = await res.text();
+      const responseText = await res.text();
       let data: any;
       try {
-        data = text ? JSON.parse(text) : {};
+        data = responseText ? JSON.parse(responseText) : {};
       } catch {
         throw new Error(
-          `Repository analysis returned unexpected response (${res.status}). Please verify GitHub authorization or repository permissions.`
+          `Repository analysis returned an invalid response (${res.status}). Verify GitHub authorization and repository permissions.`
         );
       }
-
       if (!res.ok) {
         throw new Error(data?.error || `Failed to analyze repository (${res.status})`);
       }
 
-      const nextEvents: ProjectEvent[] = (data.events || []).map((ev: ProjectEvent) => ({
-        ...ev,
-        projectId,
-      }));
-      const nextInsights: ProjectInsight[] = (data.insights || []).map((ins: ProjectInsight) => ({
-        ...ins,
-        projectId,
-        createdAt: ins.createdAt || now,
-      }));
-      const nextMemoryEntries: SoftwareMemoryEntry[] = (Array.isArray(data.memoryEntries) ? data.memoryEntries : [])
-        .map((entry: any, index: number) => ({
-          ...entry,
-          id: entry.id || `memory_${index}`,
-          projectId,
-          status: entry.status === "INFERRED" || entry.status === "UNKNOWN" ? entry.status : "KNOWN",
-          evidence: Array.isArray(entry.evidence) ? entry.evidence : [],
-          createdAt: entry.createdAt || now,
-          observedAt: entry.observedAt || now,
-        }));
-
-      for (const ev of nextEvents) {
-        const sourceId = String(ev.metadata?.fullSha || ev.metadata?.sha || ev.id);
-        const alreadyRecorded = nextMemoryEntries.some(
-          (entry) => String(entry.source?.id || "") === sourceId
-        );
-        if (alreadyRecorded) continue;
-        const memoryId = `commit_${sourceId.replace(/[^A-Za-z0-9_-]/g, "")}`;
-        nextMemoryEntries.push({
-          id: memoryId,
-          projectId,
-          type: "commit",
-          title: ev.event,
-          summary: ev.reason || ev.event,
-          status: "KNOWN",
-          evidence: [
-            ev.metadata?.fullSha ? `Commit ${ev.metadata.fullSha}` : `Recorded commit event ${ev.id}`,
-            ...(Array.isArray(ev.affectedComponents) ? ev.affectedComponents.slice(0, 10) : []),
-          ],
-          source: {
-            kind: "github_commit",
-            id: ev.metadata?.fullSha || ev.metadata?.sha,
-            url: ev.metadata?.url,
-          },
-          relatedFiles: Array.isArray(ev.affectedComponents) ? ev.affectedComponents : [],
-          createdAt: ev.timestamp || now,
-          observedAt: now,
-        });
+      if (!data?.project || typeof data.project !== "object") {
+        throw new Error("Repository analysis did not return valid project metadata.");
+      }
+      const repositoryName = String(data.project.repository || normalizedRepository).trim();
+      const projectName = String(data.project.name || normalizedRepository.split("/").pop() || "").trim();
+      const defaultBranch = String(data.project.defaultBranch || branch || "main").trim();
+      const selectedBranch = String(data.project.branch || branch || defaultBranch).trim();
+      if (!projectName || !repositoryName || !selectedBranch) {
+        throw new Error("Repository analysis omitted required project identity or branch information.");
       }
 
+      const rawEvents = Array.isArray(data.events) ? data.events : [];
+      const nextEvents: ProjectEvent[] = rawEvents
+        .filter((ev: any) => ev && typeof ev === "object" && typeof ev.id === "string" && typeof ev.event === "string")
+        .map((ev: any) => ({
+          ...ev,
+          projectId,
+          actor: typeof ev.actor === "string" ? ev.actor : "Unknown",
+          timestamp: typeof ev.timestamp === "string" ? ev.timestamp : now,
+          affectedComponents: Array.isArray(ev.affectedComponents) ? ev.affectedComponents.filter((v: unknown) => typeof v === "string") : [],
+          reason: typeof ev.reason === "string" ? ev.reason : ev.event,
+        }));
+
+      const rawInsights = Array.isArray(data.insights) ? data.insights : [];
+      const nextInsights: ProjectInsight[] = rawInsights
+        .filter((ins: any) => ins && typeof ins === "object" && typeof ins.id === "string" && typeof ins.title === "string")
+        .map((ins: any) => ({
+          ...ins,
+          projectId,
+          description: typeof ins.description === "string" ? ins.description : "",
+          evidence: typeof ins.evidence === "string" ? ins.evidence : "",
+          affectedComponents: Array.isArray(ins.affectedComponents) ? ins.affectedComponents : [],
+          createdAt: typeof ins.createdAt === "string" ? ins.createdAt : now,
+        }));
+
+      const nextMemoryEntries: SoftwareMemoryEntry[] = (Array.isArray(data.memoryEntries) ? data.memoryEntries : [])
+        .filter((entry: any) => entry && typeof entry === "object")
+        .map((entry: any, index: number) => {
+          const source = entry.source && typeof entry.source === "object" ? entry.source : undefined;
+          return {
+            ...entry,
+            id: typeof entry.id === "string" && entry.id ? entry.id : `memory_${index}`,
+            projectId,
+            type: ["commit", "pull_request", "issue", "release", "decision", "dependency", "insight"].includes(entry.type)
+              ? entry.type
+              : "insight",
+            title: typeof entry.title === "string" ? entry.title : "Untitled observation",
+            summary: typeof entry.summary === "string" ? entry.summary : "",
+            status: entry.status === "INFERRED" || entry.status === "UNKNOWN" ? entry.status : "KNOWN",
+            evidence: Array.isArray(entry.evidence) ? entry.evidence.filter((v: unknown) => typeof v === "string") : [],
+            ...(source ? {
+              source: {
+                ...(typeof source.kind === "string" ? { kind: source.kind } : {}),
+                ...(typeof source.id === "string" && source.id ? { id: source.id } : {}),
+                ...(typeof source.url === "string" && source.url ? { url: source.url } : {}),
+              },
+            } : {}),
+            createdAt: typeof entry.createdAt === "string" ? entry.createdAt : now,
+            observedAt: typeof entry.observedAt === "string" ? entry.observedAt : now,
+          } as SoftwareMemoryEntry;
+        });
+
+      // Only real commit events with a concrete SHA may create commit memories.
+      nextMemoryEntries.push(
+        ...buildCommitMemoryEntries(nextEvents, projectId, nextMemoryEntries, now)
+      );
+
       for (const ins of nextInsights) {
+        if (!ins.id || !ins.title) continue;
+        const memoryId = `insight_${ins.id}`;
+        if (nextMemoryEntries.some((entry) => entry.id === memoryId)) continue;
         nextMemoryEntries.push({
-          id: `insight_${ins.id}`,
+          id: memoryId,
           projectId,
           type: "insight",
           title: ins.title,
           summary: ins.description,
           status: "KNOWN",
-          evidence: [ins.evidence, ...(ins.affectedFiles || [])].filter(Boolean),
+          evidence: [ins.evidence, ...(ins.affectedFiles || [])].filter((value): value is string => typeof value === "string" && Boolean(value)),
           source: { kind: "after_analysis", id: ins.id },
           relatedFiles: ins.affectedFiles || [],
           relatedNodes: ins.affectedComponents || [],
@@ -406,62 +456,84 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         });
       }
 
-      for (const dependency of (data.graphNodes || []).filter((node: any) => node.type === "dependency")) {
+      const dependencyNodes = (Array.isArray(data.graphNodes) ? data.graphNodes : [])
+        .filter((node: any) => node && node.type === "dependency" && typeof node.id === "string" && typeof node.label === "string");
+      for (const dependency of dependencyNodes) {
+        const memoryId = `dependency_${dependency.id.replace(/[^A-Za-z0-9_-]/g, "")}`;
+        if (nextMemoryEntries.some((entry) => entry.id === memoryId)) continue;
         nextMemoryEntries.push({
-          id: `dependency_${String(dependency.id).replace(/[^A-Za-z0-9_-]/g, "")}`,
+          id: memoryId,
           projectId,
           type: "dependency",
           title: dependency.label,
-          summary: dependency.description || `Dependency declared in ${dependency.filePath || "repository metadata"}.`,
+          summary: typeof dependency.description === "string"
+            ? dependency.description
+            : `Dependency declared in ${dependency.filePath || "repository metadata"}.`,
           status: "KNOWN",
-          evidence: [dependency.filePath || "repository dependency metadata"],
-          source: { kind: "repository_dependency", id: dependency.dependency || dependency.id },
-          relatedFiles: dependency.filePath ? [dependency.filePath] : [],
+          evidence: [typeof dependency.filePath === "string" ? dependency.filePath : "Repository dependency metadata"],
+          source: {
+            kind: "repository_dependency",
+            id: typeof dependency.dependency === "string" ? dependency.dependency : dependency.id,
+          },
+          relatedFiles: typeof dependency.filePath === "string" ? [dependency.filePath] : [],
           relatedNodes: [dependency.id],
           createdAt: now,
           observedAt: now,
         });
       }
 
+      const graphNodes = Array.isArray(data.graphNodes) ? data.graphNodes : [];
+      const graphEdges = Array.isArray(data.graphEdges) ? data.graphEdges : [];
       const newProject: Project = {
         id: projectId,
         ownerId: user.uid,
-        name: data.project.name,
-        description: data.project.description,
-        repository: data.project.repository,
-        branch: data.project.branch,
-        defaultBranch: data.project.defaultBranch,
-        framework: data.project.framework,
-        language: data.project.language,
-        stars: data.project.stars,
-        openIssues: data.project.openIssues,
+        name: projectName,
+        description: typeof data.project.description === "string" ? data.project.description : "",
+        repository: repositoryName,
+        branch: selectedBranch,
+        defaultBranch,
+        framework: typeof data.project.framework === "string" ? data.project.framework : "Unknown",
+        language: typeof data.project.language === "string" ? data.project.language : "Unknown",
+        ...(Number.isFinite(data.project.stars) ? { stars: Number(data.project.stars) } : {}),
+        ...(Number.isFinite(data.project.openIssues) ? { openIssues: Number(data.project.openIssues) } : {}),
         githubConnected: true,
         telemetryConnected: false,
         webhookConfigured: Boolean(data.project.webhookConfigured),
         watchTargets: [],
         notifications: [],
         analysisJobs: [],
-        graphNodes: data.graphNodes || [],
-        graphEdges: data.graphEdges || [],
+        graphNodes,
+        graphEdges,
         events: nextEvents,
         insights: nextInsights,
         experiments: [],
         memoryEntries: nextMemoryEntries,
+        analysisStatus: "completed",
         createdAt: now,
         updatedAt: now,
       };
 
-      // 1. Save project document in Firestore
-      await setDoc(doc(db, "projects", projectId), newProject);
+      // Firestore receives a sanitized object; optional fields are omitted, never persisted as undefined.
+      await setDoc(projectRef, sanitizeFirestoreData(newProject));
       setEvents(nextEvents);
       setInsights(nextInsights);
       setExperiments([]);
       setMemoryEntries(nextMemoryEntries);
-
       setCurrentProject(newProject);
       return newProject;
     } catch (err: any) {
       console.error("Connect repository error:", err);
+      // Keep a diagnosable failed state rather than leaving a project stuck as pending.
+      try {
+        await updateDoc(projectRef, sanitizeFirestoreData({
+          githubConnected: false,
+          analysisStatus: "failed",
+          analysisError: err?.message || "Repository connection failed.",
+          updatedAt: new Date().toISOString(),
+        }));
+      } catch {
+        // The provisional document may not have been created (for example, permission denied).
+      }
       throw err;
     } finally {
       setIsAnalyzing(false);

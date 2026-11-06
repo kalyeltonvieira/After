@@ -161,20 +161,28 @@ projectsRouter.get("/github-repos", requireFirebaseUser, async (req: Authenticat
 // Search public GitHub repositories
 projectsRouter.get("/github-search", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
   const q = String(req.query.q || "").trim();
-  if (!q) {
-    return res.json({ total_count: 0, items: [] });
-  }
+  if (!q) return res.json({ total_count: 0, items: [] });
 
   const token = (await resolveGitHubToken(req, res)) || undefined;
   const perPage = Math.min(Math.max(Number(req.query.per_page) || 20, 1), 50);
   const page = Math.max(Number(req.query.page) || 1, 1);
   const sort = req.query.sort === "forks" || req.query.sort === "updated" ? req.query.sort : "stars";
+  const minimumStars = Math.max(0, Math.min(1_000_000_000, Number(req.query.minimum_stars) || 0));
+  const language = ["TypeScript", "JavaScript", "Python", "Go", "Rust"].includes(String(req.query.language))
+    ? String(req.query.language)
+    : undefined;
+  const license = ["mit", "apache-2.0", "gpl-3.0", "bsd-3-clause", "mpl-2.0"].includes(String(req.query.license))
+    ? String(req.query.license)
+    : undefined;
 
   try {
     const result = await searchPublicRepositories(q, token, {
       per_page: perPage,
       page,
       sort,
+      minimumStars,
+      language,
+      license,
     });
     return res.json(result);
   } catch (err: any) {

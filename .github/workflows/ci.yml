@@ -1,4 +1,5 @@
 name: CI
+# Use the committed Bun lockfile so dependency installation is reproducible.
 
 on:
   push:
@@ -20,8 +21,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci --no-audit --no-fund
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run test
+      - run: bun run build
