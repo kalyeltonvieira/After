@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useState } from "react";
+import React, { lazy, Suspense, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ThemeProvider } from "./context/ThemeContext";
 import { LanguageProvider, useLanguage } from "./context/LanguageContext";
@@ -39,6 +39,22 @@ function MainApp() {
   const [isCmdPaletteOpen, setIsCmdPaletteOpen] = useState(false);
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
 
+  useEffect(() => {
+    const press = (event: PointerEvent) => {
+      const target = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+        "button:not(:disabled), [role=\"button\"], a.inline-flex, a.flex"
+      );
+      if (!target) return;
+      target.classList.remove("after-pressing");
+      void target.offsetWidth;
+      target.classList.add("after-pressing");
+      window.setTimeout(() => target.classList.remove("after-pressing"), 380);
+    };
+
+    document.addEventListener("pointerdown", press, { passive: true });
+    return () => document.removeEventListener("pointerdown", press);
+  }, []);
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex flex-col items-center justify-center space-y-4">
@@ -70,7 +86,7 @@ function MainApp() {
   }
 
   return (
-    <div className="min-h-screen bg-[#fafafa] dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col transition-colors selection:bg-zinc-900 selection:text-white dark:selection:bg-zinc-100 dark:selection:text-zinc-900">
+    <div className="after-surface min-h-screen bg-[#fafafa] dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col transition-colors selection:bg-zinc-900 selection:text-white dark:selection:bg-zinc-100 dark:selection:text-zinc-900">
       {/* Top Navbar */}
       <Navbar
         onOpenCommandPalette={() => setIsCmdPaletteOpen(true)}
