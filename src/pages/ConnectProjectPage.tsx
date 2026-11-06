@@ -36,7 +36,7 @@ export function ConnectProjectPage({ onBack }: ConnectProjectPageProps) {
   const { language } = useLanguage();
   const isPt = language === "pt";
 
-  const [source, setSource] = useState<Source>("search");
+  const [source, setSource] = useState<Source>(isGitHubConnected ? "profile" : "search");
   const [profile, setProfile] = useState<GitHubUser | null>(null);
   const [profileRepos, setProfileRepos] = useState<GitHubRepositoryItem[]>([]);
   const [profileFilter, setProfileFilter] = useState("");
