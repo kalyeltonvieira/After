@@ -6,35 +6,18 @@ import { authenticatedHeaders } from "../lib/api";
  * to allow users to link their repositories seamlessly.
  */
 
-
+// Deprecated client-side helpers kept as no-op stubs for backwards compatibility
 export const GITHUB_SESSION_STORAGE_KEY = "after.github.access_token";
 
 export function getCachedGitHubAccessToken(): string | null {
-  try {
-    return (
-      sessionStorage.getItem(GITHUB_SESSION_STORAGE_KEY) ||
-      localStorage.getItem(GITHUB_SESSION_STORAGE_KEY) ||
-      sessionStorage.getItem("github_token") ||
-      localStorage.getItem("github_token") ||
-      sessionStorage.getItem("after_github_token") ||
-      localStorage.getItem("after_github_token")
-    );
-  } catch {
-    return null;
-  }
+  return null;
 }
 
-export function cacheGitHubAccessToken(token: string): void {
-  try {
-    sessionStorage.setItem(GITHUB_SESSION_STORAGE_KEY, token);
-  } catch {}
-  try {
-    localStorage.setItem(GITHUB_SESSION_STORAGE_KEY, token);
-  } catch {}
+export function cacheGitHubAccessToken(_token: string): void {
+  // No-op: Tokens must never be stored in client-accessible localStorage/sessionStorage
 }
 
 export function clearCachedGitHubAccessToken(): void {
-  clearGitHubMemoryCache();
   try {
     sessionStorage.removeItem(GITHUB_SESSION_STORAGE_KEY);
     sessionStorage.removeItem("github_token");
@@ -51,8 +34,6 @@ async function githubRequest(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
   const authHeaders = await authenticatedHeaders();
   Object.entries(authHeaders).forEach(([key, value]) => headers.set(key, value));
-  const cachedToken = getCachedGitHubAccessToken();
-  if (cachedToken) headers.set("X-GitHub-Access-Token", cachedToken);
   return fetch(path, { ...init, credentials: "include", headers });
 }
 

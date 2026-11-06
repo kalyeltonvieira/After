@@ -6,22 +6,10 @@ import { loadProjectContext, listUserProjectsViaRest } from "../projectContext.j
 
 import { getGitHubToken, getPersistentGitHubToken } from "../githubSession.js";
 import { parseGitHubRepo, getCompleteRepositoryTree } from "../services/githubService.js";
-import {
-  getFallbackTree,
-  getFallbackFileContent,
-  getFallbackCommits,
-  getFallbackBranches,
-  getFallbackContributors,
-  getFallbackPulls,
-  getFallbackIssues,
-  getFallbackReleases,
-  getFallbackTags,
-  getFallbackActivity,
-  getFallbackBlame,
-} from "../services/repositoryFallback.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import pathModule from "node:path";
+import { isSensitiveFilePath, sanitizeRepoRelativePath } from "../services/sensitiveFileFilter.js";
 
 export const repositoryRouter = Router();
 
@@ -104,8 +92,7 @@ async function getProjectRepository(req: AuthenticatedRequest, rawProjectId: str
     throw Object.assign(new Error("This project is not connected to a valid GitHub repository."), { status: 400 });
   }
   const uid = req.user!.uid;
-  const headerToken = (req.headers["x-github-access-token"] as string | undefined)?.trim();
-  let token = headerToken || getGitHubToken(req.cookies?.after_github_session, uid) || undefined;
+  let token = getGitHubToken(req.cookies?.after_github_session, uid) || undefined;
   if (!token) {
     try {
       token = (await getPersistentGitHubToken(uid)) || undefined;
@@ -190,16 +177,28 @@ repositoryRouter.get("/tree", async (req: AuthenticatedRequest, res) => {
       }
     }
 
-    return res.json(getFallbackTree(project));
+    return res.status(404).json({
+      error: `Could not load repository tree for ${parsed.owner}/${parsed.repo}. Please verify repository access permissions.`,
+      sha: requestedRef || "HEAD",
+      tree: [],
+    });
   } catch (error) { return handleRouteError(res, error); }
 });
 
 repositoryRouter.get("/file", async (req: AuthenticatedRequest, res) => {
   try {
     const { project, parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
-    const path = String(req.query.path || "").replace(/^\/+/, "");
+    const rawPath = String(req.query.path || "");
+    const path = sanitizeRepoRelativePath(rawPath);
     const requestedRef = String(req.query.ref || project.branch || "").trim();
-    if (!path) return res.status(400).json({ error: "path is required." });
+    if (!path) return res.status(400).json({ error: "A valid repository path is required." });
+
+    if (isSensitiveFilePath(path)) {
+      return res.status(403).json({
+        error: "Access to sensitive files (.env, keys, credentials) is restricted by AFTER security policies.",
+        isBlocked: true,
+      });
+    }
 
     const candidateRefs = [requestedRef, project.branch, project.defaultBranch, "main", "master", "HEAD"].filter(Boolean) as string[];
 
@@ -276,9 +275,12 @@ repositoryRouter.get("/file", async (req: AuthenticatedRequest, res) => {
       // Not local
     }
 
-    // 5. Intelligent fallback that maps directly to the project's real architecture
-    const content = getFallbackFileContent(path, project);
-    return res.json({ path, ref: requestedRef || "main", size: content.length, sha: "sha_local_hybrid", content });
+    return res.status(404).json({
+      error: `File '${path}' was not found in repository ${parsed.owner}/${parsed.repo} at ref '${requestedRef || project.branch || "HEAD"}'.`,
+      path,
+      ref: requestedRef || project.branch || "HEAD",
+      status: 404,
+    });
   } catch (error) { return handleRouteError(res, error); }
 });
 
@@ -290,14 +292,8 @@ repositoryRouter.get("/file-history", async (req: AuthenticatedRequest, res) => 
     if (!path) return res.status(400).json({ error: "path is required." });
     const page = Math.max(1, Number(req.query.page) || 1);
     const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 20));
-    try {
-      const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/commits?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(ref)}&page=${page}&per_page=${perPage}`, token);
-      if (Array.isArray(body) && body.length > 0) return res.json({ commits: body });
-    } catch {
-      // Non-blocking fallback
-    }
-    const fallbackCommits = getFallbackCommits(project);
-    return res.json({ commits: fallbackCommits.slice(0, perPage) });
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/commits?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(ref)}&page=${page}&per_page=${perPage}`, token);
+    return res.json({ commits: Array.isArray(body) ? body : [] });
   } catch (error) { return handleRouteError(res, error); }
 });
 
@@ -389,8 +385,12 @@ repositoryRouter.get("/file-blame", async (req: AuthenticatedRequest, res) => {
       }
     }
 
-    // High fidelity fallback blame
-    return res.json(getFallbackBlame(path, project));
+    return res.status(404).json({
+      error: `Blame data is unavailable for '${path}'. Connect GitHub with read access to view line authorship.`,
+      path,
+      ref,
+      ranges: [],
+    });
   } catch (error) {
     return handleRouteError(res, error);
   }
@@ -399,17 +399,10 @@ repositoryRouter.get("/file-blame", async (req: AuthenticatedRequest, res) => {
 repositoryRouter.get("/branches", async (req: AuthenticatedRequest, res) => {
   try {
     const { project, parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
-    try {
-      const page = Math.max(1, Number(req.query.page) || 1);
-      const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 100));
-      const { body, response } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/branches?page=${page}&per_page=${perPage}`, token);
-      if (Array.isArray(body) && body.length > 0) {
-        return res.json({ branches: body, link: response.headers.get("link") || null });
-      }
-    } catch {
-      // Non-blocking fallback
-    }
-    return res.json({ branches: getFallbackBranches(project), link: null });
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 100));
+    const { body, response } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/branches?page=${page}&per_page=${perPage}`, token);
+    return res.json({ branches: Array.isArray(body) ? body : [], link: response.headers.get("link") || null });
   } catch (error) { return handleRouteError(res, error); }
 });
 
@@ -457,52 +450,31 @@ repositoryRouter.delete("/branches/:name", async (req: AuthenticatedRequest, res
 repositoryRouter.get("/commits", async (req: AuthenticatedRequest, res) => {
   try {
     const { project, parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
-    try {
-      const page = Math.max(1, Number(req.query.page) || 1);
-      const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 30));
-      const ref = String(req.query.ref || project.branch || "");
-      const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/commits?sha=${encodeURIComponent(ref)}&page=${page}&per_page=${perPage}`, token);
-      if (Array.isArray(body) && body.length > 0) {
-        return res.json({ commits: body });
-      }
-    } catch {
-      // Non-blocking fallback
-    }
-    return res.json({ commits: getFallbackCommits(project) });
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 30));
+    const ref = String(req.query.ref || project.branch || "");
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/commits?sha=${encodeURIComponent(ref)}&page=${page}&per_page=${perPage}`, token);
+    return res.json({ commits: Array.isArray(body) ? body : [] });
   } catch (error) { return handleRouteError(res, error); }
 });
 
 repositoryRouter.get("/commits/:sha", async (req: AuthenticatedRequest, res) => {
   try {
-    const { project, parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
     const sha = decodeURIComponent(req.params.sha);
-    try {
-      const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/commits/${encodeURIComponent(sha)}`, token);
-      if (body) return res.json({ commit: body });
-    } catch {
-      // Non-blocking fallback
-    }
-    const commits = getFallbackCommits(project);
-    const found = commits.find((c: any) => c.sha === sha) || commits[0];
-    return res.json({ commit: found });
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/commits/${encodeURIComponent(sha)}`, token);
+    return res.json({ commit: body });
   } catch (error) { return handleRouteError(res, error); }
 });
 
 repositoryRouter.get("/pulls", async (req: AuthenticatedRequest, res) => {
   try {
-    const { project, parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
-    try {
-      const state = String(req.query.state || "all");
-      const page = Math.max(1, Number(req.query.page) || 1);
-      const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 30));
-      const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/pulls?state=${encodeURIComponent(state)}&page=${page}&per_page=${perPage}&sort=updated&direction=desc`, token);
-      if (Array.isArray(body) && body.length > 0) {
-        return res.json({ pulls: body });
-      }
-    } catch {
-      // Non-blocking fallback
-    }
-    return res.json({ pulls: getFallbackPulls(project) });
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const state = String(req.query.state || "all");
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 30));
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/pulls?state=${encodeURIComponent(state)}&page=${page}&per_page=${perPage}&sort=updated&direction=desc`, token);
+    return res.json({ pulls: Array.isArray(body) ? body : [] });
   } catch (error) { return handleRouteError(res, error); }
 });
 
@@ -576,18 +548,13 @@ repositoryRouter.post("/pulls/:number/comments", async (req: AuthenticatedReques
 
 repositoryRouter.get("/issues", async (req: AuthenticatedRequest, res) => {
   try {
-    const { project, parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
-    try {
-      const state = String(req.query.state || "all");
-      const page = Math.max(1, Number(req.query.page) || 1);
-      const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 30));
-      const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/issues?state=${encodeURIComponent(state)}&page=${page}&per_page=${perPage}&sort=updated&direction=desc`, token);
-      const issues = Array.isArray(body) ? body.filter((item: any) => !item.pull_request) : [];
-      if (issues.length > 0) return res.json({ issues });
-    } catch {
-      // Non-blocking fallback
-    }
-    return res.json({ issues: getFallbackIssues(project) });
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const state = String(req.query.state || "all");
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 30));
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/issues?state=${encodeURIComponent(state)}&page=${page}&per_page=${perPage}&sort=updated&direction=desc`, token);
+    const issues = Array.isArray(body) ? body.filter((item: any) => !item.pull_request) : [];
+    return res.json({ issues });
   } catch (error) { return handleRouteError(res, error); }
 });
 
@@ -818,31 +785,21 @@ repositoryRouter.post("/issues/:number/comments", async (req: AuthenticatedReque
 
 repositoryRouter.get("/releases", async (req: AuthenticatedRequest, res) => {
   try {
-    const { project, parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
-    try {
-      const page = Math.max(1, Number(req.query.page) || 1);
-      const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 30));
-      const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/releases?page=${page}&per_page=${perPage}`, token);
-      if (Array.isArray(body) && body.length > 0) return res.json({ releases: body });
-    } catch {
-      // Non-blocking fallback
-    }
-    return res.json({ releases: getFallbackReleases(project) });
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 30));
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/releases?page=${page}&per_page=${perPage}`, token);
+    return res.json({ releases: Array.isArray(body) ? body : [] });
   } catch (error) { return handleRouteError(res, error); }
 });
 
 repositoryRouter.get("/contributors", async (req: AuthenticatedRequest, res) => {
   try {
-    const { project, parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
-    try {
-      const page = Math.max(1, Number(req.query.page) || 1);
-      const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 30));
-      const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/contributors?anon=false&page=${page}&per_page=${perPage}`, token);
-      if (Array.isArray(body) && body.length > 0) return res.json({ contributors: body });
-    } catch {
-      // Non-blocking fallback
-    }
-    return res.json({ contributors: getFallbackContributors(project) });
+    const { parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const perPage = Math.min(100, Math.max(1, Number(req.query.per_page) || 30));
+    const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/contributors?anon=false&page=${page}&per_page=${perPage}`, token);
+    return res.json({ contributors: Array.isArray(body) ? body : [] });
   } catch (error) { return handleRouteError(res, error); }
 });
 
