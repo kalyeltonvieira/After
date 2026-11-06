@@ -320,6 +320,41 @@ export async function listUserRepositories(
 }
 
 /**
+ * Fetch one page only. The connect-project screen uses this for infinite scroll
+ * so a profile with thousands of repositories never gets loaded into memory at once.
+ */
+export async function listUserRepositoryPage(
+  token: string,
+  options?: {
+    page?: number;
+    per_page?: number;
+    sort?: "created" | "updated" | "pushed" | "full_name";
+    affiliation?: string;
+  }
+): Promise<{ repos: GitHubRepo[]; hasNext: boolean }> {
+  const page = Math.max(1, Number(options?.page) || 1);
+  const perPage = Math.min(Math.max(Number(options?.per_page) || 24, 1), 100);
+  const sort = options?.sort || "pushed";
+  const affiliation = options?.affiliation || "owner,collaborator,organization_member";
+  const params = new URLSearchParams({
+    page: String(page), per_page: String(perPage), sort, direction: "desc", affiliation,
+  });
+  const res = await fetch(`https://api.github.com/user/repos?${params.toString()}`, {
+    headers: getGitHubHeaders(token),
+  });
+  if (!res.ok) {
+    if (res.status === 401) throw new Error("GitHub token is invalid or expired.");
+    throw new Error(`Failed to list GitHub repositories: ${res.statusText}`);
+  }
+  const repos = await safeJson<GitHubRepo[]>(res, "repos page");
+  const link = res.headers.get("link") || "";
+  return {
+    repos: Array.isArray(repos) ? repos : [],
+    hasNext: /rel="next"/.test(link) || (Array.isArray(repos) && repos.length === perPage),
+  };
+}
+
+/**
  * Searches public repositories on GitHub using GitHub Search API
  */
 export async function searchPublicRepositories(

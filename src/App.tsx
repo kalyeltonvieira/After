@@ -9,13 +9,13 @@ import { LandingPage } from "./pages/LandingPage";
 import { AuthModal } from "./pages/AuthModal";
 import { OnboardingModal } from "./pages/OnboardingModal";
 import { ProjectsPage } from "./pages/ProjectsPage";
+import { ConnectProjectPage } from "./pages/ConnectProjectPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { Navbar } from "./components/Navbar";
 import { Sidebar } from "./components/Sidebar";
 import { WhyDrawer } from "./components/WhyDrawer";
 import { AskAfterModal } from "./components/AskAfterModal";
 import { CommandPalette } from "./components/CommandPalette";
-import { CreateProjectModal } from "./components/CreateProjectModal";
 
 const OverviewPage = lazy(() => import("./pages/OverviewPage").then((m) => ({ default: m.OverviewPage })));
 const RepositoryPage = lazy(() => import("./pages/RepositoryPage").then((m) => ({ default: m.RepositoryPage })));
@@ -38,7 +38,6 @@ function MainApp() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<"signin" | "signup">("signin");
   const [isCmdPaletteOpen, setIsCmdPaletteOpen] = useState(false);
-  const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
 
   useEffect(() => {
     const press = (event: PointerEvent) => {
@@ -105,7 +104,7 @@ function MainApp() {
       {/* Top Navbar */}
       <Navbar
         onOpenCommandPalette={() => setIsCmdPaletteOpen(true)}
-        onOpenCreateProject={() => setIsCreateProjectOpen(true)}
+        onOpenCreateProject={() => setCurrentView("connect-project")}
         onNavigate={(view) => setCurrentView(view)}
         onToggleMobileSidebar={() => setIsMobileSidebarOpen(true)}
       />
@@ -137,7 +136,7 @@ function MainApp() {
               {currentView === "overview" && (
                 <OverviewPage
                   onNavigate={(view) => setCurrentView(view)}
-                  onOpenCreateProject={() => setIsCreateProjectOpen(true)}
+                  onOpenCreateProject={() => setCurrentView("connect-project")}
                 />
               )}
 
@@ -145,9 +144,13 @@ function MainApp() {
 
               {currentView === "projects" && (
                 <ProjectsPage
-                  onOpenCreateProject={() => setIsCreateProjectOpen(true)}
+                  onOpenCreateProject={() => setCurrentView("connect-project")}
                   onNavigate={(view) => setCurrentView(view)}
                 />
+              )}
+
+              {currentView === "connect-project" && (
+                <ConnectProjectPage onBack={() => setCurrentView("projects")} />
               )}
 
               {currentView === "graph" && <ProductGraphPage />}
@@ -183,11 +186,7 @@ function MainApp() {
         onOpen={() => setIsCmdPaletteOpen(true)}
         onClose={() => setIsCmdPaletteOpen(false)}
         onNavigate={(view) => setCurrentView(view)}
-        openCreateProject={() => setIsCreateProjectOpen(true)}
-      />
-      <CreateProjectModal
-        isOpen={isCreateProjectOpen}
-        onClose={() => setIsCreateProjectOpen(false)}
+        openCreateProject={() => setCurrentView("connect-project")}
       />
       <AuthModal
         isOpen={isAuthModalOpen}

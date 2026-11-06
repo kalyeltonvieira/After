@@ -226,6 +226,26 @@ export async function listUserRepositories(forceFresh = false): Promise<GitHubRe
   return memoryCachedRepos;
 }
 
+export async function listUserRepositoryPage(
+  page: number,
+  perPage = 24
+): Promise<{ repos: GitHubRepositoryItem[]; hasNext: boolean; page: number }> {
+  const params = new URLSearchParams({
+    page: String(Math.max(1, page)),
+    per_page: String(Math.min(Math.max(1, perPage), 100)),
+  });
+  const res = await githubRequest(`/api/projects/github-repos?${params.toString()}`);
+  const data = await res.json();
+  if (!res.ok || data.error) {
+    throw new Error(data.error || "Failed to load repository page.");
+  }
+  return {
+    repos: Array.isArray(data.repos) ? data.repos : [],
+    hasNext: Boolean(data.hasNext),
+    page: Number(data.page) || page,
+  };
+}
+
 /**
  * Search public repositories on GitHub
  */
