@@ -19,6 +19,7 @@ import { useLanguage } from "../context/LanguageContext";
 import { ProjectStatistics } from "../components/ProjectStatistics";
 import { ProjectsSearchBar, ProjectsSearchTab, DiscoveryFilters } from "../components/ProjectsSearchBar";
 import { searchPublicRepositories, GitHubRepositoryItem } from "../services/githubService";
+import { LanguageColorDot, LanguageBadge } from "../utils/languageColors";
 
 interface ProjectsPageProps {
   onOpenCreateProject: () => void;
@@ -326,7 +327,12 @@ export function ProjectsPage({ onOpenCreateProject, onNavigate }: ProjectsPagePr
                             <span>{proj.framework}</span>
                           </span>
                         )}
-                        {proj.language && <span>{proj.language}</span>}
+                        {proj.language && (
+                          <span className="flex items-center space-x-1">
+                            <LanguageColorDot language={proj.language} size="xs" />
+                            <span>{proj.language}</span>
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -452,8 +458,9 @@ export function ProjectsPage({ onOpenCreateProject, onNavigate }: ProjectsPagePr
                           {/* Metadata badges: Stars, Forks, Language */}
                           <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-mono text-zinc-500 dark:text-zinc-400">
                             {repo.language && (
-                              <span className="px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 border border-zinc-250 dark:border-zinc-700/60 font-sans font-medium text-zinc-700 dark:text-zinc-300">
-                                {repo.language}
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 border border-zinc-250 dark:border-zinc-700/60 font-sans font-medium text-zinc-700 dark:text-zinc-300">
+                                <LanguageColorDot language={repo.language} size="xs" />
+                                <span>{repo.language}</span>
                               </span>
                             )}
                             {repo.license?.spdx_id && (

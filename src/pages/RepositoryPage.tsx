@@ -23,6 +23,7 @@ import { useAuth } from "../context/AuthContext";
 import { authenticatedHeaders } from "../lib/api";
 import { EmptyState } from "../components/EmptyState";
 import { getGitHubAuthUrl, openGitHubOAuthPopup, exchangeGitHubCode } from "../services/githubService";
+import { LanguageColorDot, getLanguageColorByExtension } from "../utils/languageColors";
 
 type Tab = "code" | "branches" | "commits" | "pulls" | "issues" | "releases" | "tags" | "contributors" | "activity";
 
@@ -940,7 +941,8 @@ export function RepositoryPage() {
                     style={{ paddingLeft: `${8 + item.depth * 14}px` }}
                     title={item.path}
                   >
-                    <span className="w-5 shrink-0 text-center text-[8px] font-semibold tracking-tight text-zinc-400 group-hover:text-sky-500">{item.name.split(".").pop()?.slice(0, 4).toUpperCase() || "FILE"}</span>
+                    <LanguageColorDot filename={item.name} size="xs" className="shrink-0" />
+                    <span className="w-5 shrink-0 text-center text-[8px] font-semibold tracking-tight group-hover:text-sky-500" style={{ color: getLanguageColorByExtension(item.name) }}>{item.name.split(".").pop()?.slice(0, 4).toUpperCase() || "FILE"}</span>
                     <FileCode2 className={`w-3.5 h-3.5 shrink-0 ${selectedFile === item.path ? "text-sky-500" : "text-zinc-400"}`} />
                     <span className="truncate">{item.name}</span>
                   </button>
@@ -954,8 +956,14 @@ export function RepositoryPage() {
             <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-950 shadow-sm overflow-hidden">
               <div className="px-4 py-3 border-b border-zinc-800 bg-zinc-900 flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-[10px] text-zinc-500 font-mono"><FileCode2 className="w-3.5 h-3.5 text-sky-400" /> CODE VIEW</div>
-                  <div className="mt-1 font-mono text-xs text-zinc-100 truncate">{data.file?.path || "Select a file"}</div>
+                  <div className="flex items-center gap-2 text-[10px] text-zinc-500 font-mono">
+                    {data.file?.path ? <LanguageColorDot filename={data.file.path} size="xs" /> : <FileCode2 className="w-3.5 h-3.5 text-sky-400" />}
+                    <span>CODE VIEW</span>
+                  </div>
+                  <div className="mt-1 font-mono text-xs text-zinc-100 truncate flex items-center gap-2">
+                    {data.file?.path && <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ backgroundColor: getLanguageColorByExtension(data.file.path) }} />}
+                    <span>{data.file?.path || "Select a file"}</span>
+                  </div>
                   {data.file?.path && (
                     <>
                       <div className="flex flex-wrap items-center gap-1 mt-1">

@@ -19,6 +19,8 @@ import { useProject } from "../context/ProjectContext";
 import { useLanguage } from "../context/LanguageContext";
 import { authenticatedHeaders } from "../lib/api";
 
+import { getLanguageColor } from "../utils/languageColors";
+
 export interface ProjectStatsData {
   linesOfCode: number;
   totalCommits: number;
@@ -251,16 +253,22 @@ export function ProjectStatistics({
                 {sortedLanguages.map((lang) => (
                   <div
                     key={lang.name}
-                    style={{ width: `${lang.percentage}%` }}
-                    className={`${languageColors[lang.name] || "bg-zinc-400"} transition-all`}
+                    style={{ width: `${lang.percentage}%`, backgroundColor: getLanguageColor(lang.name) }}
+                    className="transition-all"
                     title={`${lang.name}: ${lang.percentage}%`}
                   />
                 ))}
               </div>
               <div className="flex items-center justify-between text-[10px] text-zinc-400 font-mono">
-                <span>{sortedLanguages[0]?.name || "Code"} ({sortedLanguages[0]?.percentage}%)</span>
+                <span className="flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: getLanguageColor(sortedLanguages[0]?.name) }} />
+                  <span>{sortedLanguages[0]?.name || "Code"} ({sortedLanguages[0]?.percentage}%)</span>
+                </span>
                 {sortedLanguages[1] && (
-                  <span>{sortedLanguages[1]?.name} ({sortedLanguages[1]?.percentage}%)</span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: getLanguageColor(sortedLanguages[1]?.name) }} />
+                    <span>{sortedLanguages[1]?.name} ({sortedLanguages[1]?.percentage}%)</span>
+                  </span>
                 )}
               </div>
             </div>
