@@ -1,123 +1,95 @@
-# AFTER UI/UX Overhaul & Premium Engineering Architecture
+# Plano de Implementação: Plataforma Inteligente AFTER - Módulo de Arquitetura, Relatórios & Busca Avançada
 
-Transform AFTER into a Swiss-minimalist, high-performance software intelligence console inspired by Linear and Vercel. Fix the broken theme switcher, implement fluid Motion transitions, and add key architectural features: Visual Architecture Comparator, Executive Integrity Report Export, and Advanced Public Repository Filters.
+Plano detalhado para a implementação do Comparador Visual de Arquitetura entre Branches/Tags, Exportação de Relatórios Executivos de Integridade (PDF e JSON), e Filtros Avançados de Busca Pública de Repositórios GitHub no AFTER.
 
----
-
-## User Review & Critical Decisions
+## Decisões Confirmadas pelo Usuário
 
 > [!IMPORTANT]
-> The following directions have been confirmed based on user feedback:
-> - **Visual Direction**: Clean Swiss minimalist (Linear / Vercel design system), featuring crisp monochromatic typography, 1px subtle hairline borders, and zero-pill metadata discipline.
-> - **Motion Experience**: Fluid page transitions (`AnimatePresence` with custom spring curves), layout animations on tab switches, and hover micro-interactions.
-> - **Theme Mode Fix**: Configure Tailwind v4 `@custom-variant dark (&:where(.dark, .dark *));` to ensure immediate and accurate dark/light/system mode switching without split-brain contrast issues.
-> - **Key Priority Features**:
->   1. Visual Architecture Comparator between branches or tags (`/api/repository/compare-architecture`).
->   2. Executive Software Integrity & Rationale Report Export (printable/PDF view + JSON download).
->   3. Advanced Filters for GitHub Public Discovery (stars threshold, language, and license).
+> As escolhas abaixo foram explicitamente confirmadas pelo usuário na etapa de alinhamento interativo (Fase 1):
+
+- **Funcionalidades Prioritárias**: Comparador de arquitetura entre branches/tags e exportação de relatórios executivos de integridade em múltiplos formatos.
+- **Formatos de Exportação**: Ambos PDF interativo (com layout de relatório executivo e opções de impressão/download) e JSON estruturado (para pipeline e documentação técnica).
+- **Filtros Avançados de Busca Pública**: Filtros combinados por contagem mínima de estrelas, linguagem principal, licença do repositório (MIT, Apache-2.0, GPL-3.0, etc.) e busca contextual por tópicos.
 
 ---
 
-## 1. Overview & Core Concept
+## 1. Visão Geral & Conceito do Produto
 
-- **What It Does**: Elevates AFTER from a functional Git tool into an executive-grade software intelligence command center. Users can inspect repository drift, observe real-time AST graphs, compare component evolutions between branches, and export architectural audit reports.
-- **Target Audience**: Software architects, principal engineers, tech leads, and development teams requiring auditable institutional rationale and architecture tracking.
-- **Key Value**: Instant clarity on software drift, why architectural decisions were made, and zero-confusion theme consistency across all views.
+O **AFTER** é a camada de inteligência contínua que compreende a evolução do código ao longo do tempo. Nesta iteração, completamos os recursos fundamentais de análise comparativa, inteligência executiva e navegação avançada:
 
----
+1. **Comparador Visual de Arquitetura (Branch/Tag Diff Engine)**:
+   - Permite comparar grafos de dependência e nós de arquitetura entre duas branches (ex: `main` vs `dev`) ou tags/releases.
+   - Destaca nós adicionados, removidos ou modificados no Product Graph com código de cores suíço elegante e estatísticas de impacto.
 
-## 2. User Experience & Visual Design
+2. **Relatório Executivo de Integridade do Software (Executive Integrity Report)**:
+   - Geração de relatórios com diagnósticos de saúde arquitetural, métricas de complexidade, evidências conhecidas/inferidas/desconhecidas e análise de risco de dependências.
+   - Exportação em **PDF Interativo** (com layout limpo pronto para impressão) e **JSON Estruturado** completo.
 
-### Visual Identity & Theme
-- **Aesthetic Direction**: Minimalist Swiss precision (Linear & Vercel). High-density information design with generous whitespace rhythm. No neon clutter, no arbitrary scoreboards, no pill badge clutter.
-- **Color System (60-30-10)**:
-  - *Light Mode*: Canvas `#FAFAFA` (zinc-50), surfaces `#FFFFFF` with `border-zinc-200/80`, text `zinc-950` / `zinc-600`.
-  - *Dark Mode*: Canvas `#09090B` (zinc-950), surfaces `#121215` with `border-zinc-800/80`, text `zinc-50` / `zinc-400`.
-  - *Accents (10%)*: Monochromatic high-contrast buttons (`bg-zinc-900 text-white` / `dark:bg-zinc-100 dark:text-zinc-900`) with emerald (`#10B981`) for nominal/known status and amber (`#F59E0B`) for warnings.
-- **Typography & Tabular Numerals**:
-  - Headings: Crisp semi-bold sans with balanced measure (`text-wrap: balance`).
-  - Numbers & Metrics: Strictly monospace tabular figures (`font-mono tabular-nums`).
-  - Metadata: Unboxed text separated by quiet interpuncts (`·`).
-
-### Motion & Interactions
-- **Page & View Transitions**: Custom easing curve `cubic-bezier(0.16, 1, 0.3, 1)` with subtle vertical drift (`y: 6px → 0px`, duration `180ms`).
-- **Interactive State Feedback**: Active tabs use Motion `layoutId="activeTabPill"` for seamless sliding highlights.
-- **Skeleton Shimmer**: Replaces static loading spinners with geometry-matched skeleton placeholders.
+3. **Filtros Avançados de Busca no Diretório Público**:
+   - Painel de filtros retrátil em `ProjectsPage.tsx` permitindo filtrar por intervalo de estrelas, linguagem (TypeScript, Rust, Python, Go, etc.), licenças de código livre e tags de tópicos.
 
 ---
 
-## 3. Key Product Decisions & Trade-Offs
+## 2. Experiência do Usuário & Design Visual (Vercel / Linear Minimal Swiss)
 
-1. **Tailwind v4 Theme Engine Fix**:
-   - *Chosen Approach*: Add `@custom-variant dark (&:where(.dark, .dark *));` to `src/index.css` and audit all top-level wrappers to ensure `dark:*` pairs are active.
-   - *Why*: In Tailwind v4, dark variants default to media queries unless the class selector variant is explicitly registered.
-2. **Architecture Comparator**:
-   - *Chosen Approach*: Compare AST nodes, exported symbols, and dependency edges between two candidate refs (e.g. `main` vs `feat/branch`), highlighting added, removed, and modified architectural components.
-   - *Why*: Allows teams to see structural drift before merging PRs.
-3. **Executive Software Health & Integrity Report**:
-   - *Chosen Approach*: Client-rendered, print-optimized document view with standard browser print dialog (`window.print()`) plus structured `.json` audit ledger download.
-   - *Why*: Zero external heavy PDF libraries, instantaneous generation, and pristine typography for executive sharing.
-4. **Advanced Discovery Filters**:
-   - *Chosen Approach*: Expand `searchPublicRepositories` to accept language dropdown (`TypeScript`, `Python`, `Go`, `Rust`), minimum stars filter (`1k+`, `5k+`, `10k+`), and license filter.
-   - *Why*: Turns repository discovery into an intentional research workflow.
+- **Estética Visual**: Suíça minimalista, tipografia nítida (Plus Jakarta Sans / JetBrains Mono), paleta monocromática com acentos semânticos de baixo contraste (Verde nominal, Âmbar aviso, Carmim risco, Azul alteração).
+- **Comparador de Arquitetura**:
+  - Modal/View fluida com seletores sincronizados para `Branch Base` vs `Branch Comparada`.
+  - Visualização gráfica em modo Split ou Overlay com contagem de delta (`+X nós adicionados`, `-Y nós removidos`, `~Z conexões alteradas`).
+- **Relatório Executivo**:
+  - Painel de visualização prévia com métricas executivas (Índice de Saúde Arquitetural, Cobertura de Evidências, Densidade de Dependências).
+  - Ações diretas de exportação: `Exportar PDF` e `Exportar JSON`.
+- **Filtros de Busca**:
+  - Barra de controle minimalista com seletores de filtro em segmented control, dropdown de licenças e badge-tags limpas sem pílulas excessivas.
 
 ---
 
-## 4. Technical Architecture & Component Flow
+## 3. Arquitetura Técnica & Fluxo de Dados
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Top Navigation Bar                       │
-│  [AFTER Brand] — [Breadcrumbs] — [Theme Toggle | Profile]   │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-            ┌──────────────────┴──────────────────┐
-            ▼                                     ▼
- ┌──────────────────────┐             ┌──────────────────────┐
- │    Sidebar Nav       │             │   Main Content Area  │
- │  - Overview          │             │  (Motion Transition) │
- │  - Projects / Search │             └──────────┬───────────┘
- │  - Repository (Tree) │                        │
- │  - Architecture Graph│       ┌────────────────┼────────────────┐
- │  - Comparator (New)  │       ▼                ▼                ▼
- │  - Executive Report  │  ┌──────────┐    ┌───────────┐    ┌───────────┐
- │  - Software Memory   │  │ Projects │    │ Compare   │    │ Executive │
- └──────────────────────┘  │ Discovery│    │ Branches  │    │ Report    │
-                           └──────────┘    └───────────┘    └───────────┘
-                                │                │                │
-                                └────────────────┼────────────────┘
-                                                 │
-                                                 ▼
-                                   ┌───────────────────────────┐
-                                   │   Express Backend Routes  │
-                                   │  - /github-search (params)│
-                                   │  - /compare-architecture  │
-                                   │  - /impact-analysis       │
-                                   └───────────────────────────┘
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                             AFTER FRONTEND (React)                          │
+├───────────────────────────────────┬─────────────────────────────────────────┤
+│          ProjectsPage             │            RepositoryPage               │
+│  - Advanced Filters Bar           │  - Architecture Compare View            │
+│  - GitHub Public Search Hook      │  - Executive Integrity Report Panel     │
+└─────────────────┬─────────────────┴────────────────────┬────────────────────┘
+                  │                                      │
+                  ▼                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                             EXPRESS BACKEND SERVER                          │
+├───────────────────────────────────┬─────────────────────────────────────────┤
+│   /api/projects/github-search     │    /api/projects/:id/compare-branches │
+│   - Star ranges, language,        │    - Git tree diff & node graph diff    │
+│     license, topic filters        │    - Impact & dependency matrix         │
+├───────────────────────────────────┼─────────────────────────────────────────┤
+│   /api/projects/:id/report        │    /api/projects/:id/export-pdf         │
+│   - Integrity report JSON builder │    - Executive HTML-to-PDF print layout │
+└───────────────────────────────────┴─────────────────────────────────────────┘
 ```
 
 ---
 
-## 5. Step-by-Step Implementation Plan
+## 4. Tarefas de Implementação
 
-### Step 1: Fix Dark / Light / System Theme Architecture
-- In `src/index.css`: Add `@custom-variant dark (&:where(.dark, .dark *));` below `@import "tailwindcss";`.
-- Audit `src/context/ThemeContext.tsx` and verify `document.documentElement.classList.add/remove("dark")` applies instantly across all components.
-- In `Navbar.tsx` and `SettingsPage.tsx`: Ensure theme toggle triggers smooth view transitions and displays current state accurately.
+### Etapa 1: Comparador Visual de Arquitetura (`ArchitectureCompareModal.tsx` & Backend Diff)
+- Criar endpoint no Express `/api/projects/:id/compare-branches?base=:base&head=:head` para computar a diferença de árvore de código, dependências e nós do Product Graph entre branches/tags.
+- Desenvolver componente React `ArchitectureCompareModal.tsx` integrado à página do repositório (`RepositoryPage.tsx`), com seletores de branches e visualização de nós modificados.
 
-### Step 2: Implement Advanced Discovery Filters in `ProjectsSearchBar.tsx`
-- Add filter controls: Star thresholds (`All`, `>1,000`, `>5,000`, `>20,000`), Languages (`All`, `TypeScript`, `JavaScript`, `Python`, `Go`, `Rust`), and sorting (`stars`, `forks`, `updated`).
-- Pass filters to `/api/projects/github-search` and display refined metadata cards.
+### Etapa 2: Gerador e Exportador de Relatório Executivo de Integridade (`ExecutiveReportModal.tsx`)
+- Implementar construtor de dados do relatório integrando métricas reais de código, dependências, histórico de commits, dados de PII/segurança e evidências (Known, Inferred, Unknown).
+- Desenvolver modal de relatório com pré-visualização executiva e botões de download:
+  - **JSON**: Download imediato do arquivo `.json` com o esquema completo de integridade.
+  - **PDF**: Layout formatado com `@media print` CSS ou gerador PDF limpo sem dependências externas quebradas.
 
-### Step 3: Implement Visual Architecture Comparator View (`ArchitectureCompareModal.tsx` & endpoint)
-- Create backend endpoint `POST /api/repository/compare-architecture`: Compares AST nodes, file changes, and exported components between `base` ref and `head` ref.
-- Create UI modal/view with side-by-side diff highlighting added nodes, removed exports, and dependency graph divergence.
+### Etapa 3: Filtros Avançados na Busca Pública de Repositórios (`ProjectsPage.tsx`)
+- Expandir o endpoint `/api/projects/github-search` para aceitar parâmetros `language`, `stars`, `license` e `topic`.
+- Adicionar barra de filtros interativa no `ProjectsPage.tsx` com estado reativo e integração com o Infinite Scroll.
 
-### Step 4: Implement Executive Software Health Report Modal (`ExecutiveReportModal.tsx`)
-- Generates an executive summary of the repository: total AST components, dependency edges, security posture, author breakdown, and known vs inferred rationale ledger.
-- Provides one-click Print / Save as PDF and Export JSON.
+---
 
-### Step 5: Premium Motion & Polish Across Views
-- Enhance `AnimatePresence` and spring transitions on tab switches.
-- Replace remaining spinners with subtle shimmer skeleton lines.
-- Validate via `compile_applet`, `lint_applet`, and test runner.
+## 5. Plano de Verificação & Testes
+
+1. **Compilação e Linting**: Executar `compile_applet` e `lint_applet` simultaneamente para garantir ausência de erros de build ou TypeScript.
+2. **Testes Unitários**: Garantir a execução de `npm test` para todos os fluxos do backend e frontend.
+3. **Verificação Visual**: Confirmar a coerência do estilo minimalista Vercel/Linear e fluidez das animações com Motion.
