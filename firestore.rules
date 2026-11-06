@@ -22,23 +22,31 @@ service cloud.firestore {
       allow update, delete: if signedIn() && resource.data.uid == request.auth.uid;
     }
 
+    // GitHub OAuth tokens are encrypted and managed only by the backend.
+    match /githubTokenVault/{userId} {
+      allow read, write: if false;
+    }
+
     match /projects/{projectId} {
       allow get, list: if signedIn() && resource.data.ownerId == request.auth.uid;
       allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
       allow update: if signedIn() && resource.data.ownerId == request.auth.uid && request.resource.data.ownerId == resource.data.ownerId;
       allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
 
-      match /events/{id} { allow read, write: if ownsProject(projectId); }
-      match /snapshots/{id} { allow read, write: if ownsProject(projectId); }
-      match /insights/{id} { allow read, write: if ownsProject(projectId); }
-      match /memoryEntries/{id} { allow read, write: if ownsProject(projectId); }
-      match /experiments/{id} { allow read, write: if ownsProject(projectId); }
-      match /watchTargets/{id} { allow read, write: if ownsProject(projectId); }
-      match /notifications/{id} { allow read, write: if ownsProject(projectId); }
-      match /analysisJobs/{id} { allow read, write: if ownsProject(projectId); }
-      match /webhookDeliveries/{id} { allow read, write: if ownsProject(projectId); }
-      match /graphNodes/{id} { allow read, write: if ownsProject(projectId); }
-      match /graphEdges/{id} { allow read, write: if ownsProject(projectId); }
+      // Analytical state is produced by the trusted backend/Admin SDK.
+      // Clients may read their own project data but cannot forge insights,
+      // graph edges, jobs, notifications, or webhook deliveries.
+      match /events/{id} { allow read: if ownsProject(projectId); allow write: if false; }
+      match /snapshots/{id} { allow read: if ownsProject(projectId); allow write: if false; }
+      match /insights/{id} { allow read: if ownsProject(projectId); allow write: if false; }
+      match /memoryEntries/{id} { allow read: if ownsProject(projectId); allow write: if false; }
+      match /experiments/{id} { allow read: if ownsProject(projectId); allow write: if false; }
+      match /watchTargets/{id} { allow read: if ownsProject(projectId); allow write: if false; }
+      match /notifications/{id} { allow read: if ownsProject(projectId); allow write: if false; }
+      match /analysisJobs/{id} { allow read: if ownsProject(projectId); allow write: if false; }
+      match /webhookDeliveries/{id} { allow read: if ownsProject(projectId); allow write: if false; }
+      match /graphNodes/{id} { allow read: if ownsProject(projectId); allow write: if false; }
+      match /graphEdges/{id} { allow read: if ownsProject(projectId); allow write: if false; }
     }
   }
 }

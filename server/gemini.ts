@@ -8,6 +8,7 @@ export function getGeminiAI(): GoogleGenAI {
     aiInstance = new GoogleGenAI({
       apiKey: apiKey || "",
       httpOptions: {
+        timeout: 30_000,
         headers: {
           "User-Agent": "aistudio-build",
         },
@@ -53,4 +54,3 @@ export async function generateContentWithFallback(options: GenerateOptions): Pro
 
   throw lastError || new Error("All Gemini models temporarily unavailable");
 }
-

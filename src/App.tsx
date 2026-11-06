@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { lazy, Suspense, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ThemeProvider } from "./context/ThemeContext";
 import { LanguageProvider, useLanguage } from "./context/LanguageContext";
@@ -8,24 +8,25 @@ import { ToastProvider } from "./context/ToastContext";
 import { LandingPage } from "./pages/LandingPage";
 import { AuthModal } from "./pages/AuthModal";
 import { OnboardingModal } from "./pages/OnboardingModal";
-import { OverviewPage } from "./pages/OverviewPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
-import { RepositoryPage } from "./pages/RepositoryPage";
-import { ProductGraphPage } from "./pages/ProductGraphPage";
-import { SoftwareMemoryPage } from "./pages/SoftwareMemoryPage";
-import { InsightsPage } from "./pages/InsightsPage";
-import { ExperimentsPage } from "./pages/ExperimentsPage";
-import { TimelinePage } from "./pages/TimelinePage";
 import { SettingsPage } from "./pages/SettingsPage";
-import { WatchPage } from "./pages/WatchPage";
-import { ArchitectureComparePage } from "./pages/ArchitectureComparePage";
-import { ExecutiveReportPage } from "./pages/ExecutiveReportPage";
 import { Navbar } from "./components/Navbar";
 import { Sidebar } from "./components/Sidebar";
 import { WhyDrawer } from "./components/WhyDrawer";
 import { AskAfterModal } from "./components/AskAfterModal";
 import { CommandPalette } from "./components/CommandPalette";
 import { CreateProjectModal } from "./components/CreateProjectModal";
+
+const OverviewPage = lazy(() => import("./pages/OverviewPage").then((m) => ({ default: m.OverviewPage })));
+const RepositoryPage = lazy(() => import("./pages/RepositoryPage").then((m) => ({ default: m.RepositoryPage })));
+const ProductGraphPage = lazy(() => import("./pages/ProductGraphPage").then((m) => ({ default: m.ProductGraphPage })));
+const SoftwareMemoryPage = lazy(() => import("./pages/SoftwareMemoryPage").then((m) => ({ default: m.SoftwareMemoryPage })));
+const InsightsPage = lazy(() => import("./pages/InsightsPage").then((m) => ({ default: m.InsightsPage })));
+const ExperimentsPage = lazy(() => import("./pages/ExperimentsPage").then((m) => ({ default: m.ExperimentsPage })));
+const TimelinePage = lazy(() => import("./pages/TimelinePage").then((m) => ({ default: m.TimelinePage })));
+const WatchPage = lazy(() => import("./pages/WatchPage").then((m) => ({ default: m.WatchPage })));
+const ArchitectureComparePage = lazy(() => import("./pages/ArchitectureComparePage").then((m) => ({ default: m.ArchitectureComparePage })));
+const ExecutiveReportPage = lazy(() => import("./pages/ExecutiveReportPage").then((m) => ({ default: m.ExecutiveReportPage })));
 
 function MainApp() {
   const { user, loading: authLoading } = useAuth();
@@ -90,8 +91,9 @@ function MainApp() {
 
         {/* Dynamic Main View */}
         <main className="flex-1 overflow-y-auto">
-          <AnimatePresence mode="wait">
-            <motion.div
+          <Suspense fallback={<div className="p-8 text-xs text-zinc-500 font-mono">Loading view…</div>}>
+            <AnimatePresence mode="wait">
+              <motion.div
               key={currentView}
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
@@ -134,8 +136,9 @@ function MainApp() {
               {currentView === "compare" && <ArchitectureComparePage />}
 
               {currentView === "report" && <ExecutiveReportPage />}
-            </motion.div>
-          </AnimatePresence>
+              </motion.div>
+            </AnimatePresence>
+          </Suspense>
         </main>
       </div>
 

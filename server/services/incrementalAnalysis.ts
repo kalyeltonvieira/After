@@ -39,7 +39,10 @@ function headers(token?: string) {
 }
 
 async function githubGet(url: string, token?: string) {
-  const response = await fetch(url, { headers: headers(token) });
+  const response = await fetch(url, {
+    headers: headers(token),
+    signal: AbortSignal.timeout(15_000),
+  });
   const text = await response.text();
   let body: any = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }

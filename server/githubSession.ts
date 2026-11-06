@@ -57,9 +57,19 @@ export function getGitHubToken(sessionId: string | undefined, uid: string) {
   return null;
 }
 
-export function revokeGitHubSession(sessionId: string | undefined, uid?: string) {
+export async function revokeGitHubSession(sessionId: string | undefined, uid?: string) {
   if (sessionId) sessions.delete(sessionId);
   if (uid) userSessions.delete(uid);
+  if (uid) {
+    try {
+      await getAdminFirestore().collection("githubTokenVault").doc(uid).delete();
+    } catch (error: any) {
+      // A missing user document should not prevent local session revocation.
+      if (error?.code !== 5) {
+        console.warn("Could not remove persisted GitHub token:", error?.message || error);
+      }
+    }
+  }
 }
 
 
@@ -101,12 +111,10 @@ export async function persistGitHubToken(uid: string, token: string) {
 
   try {
     const encrypted = encryptToken(token.trim());
-    await getAdminFirestore().collection("users").doc(uid).set({
-      githubIntegration: {
-        accessToken: encrypted,
-        updatedAt: new Date().toISOString(),
-      },
-    }, { merge: true });
+    await getAdminFirestore().collection("githubTokenVault").doc(uid).set({
+      accessToken: encrypted,
+      updatedAt: new Date().toISOString(),
+    });
     return true;
   } catch (error: any) {
     console.warn("Could not persist GitHub token:", error?.message || error);
@@ -118,8 +126,8 @@ export async function getPersistentGitHubToken(uid: string) {
   if (!uid) return null;
 
   try {
-    const snapshot = await getAdminFirestore().collection("users").doc(uid).get();
-    return decryptToken(snapshot.data()?.githubIntegration?.accessToken);
+    const snapshot = await getAdminFirestore().collection("githubTokenVault").doc(uid).get();
+    return decryptToken(snapshot.data()?.accessToken);
   } catch (error: any) {
     console.warn("Could not restore GitHub token:", error?.message || error);
     return null;

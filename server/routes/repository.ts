@@ -11,6 +11,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import pathModule from "node:path";
 import { isSensitiveFilePath, sanitizeRepoRelativePath } from "../services/sensitiveFileFilter.js";
+import { createGitHubBranch, deleteGitHubBranch } from "../services/githubMutations.js";
 
 export const repositoryRouter = Router();
 
@@ -20,6 +21,8 @@ const ghHeaders = (token?: string): Record<string, string> => ({
   "User-Agent": "AFTER-Software-Evolution-Platform",
   ...(token ? { Authorization: `Bearer ${token.trim()}` } : {}),
 });
+
+const EXTERNAL_REQUEST_TIMEOUT_MS = 15_000;
 
 function githubError(status: number, statusText: string, body?: any, isHtml = false, rawSample = ""): Error {
   let detail = "";
@@ -43,6 +46,7 @@ async function githubFetch(path: string, token?: string, init?: RequestInit) {
   try {
     response = await fetch(`https://api.github.com${path}`, {
       ...init,
+      signal: init?.signal || AbortSignal.timeout(EXTERNAL_REQUEST_TIMEOUT_MS),
       headers: {
         ...ghHeaders(token),
         ...(init?.headers || {}),
@@ -226,6 +230,7 @@ repositoryRouter.get("/file", async (req: AuthenticatedRequest, res) => {
       try {
         const rawUrl = `https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/${encodeURIComponent(ref)}/${path}`;
         const rawRes = await fetch(rawUrl, {
+          signal: AbortSignal.timeout(EXTERNAL_REQUEST_TIMEOUT_MS),
           headers: {
             "User-Agent": "AFTER-Software-Evolution-Platform",
             ...(token ? { Authorization: `token ${token}` } : {}),
@@ -309,6 +314,7 @@ repositoryRouter.get("/file-blame", async (req: AuthenticatedRequest, res) => {
       try {
         const response = await fetch("https://api.github.com/graphql", {
           method: "POST",
+          signal: AbortSignal.timeout(EXTERNAL_REQUEST_TIMEOUT_MS),
           headers: {
             ...ghHeaders(token),
             "Content-Type": "application/json",
@@ -416,21 +422,8 @@ repositoryRouter.post("/branches", async (req: AuthenticatedRequest, res) => {
       return res.status(400).json({ error: "Invalid branch name." });
     }
     if (!from) return res.status(400).json({ error: "Base branch is required." });
-    try {
-      const { body: refData } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/git/ref/heads/${encodeURIComponent(from)}`, token);
-      const sha = refData?.object?.sha;
-      if (sha) {
-        const { body } = await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/git/refs`, token, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ref: `refs/heads/${name}`, sha }),
-        });
-        return res.status(201).json({ ref: body });
-      }
-    } catch {
-      // Non-blocking simulated branch creation for local exploratory mode
-    }
-    return res.status(201).json({ ref: { ref: `refs/heads/${name}`, object: { sha: "simulated_branch_sha" } } });
+    const body = await createGitHubBranch(githubFetch, parsed.owner, parsed.repo, name, from, token);
+    return res.status(201).json({ ref: body });
   } catch (error) { return handleRouteError(res, error); }
 });
 
@@ -439,11 +432,7 @@ repositoryRouter.delete("/branches/:name", async (req: AuthenticatedRequest, res
     const { project, parsed, token } = await getProjectRepository(req, String(req.query.projectId || ""));
     const name = decodeURIComponent(req.params.name);
     if (name === project.defaultBranch) return res.status(409).json({ error: "The default branch cannot be deleted." });
-    try {
-      await githubFetch(`/repos/${parsed.owner}/${parsed.repo}/git/refs/heads/${encodeURIComponent(name)}`, token, { method: "DELETE" });
-    } catch {
-      // Non-blocking fallback
-    }
+    await deleteGitHubBranch(githubFetch, parsed.owner, parsed.repo, name, token);
     return res.status(204).send();
   } catch (error) { return handleRouteError(res, error); }
 });
