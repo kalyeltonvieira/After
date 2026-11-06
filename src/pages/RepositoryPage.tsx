@@ -22,6 +22,7 @@ import { useProject } from "../context/ProjectContext";
 import { useAuth } from "../context/AuthContext";
 import { authenticatedHeaders } from "../lib/api";
 import { EmptyState } from "../components/EmptyState";
+import { getGitHubAuthUrl, openGitHubOAuthPopup, exchangeGitHubCode } from "../services/githubService";
 
 type Tab = "code" | "branches" | "commits" | "pulls" | "issues" | "releases" | "tags" | "contributors" | "activity";
 
@@ -150,7 +151,9 @@ export function RepositoryPage() {
   const [hoveredCommitSha, setHoveredCommitSha] = useState<string | null>(null);
   const [commitDetail, setCommitDetail] = useState<any>(null);
   const [codeScrollTop, setCodeScrollTop] = useState(0);
+  const [reconnecting, setReconnecting] = useState(false);
 
+  const { refreshGitHubSession } = useAuth();
   const projectId = currentProject?.id;
   const tabs = useMemo(() => [
     ["code", FileCode2, "Code"],
@@ -167,8 +170,35 @@ export function RepositoryPage() {
   const request = async (path: string, init?: RequestInit) => {
     const res = await fetch(path, { ...init, headers: { ...(await authenticatedHeaders({}, true)), ...(init?.headers || {}) } });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+    if (!res.ok) {
+      const err = new Error(body.error || `Request failed (${res.status})`);
+      (err as any).status = res.status;
+      (err as any).isRateLimit = Boolean(body.isRateLimit || res.status === 429 || /rate limit/i.test(body.error || ""));
+      (err as any).isUnauthorized = Boolean(body.isUnauthorized || res.status === 401 || res.status === 403);
+      (err as any).isHtml = Boolean(body.isHtml);
+      throw err;
+    }
     return body;
+  };
+
+  const handleConnectGitHub = async () => {
+    setReconnecting(true);
+    try {
+      const authInfo = await getGitHubAuthUrl().catch(() => null);
+      if (authInfo?.configured && authInfo?.url) {
+        const popupRes = await openGitHubOAuthPopup(authInfo.url);
+        if (popupRes.code) {
+          await exchangeGitHubCode(popupRes.code);
+        }
+      }
+      await refreshGitHubSession();
+      await loadBranches();
+      await loadTab();
+    } catch (err: any) {
+      window.alert(err?.message || "Failed to connect GitHub session.");
+    } finally {
+      setReconnecting(false);
+    }
   };
 
   const loadBranches = async () => {
@@ -179,8 +209,11 @@ export function RepositoryPage() {
       setBranches(next);
       if (!compareBase) setCompareBase(currentProject?.defaultBranch || currentProject?.branch || next[0]?.name || "");
       if (!compareHead) setCompareHead(currentProject?.branch || next[1]?.name || next[0]?.name || "");
-    } catch (error) {
-      setData((prev: any) => ({ ...prev, error: error instanceof Error ? error.message : String(error) }));
+    } catch (error: any) {
+      const msg = error?.message || String(error);
+      const isRateLimit = Boolean(error?.isRateLimit || error?.status === 429 || /rate limit/i.test(msg));
+      const isUnauthorized = Boolean(error?.isUnauthorized || error?.status === 401 || error?.status === 403 || isRateLimit);
+      setData((prev: any) => ({ ...prev, error: msg, isRateLimit, isUnauthorized }));
     }
   };
 
@@ -198,8 +231,11 @@ export function RepositoryPage() {
       if (tab === "tags") setData((await request(`/api/repository/tags?projectId=${q}&per_page=100`)));
       if (tab === "contributors") setData((await request(`/api/repository/contributors?projectId=${q}&per_page=50`)));
       if (tab === "activity") setData((await request(`/api/repository/activity?projectId=${q}&per_page=25`)));
-    } catch (error) {
-      setData({ error: error instanceof Error ? error.message : String(error) });
+    } catch (error: any) {
+      const msg = error?.message || String(error);
+      const isRateLimit = Boolean(error?.isRateLimit || error?.status === 429 || /rate limit/i.test(msg));
+      const isUnauthorized = Boolean(error?.isUnauthorized || error?.status === 401 || error?.status === 403 || isRateLimit);
+      setData({ error: msg, isRateLimit, isUnauthorized });
     } finally {
       setLoading(false);
     }
@@ -235,8 +271,11 @@ export function RepositoryPage() {
         path,
         content: typeof file.content === "string" ? file.content.slice(0, 24000) : undefined,
       });
-    } catch (error) {
-      setData((prev: any) => ({ ...prev, file: null, error: error instanceof Error ? error.message : String(error) }));
+    } catch (error: any) {
+      const msg = error?.message || String(error);
+      const isRateLimit = Boolean(error?.isRateLimit || error?.status === 429 || /rate limit/i.test(msg));
+      const isUnauthorized = Boolean(error?.isUnauthorized || error?.status === 401 || error?.status === 403 || isRateLimit);
+      setData((prev: any) => ({ ...prev, file: null, error: msg, isRateLimit, isUnauthorized }));
     }
   };
 
@@ -683,7 +722,50 @@ export function RepositoryPage() {
         </div>
       </div>
 
-      {data.error && <div className="p-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-xs">{data.error}</div>}
+      {data.error && (
+        <div className="p-4 rounded-2xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/80 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 space-y-3">
+          <div className="flex items-start space-x-3">
+            <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <h3 className="text-xs font-semibold text-rose-900 dark:text-rose-100">
+                {data.isRateLimit
+                  ? "GitHub API Rate Limit Reached"
+                  : data.isUnauthorized
+                  ? "GitHub Authorization Required"
+                  : "Repository Fetch Issue"}
+              </h3>
+              <p className="text-xs mt-1 leading-relaxed opacity-90">{data.error}</p>
+              {data.isRateLimit && (
+                <p className="text-[11px] mt-1.5 text-rose-700 dark:text-rose-300">
+                  Tip: Unauthenticated GitHub API calls are limited to 60 requests/hour per IP. Connecting your GitHub account via OAuth provides 5,000 requests/hour and private repo access.
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-rose-200/60 dark:border-rose-900/40">
+            {(data.isRateLimit || data.isUnauthorized) && (
+              <button
+                type="button"
+                onClick={handleConnectGitHub}
+                disabled={reconnecting}
+                className="px-3.5 py-1.5 rounded-xl bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 text-xs font-medium hover:opacity-90 flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${reconnecting ? "animate-spin" : ""}`} />
+                <span>{reconnecting ? "Connecting..." : "Connect GitHub Account"}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => void loadTab()}
+              disabled={loading}
+              className="px-3 py-1.5 rounded-xl border border-rose-300 dark:border-rose-800 text-xs font-medium hover:bg-rose-100 dark:hover:bg-rose-900/50 flex items-center space-x-1.5 cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Try Again</span>
+            </button>
+          </div>
+        </div>
+      )}
       {loading && <div className="py-10 text-center text-xs text-zinc-400">Loading real repository data…</div>}
 
       {!loading && tab === "code" && (

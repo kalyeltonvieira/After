@@ -114,12 +114,14 @@ async function getProjectRepository(req: AuthenticatedRequest, rawProjectId: str
 function handleRouteError(res: any, error: any) {
   const status = Number(error?.status) || 500;
   const message = error?.message || "Repository operation failed.";
-  const isUnauthorized = status === 401 || status === 403 || /unauthorized|bad credentials|permission/i.test(message);
+  const isRateLimit = status === 429 || /rate limit/i.test(message);
+  const isUnauthorized = status === 401 || status === 403 || isRateLimit || /unauthorized|bad credentials|permission/i.test(message);
 
   return res.status(status).json({
     error: message,
     status,
     isUnauthorized,
+    isRateLimit,
     isHtml: Boolean(error?.isHtml),
     diagnostic: process.env.NODE_ENV !== "production" ? error?.rawSample || null : null,
   });
@@ -160,13 +162,13 @@ repositoryRouter.get("/tree", async (req: AuthenticatedRequest, res) => {
           tree: Array.from(dedupedMap.values()),
         });
       }
-    } catch (completeTreeErr) {
-      console.warn("Complete tree fetch failed, trying direct tree query:", (completeTreeErr as any)?.message);
-      const status = Number((completeTreeErr as any)?.status || 0);
-      // A repository-level 401/403/404 is terminal. Retrying alternate refs
-      // only hides the actual access or ownership problem and produces an
-      // empty Explorer that looks like a frontend failure.
-      if ([401, 403, 404, 429].includes(status)) throw completeTreeErr;
+    } catch (completeTreeErr: any) {
+      const status = Number(completeTreeErr?.status || 0);
+      if ([401, 403, 404, 429].includes(status) || /rate limit/i.test(completeTreeErr?.message || "")) {
+        console.warn(`GitHub repository tree access restricted (${status || 429}):`, completeTreeErr?.message);
+        throw completeTreeErr;
+      }
+      console.warn("Complete tree fetch failed, trying direct tree query fallback:", completeTreeErr?.message);
     }
 
     // 2. Fallback to candidate refs on GitHub Trees API
