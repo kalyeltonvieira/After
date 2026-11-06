@@ -390,18 +390,27 @@ export async function getRepository(
 
   if (!res.ok) {
     if (res.status === 404) {
-      throw new Error(
+      const error = new Error(
         `Repository '${owner}/${repo}' not found on GitHub. If private, grant OAuth repo access.`
       );
+      (error as any).status = 404;
+      throw error;
     }
     if (res.status === 403) {
       const remaining = res.headers.get("x-ratelimit-remaining");
       if (remaining === "0") {
-        throw new Error("GitHub API rate limit exceeded. Please connect via GitHub OAuth.");
+        const error = new Error("GitHub API rate limit exceeded. Please connect via GitHub OAuth.");
+        (error as any).status = 429;
+        (error as any).retryAfter = res.headers.get("retry-after");
+        throw error;
       }
-      throw new Error(`Access forbidden to repository '${owner}/${repo}'.`);
+      const error = new Error(`Access forbidden to repository '${owner}/${repo}'.`);
+      (error as any).status = 403;
+      throw error;
     }
-    throw new Error(`GitHub API error (${res.status}): ${res.statusText}`);
+    const error = new Error(`GitHub API error (${res.status}): ${res.statusText}`);
+    (error as any).status = res.status;
+    throw error;
   }
 
   const data = await safeJson<GitHubRepo>(res, `repository ${owner}/${repo}`);

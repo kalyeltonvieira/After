@@ -162,6 +162,11 @@ repositoryRouter.get("/tree", async (req: AuthenticatedRequest, res) => {
       }
     } catch (completeTreeErr) {
       console.warn("Complete tree fetch failed, trying direct tree query:", (completeTreeErr as any)?.message);
+      const status = Number((completeTreeErr as any)?.status || 0);
+      // A repository-level 401/403/404 is terminal. Retrying alternate refs
+      // only hides the actual access or ownership problem and produces an
+      // empty Explorer that looks like a frontend failure.
+      if ([401, 403, 404, 429].includes(status)) throw completeTreeErr;
     }
 
     // 2. Fallback to candidate refs on GitHub Trees API
@@ -185,7 +190,7 @@ repositoryRouter.get("/tree", async (req: AuthenticatedRequest, res) => {
     }
 
     return res.status(404).json({
-      error: `Could not load repository tree for ${parsed.owner}/${parsed.repo}. Please verify repository access permissions.`,
+      error: `Could not load repository tree for ${parsed.owner}/${parsed.repo} on branch '${requestedRef || project.defaultBranch || "default"}'. Verify the repository name, branch, and GitHub access permissions.`,
       sha: requestedRef || "HEAD",
       tree: [],
     });
