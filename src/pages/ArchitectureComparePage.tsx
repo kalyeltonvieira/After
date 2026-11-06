@@ -11,6 +11,7 @@ interface ArchitectureFileChange {
   symbols: { added: Array<{ name: string; type: string }>; removed: Array<{ name: string; type: string }>; modified: Array<{ before?: { name: string }; after?: { name: string } }> };
   dependencies: { added: string[]; removed: string[] };
 }
+interface RepositoryRefOption { value: string; ref: string; kind: "branch" | "tag" }
 interface ArchitectureComparison {
   repository: string;
   base: { ref: string; treeSha: string; truncated: boolean };
@@ -28,7 +29,7 @@ export function ArchitectureComparePage() {
   const { currentProject } = useProject();
   const { language } = useLanguage();
   const isPt = language === "pt";
-  const [branches, setBranches] = useState<string[]>([]);
+  const [refs, setRefs] = useState<RepositoryRefOption[]>([]);
   const [base, setBase] = useState("");
   const [head, setHead] = useState("");
   const [loadingBranches, setLoadingBranches] = useState(false);
@@ -39,24 +40,41 @@ export function ArchitectureComparePage() {
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      if (!currentProject?.id) { setBranches([]); return; }
+      if (!currentProject?.id) { setRefs([]); return; }
       setLoadingBranches(true);
       setError(null);
       try {
-        const response = await fetch(`/api/repository/branches?projectId=${encodeURIComponent(currentProject.id)}&per_page=100`, {
-          credentials: "include",
-          headers: await authenticatedHeaders(),
-        });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "Could not load repository branches.");
-        const names = Array.isArray(payload.branches)
-          ? payload.branches.map((item: any) => item?.name).filter((name: unknown): name is string => typeof name === "string")
+        const query = `projectId=${encodeURIComponent(currentProject.id)}&per_page=100`;
+        const headers = await authenticatedHeaders();
+        const [branchesResponse, tagsResponse] = await Promise.all([
+          fetch(`/api/repository/branches?${query}`, { credentials: "include", headers }),
+          fetch(`/api/repository/tags?${query}`, { credentials: "include", headers }),
+        ]);
+        const [branchesPayload, tagsPayload] = await Promise.all([
+          branchesResponse.json(),
+          tagsResponse.json(),
+        ]);
+        if (!branchesResponse.ok) throw new Error(branchesPayload.error || "Could not load repository branches.");
+        if (!tagsResponse.ok) throw new Error(tagsPayload.error || "Could not load repository tags.");
+        const branchRefs: RepositoryRefOption[] = Array.isArray(branchesPayload.branches)
+          ? branchesPayload.branches.map((item: any) => item?.name)
+              .filter((name: unknown): name is string => typeof name === "string")
+              .map((name: string) => ({ value: `branch:${name}`, ref: name, kind: "branch" as const }))
           : [];
+        const tagRefs: RepositoryRefOption[] = Array.isArray(tagsPayload.tags)
+          ? tagsPayload.tags.map((item: any) => item?.name)
+              .filter((name: unknown): name is string => typeof name === "string")
+              .map((name: string) => ({ value: `tag:${name}`, ref: name, kind: "tag" as const }))
+          : [];
+        const availableRefs = [...branchRefs, ...tagRefs];
         if (cancelled) return;
-        setBranches(names);
-        const defaultRef = currentProject.defaultBranch || currentProject.branch || names[0] || "";
-        setBase((current) => current && names.includes(current) ? current : defaultRef);
-        setHead((current) => current && names.includes(current) && current !== defaultRef ? current : (names.find((name: string) => name !== defaultRef) || defaultRef));
+        setRefs(availableRefs);
+        const defaultRef = branchRefs.find((item) => item.ref === (currentProject.defaultBranch || currentProject.branch)) || branchRefs[0] || availableRefs[0];
+        const firstValue = defaultRef?.value || "";
+        setBase((current) => current && availableRefs.some((item) => item.value === current) ? current : firstValue);
+        setHead((current) => current && availableRefs.some((item) => item.value === current) && current !== firstValue
+          ? current
+          : (availableRefs.find((item) => item.value !== firstValue)?.value || firstValue));
       } catch (err: any) {
         if (!cancelled) setError(err?.message || "Could not load branches.");
       } finally {
@@ -68,7 +86,9 @@ export function ArchitectureComparePage() {
   }, [currentProject?.id]);
 
   const runComparison = async () => {
-    if (!currentProject?.id || !base || !head || base === head) return;
+    const baseOption = refs.find((item) => item.value === base);
+    const headOption = refs.find((item) => item.value === head);
+    if (!currentProject?.id || !baseOption || !headOption || base === head) return;
     setComparing(true);
     setError(null);
     setComparison(null);
@@ -77,7 +97,7 @@ export function ArchitectureComparePage() {
         method: "POST",
         credentials: "include",
         headers: await authenticatedHeaders({}, true),
-        body: JSON.stringify({ projectId: currentProject.id, base, head }),
+        body: JSON.stringify({ projectId: currentProject.id, base: baseOption.ref, head: headOption.ref }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Architecture comparison failed.");
@@ -119,14 +139,14 @@ export function ArchitectureComparePage() {
             <label className="space-y-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
               {isPt ? "Branch base" : "Base branch"}
               <select value={base} onChange={(e) => setBase(e.target.value)} className={selectClass} disabled={loadingBranches}>
-                {branches.map((name) => <option key={name} value={name}>{name}</option>)}
+                {refs.map((item) => <option key={item.value} value={item.value}>{item.kind}: {item.ref}</option>)}
               </select>
             </label>
             <ArrowLeftRight className="mx-auto mb-2 h-4 w-4 text-zinc-400" />
             <label className="space-y-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
               {isPt ? "Branch de comparação" : "Compare branch"}
               <select value={head} onChange={(e) => setHead(e.target.value)} className={selectClass} disabled={loadingBranches}>
-                {branches.map((name) => <option key={name} value={name}>{name}</option>)}
+                {refs.map((item) => <option key={item.value} value={item.value}>{item.kind}: {item.ref}</option>)}
               </select>
             </label>
             <button type="button" onClick={() => void runComparison()} disabled={comparing || loadingBranches || !base || !head || base === head}
