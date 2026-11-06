@@ -4,7 +4,7 @@ import { requireFirebaseUser } from "../auth.js";
 import { getAdminFirestore } from "../auth.js";
 import { loadProjectContext, listUserProjectsViaRest } from "../projectContext.js";
 
-import { getGitHubToken, getPersistentGitHubToken } from "../githubSession.js";
+import { getGitHubToken, getPersistentGitHubToken, readEncryptedGitHubTokenCookie } from "../githubSession.js";
 import { parseGitHubRepo, getCompleteRepositoryTree, getGitBlobContent } from "../services/githubService.js";
 import { analyzeSource } from "../services/codeAnalyzer.js";
 import crypto from "node:crypto";
@@ -97,7 +97,9 @@ async function getProjectRepository(req: AuthenticatedRequest, rawProjectId: str
     throw Object.assign(new Error("This project is not connected to a valid GitHub repository."), { status: 400 });
   }
   const uid = req.user!.uid;
-  let token = getGitHubToken(req.cookies?.after_github_session, uid) || undefined;
+  let token = getGitHubToken(req.cookies?.after_github_session, uid)
+    || readEncryptedGitHubTokenCookie(req.cookies?.after_github_token)
+    || undefined;
   if (!token) {
     try {
       token = (await getPersistentGitHubToken(uid)) || undefined;

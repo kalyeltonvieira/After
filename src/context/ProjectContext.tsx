@@ -707,6 +707,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       if (currentProject.repository && currentProject.repository.includes("/")) {
         const res = await fetch("/api/projects/analyze-repository", {
           method: "POST",
+          credentials: "include",
           headers: await authenticatedHeaders({}, true),
           body: JSON.stringify({
             repository: currentProject.repository,
