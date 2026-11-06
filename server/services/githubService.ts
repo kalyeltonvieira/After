@@ -318,6 +318,50 @@ export async function listUserRepositories(
   return allRepos;
 }
 
+/**
+ * Searches public repositories on GitHub using GitHub Search API
+ */
+export async function searchPublicRepositories(
+  query: string,
+  token?: string,
+  options?: { per_page?: number; page?: number; sort?: "stars" | "forks" | "updated" }
+): Promise<{ total_count: number; items: GitHubRepo[] }> {
+  const trimmed = query.trim();
+  if (!trimmed) return { total_count: 0, items: [] };
+
+  const perPage = Math.min(Math.max(Number(options?.per_page) || 20, 1), 50);
+  const page = Math.max(Number(options?.page) || 1, 1);
+  const sort = options?.sort || "stars";
+
+  const searchParams = new URLSearchParams({
+    q: trimmed,
+    sort,
+    order: "desc",
+    per_page: String(perPage),
+    page: String(page),
+  });
+
+  const res = await fetch(`https://api.github.com/search/repositories?${searchParams.toString()}`, {
+    headers: getGitHubHeaders(token),
+  });
+
+  if (!res.ok) {
+    if (res.status === 403) {
+      const remaining = res.headers.get("x-ratelimit-remaining");
+      if (remaining === "0") {
+        throw new Error("GitHub API rate limit reached. Connect your GitHub account to continue searching.");
+      }
+    }
+    throw new Error(`GitHub search failed (${res.status}): ${res.statusText}`);
+  }
+
+  const data = await safeJson<{ total_count: number; items: GitHubRepo[] }>(res, "repository search");
+  return {
+    total_count: Number(data?.total_count) || 0,
+    items: Array.isArray(data?.items) ? data.items : [],
+  };
+}
+
 export async function getRepository(
   owner: string,
   repo: string,
