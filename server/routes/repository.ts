@@ -5,7 +5,8 @@ import { getAdminFirestore } from "../auth.js";
 import { loadProjectContext, listUserProjectsViaRest } from "../projectContext.js";
 
 import { getGitHubToken, getPersistentGitHubToken } from "../githubSession.js";
-import { parseGitHubRepo, getCompleteRepositoryTree } from "../services/githubService.js";
+import { parseGitHubRepo, getCompleteRepositoryTree, getGitBlobContent } from "../services/githubService.js";
+import { analyzeSource } from "../services/codeAnalyzer.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import pathModule from "node:path";
@@ -811,6 +812,134 @@ repositoryRouter.get("/search", async (req: AuthenticatedRequest, res) => {
     const { body } = await githubFetch(`/search/code?q=${encodeURIComponent(`${q} repo:${parsed.owner}/${parsed.repo}`)}&per_page=30`, token);
     return res.json({ results: Array.isArray(body?.items) ? body.items : [], total: Number(body?.total_count || 0) });
   } catch (error) { return handleRouteError(res, error); }
+});
+
+repositoryRouter.post("/compare-architecture", async (req: AuthenticatedRequest, res) => {
+  try {
+    const { parsed, token } = await getProjectRepository(req, String(req.body?.projectId || ""));
+    const base = typeof req.body?.base === "string" ? req.body.base.trim() : "";
+    const head = typeof req.body?.head === "string" ? req.body.head.trim() : "";
+    if (!base || !head) return res.status(400).json({ error: "Both base and head refs are required." });
+    if (base === head) return res.status(400).json({ error: "Choose two different refs to compare." });
+    if (base.length > 255 || head.length > 255 || base.startsWith("-") || head.startsWith("-")) {
+      return res.status(400).json({ error: "Invalid Git reference." });
+    }
+
+    const [baseTree, headTree] = await Promise.all([
+      getCompleteRepositoryTree(parsed.owner, parsed.repo, base, token),
+      getCompleteRepositoryTree(parsed.owner, parsed.repo, head, token),
+    ]);
+    const baseFiles = new Map(baseTree.tree.filter((item) => item.type === "blob").map((item) => [item.path, item]));
+    const headFiles = new Map(headTree.tree.filter((item) => item.type === "blob").map((item) => [item.path, item]));
+    const allPaths = new Set([...baseFiles.keys(), ...headFiles.keys()]);
+    const sourceExtensions = /\.(tsx?|jsx?|py|go|rs)$/i;
+    const candidates = [...allPaths]
+      .filter((filePath) => sourceExtensions.test(filePath) && !isSensitiveFilePath(filePath))
+      .filter((filePath) => {
+        const size = Number(headFiles.get(filePath)?.size ?? baseFiles.get(filePath)?.size ?? 0);
+        return size <= 500_000;
+      })
+      .sort()
+      .slice(0, 300);
+    const truncated = [...allPaths].filter((filePath) => sourceExtensions.test(filePath) && !isSensitiveFilePath(filePath)).length > candidates.length;
+
+    const baseAnalysis = new Map<string, ReturnType<typeof analyzeSource>>();
+    const headAnalysis = new Map<string, ReturnType<typeof analyzeSource>>();
+    const work: Array<Promise<void>> = [];
+    let active = 0;
+    let cursor = 0;
+    const queue = candidates.flatMap((filePath) => [
+      { filePath, side: "base" as const, sha: baseFiles.get(filePath)?.sha },
+      { filePath, side: "head" as const, sha: headFiles.get(filePath)?.sha },
+    ]);
+
+    const runWorker = async () => {
+      while (cursor < queue.length) {
+        const item = queue[cursor++];
+        if (!item.sha) continue;
+        try {
+          const blob = await getGitBlobContent(parsed.owner, parsed.repo, item.sha, token);
+          if (!blob || blob.content.length > 500_000) continue;
+          const analysis = analyzeSource(item.filePath, blob.content);
+          if (item.side === "base") baseAnalysis.set(item.filePath, analysis);
+          else headAnalysis.set(item.filePath, analysis);
+        } catch {
+          // Keep the comparison partial and disclose the uninspected files.
+        }
+      }
+    };
+    for (let worker = 0; worker < 6; worker++) work.push(runWorker());
+    await Promise.all(work);
+
+    const files = [...allPaths].map((filePath) => {
+      const before = baseFiles.get(filePath);
+      const after = headFiles.get(filePath);
+      const status = !before ? "added" : !after ? "removed" : before.sha !== after.sha ? "modified" : "unchanged";
+      if (status === "unchanged") return null;
+      const oldAnalysis = baseAnalysis.get(filePath);
+      const newAnalysis = headAnalysis.get(filePath);
+      const oldSymbols = new Map((oldAnalysis?.symbols || []).map((symbol) => [`${symbol.type}:${symbol.name}`, symbol]));
+      const newSymbols = new Map((newAnalysis?.symbols || []).map((symbol) => [`${symbol.type}:${symbol.name}`, symbol]));
+      const addedSymbols = [...newSymbols.keys()].filter((key) => !oldSymbols.has(key)).map((key) => newSymbols.get(key)!);
+      const removedSymbols = [...oldSymbols.keys()].filter((key) => !newSymbols.has(key)).map((key) => oldSymbols.get(key)!);
+      const modifiedSymbols = [...newSymbols.keys()].filter((key) => oldSymbols.has(key) && JSON.stringify(oldSymbols.get(key)) !== JSON.stringify(newSymbols.get(key)))
+        .map((key) => ({ before: oldSymbols.get(key), after: newSymbols.get(key) }));
+      const oldImports = new Set((oldAnalysis?.imports || []).map((item) => item.specifier));
+      const newImports = new Set((newAnalysis?.imports || []).map((item) => item.specifier));
+      return {
+        path: filePath,
+        status,
+        baseSha: before?.sha || null,
+        headSha: after?.sha || null,
+        symbols: { added: addedSymbols, removed: removedSymbols, modified: modifiedSymbols },
+        dependencies: {
+          added: [...newImports].filter((item) => !oldImports.has(item)),
+          removed: [...oldImports].filter((item) => !newImports.has(item)),
+        },
+        parser: newAnalysis?.parser || oldAnalysis?.parser || null,
+        certainty: newAnalysis?.certainty || oldAnalysis?.certainty || "UNKNOWN",
+      };
+    }).filter(Boolean);
+
+    const addedFiles = files.filter((file: any) => file.status === "added");
+    const removedFiles = files.filter((file: any) => file.status === "removed");
+    const modifiedFiles = files.filter((file: any) => file.status === "modified");
+    const symbolAdded = files.reduce((sum: number, file: any) => sum + file.symbols.added.length, 0);
+    const symbolRemoved = files.reduce((sum: number, file: any) => sum + file.symbols.removed.length, 0);
+    const dependencyAdded = files.reduce((sum: number, file: any) => sum + file.dependencies.added.length, 0);
+    const dependencyRemoved = files.reduce((sum: number, file: any) => sum + file.dependencies.removed.length, 0);
+
+    return res.json({
+      comparison: {
+        repository: `${parsed.owner}/${parsed.repo}`,
+        base: { ref: base, treeSha: baseTree.sha, truncated: baseTree.truncated },
+        head: { ref: head, treeSha: headTree.sha, truncated: headTree.truncated },
+        completeness: truncated ? "partial" : "bounded",
+        sourceFilesConsidered: candidates.length,
+        sourceFilesAnalyzed: new Set([...baseAnalysis.keys(), ...headAnalysis.keys()]).size,
+        summary: {
+          filesChanged: files.length,
+          filesAdded: addedFiles.length,
+          filesRemoved: removedFiles.length,
+          filesModified: modifiedFiles.length,
+          symbolsAdded: symbolAdded,
+          symbolsRemoved: symbolRemoved,
+          dependenciesAdded: dependencyAdded,
+          dependenciesRemoved: dependencyRemoved,
+        },
+        files: files.slice(0, 200),
+        limitations: [
+          "AST comparison is limited to supported source file extensions and files up to 500 KB.",
+          "Symbol line movement is reported as a modification; semantic behavior is not inferred.",
+          ...(truncated ? ["The repository exceeds the 300-file AST comparison cap; results are partial."] : []),
+          ...(baseTree.truncated || headTree.truncated ? ["GitHub returned a truncated tree; directory fallback may not include every path."] : []),
+        ],
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    return handleRouteError(res, error);
+  }
 });
 
 repositoryRouter.get("/compare", async (req: AuthenticatedRequest, res) => {
