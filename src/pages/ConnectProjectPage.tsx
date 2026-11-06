@@ -32,11 +32,11 @@ type Source = "profile" | "search";
 
 export function ConnectProjectPage({ onBack }: ConnectProjectPageProps) {
   const { connectRepository } = useProject();
-  const { refreshGitHubSession } = useAuth();
+  const { connectGitHub, isGitHubConnected, refreshGitHubSession } = useAuth();
   const { language } = useLanguage();
   const isPt = language === "pt";
 
-  const [source, setSource] = useState<Source>("profile");
+  const [source, setSource] = useState<Source>("search");
   const [profile, setProfile] = useState<GitHubUser | null>(null);
   const [profileRepos, setProfileRepos] = useState<GitHubRepositoryItem[]>([]);
   const [profileFilter, setProfileFilter] = useState("");
@@ -46,9 +46,10 @@ export function ConnectProjectPage({ onBack }: ConnectProjectPageProps) {
   const profileScrollRef = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GitHubRepositoryItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [connecting, setConnecting] = useState<string | null>(null);
+  const [connectingGitHub, setConnectingGitHub] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const filteredProfileRepos = useMemo(() => {
@@ -79,8 +80,28 @@ export function ConnectProjectPage({ onBack }: ConnectProjectPageProps) {
   };
 
   useEffect(() => {
+    if (source !== "profile") return;
+    if (!isGitHubConnected) {
+      setLoading(false);
+      setProfile(null);
+      setProfileRepos([]);
+      return;
+    }
     void loadProfileRepos();
-  }, []);
+  }, [source, isGitHubConnected]);
+
+  const handleConnectGitHub = async () => {
+    setConnectingGitHub(true);
+    setError(null);
+    try {
+      await connectGitHub();
+      await loadProfileRepos(true);
+    } catch (err: any) {
+      setError(err?.message || (isPt ? "Não foi possível conectar sua conta GitHub." : "Could not connect your GitHub account."));
+    } finally {
+      setConnectingGitHub(false);
+    }
+  };
 
   const loadMoreProfileRepos = async () => {
     if (source !== "profile" || loading || loadingMoreProfile || !profileHasNext) return;
@@ -176,13 +197,20 @@ export function ConnectProjectPage({ onBack }: ConnectProjectPageProps) {
         <section className="min-w-0 rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden bg-white/70 dark:bg-zinc-950/40">
           <div className="p-4 sm:p-5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/50">
             {source === "profile" ? (
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  {profile?.avatar_url ? <img src={profile.avatar_url} alt="" className="w-9 h-9 rounded-full border border-zinc-200 dark:border-zinc-700" /> : <Github className="w-5 h-5 text-zinc-400" />}
-                  <div className="min-w-0"><div className="text-sm font-semibold truncate">{profile ? `@${profile.login}` : (isPt ? "Seu perfil GitHub" : "Your GitHub profile")}</div><div className="text-[11px] text-zinc-400">{profileRepos.length} {isPt ? "carregados" : "loaded"}{profileHasNext ? " · mais disponíveis" : ""}</div></div>
+              isGitHubConnected ? (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {profile?.avatar_url ? <img src={profile.avatar_url} alt="" className="w-9 h-9 rounded-full border border-zinc-200 dark:border-zinc-700" /> : <Github className="w-5 h-5 text-zinc-400" />}
+                    <div className="min-w-0"><div className="text-sm font-semibold truncate">{profile ? `@${profile.login}` : (isPt ? "Seu perfil GitHub" : "Your GitHub profile")}</div><div className="text-[11px] text-zinc-400">{profileRepos.length} {isPt ? "carregados" : "loaded"}{profileHasNext ? " · mais disponíveis" : ""}</div></div>
+                  </div>
+                  <div className="relative sm:w-64"><Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-zinc-400" /><input value={profileFilter} onChange={(e) => setProfileFilter(e.target.value)} placeholder={isPt ? "Filtrar seus repositórios" : "Filter your repositories"} className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 pl-9 pr-3 py-2 text-xs outline-none focus:border-sky-400" /></div>
                 </div>
-                <div className="relative sm:w-64"><Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-zinc-400" /><input value={profileFilter} onChange={(e) => setProfileFilter(e.target.value)} placeholder={isPt ? "Filtrar seus repositórios" : "Filter your repositories"} className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 pl-9 pr-3 py-2 text-xs outline-none focus:border-sky-400" /></div>
-              </div>
+              ) : (
+                <div className="flex items-center justify-between gap-4">
+                  <div><div className="text-sm font-semibold">{isPt ? "Conecte sua conta GitHub" : "Connect your GitHub account"}</div><p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">{isPt ? "A conexão é opcional e serve apenas para listar seus repositórios e acessar projetos privados." : "This optional connection lets AFTER list your repositories and access private projects."}</p></div>
+                  <button type="button" onClick={() => void handleConnectGitHub()} disabled={connectingGitHub} className="shrink-0 inline-flex items-center gap-2 rounded-xl bg-zinc-900 dark:bg-zinc-100 px-3 py-2.5 text-xs font-medium text-white dark:text-zinc-900 disabled:opacity-50"><Github className="w-3.5 h-3.5"/>{connectingGitHub ? (isPt ? "Conectando..." : "Connecting...") : (isPt ? "Conectar GitHub" : "Connect GitHub")}</button>
+                </div>
+              )
             ) : (
               <form onSubmit={(event) => { event.preventDefault(); void runSearch(); }} className="flex flex-col sm:flex-row gap-2">
                 <div className="relative flex-1"><Search className="absolute left-3 top-3 w-4 h-4 text-zinc-400" /><input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={isPt ? "Pesquisar usuário ou repositório no GitHub…" : "Search a GitHub user or repository…"} className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 pl-10 pr-3 py-2.5 text-sm outline-none focus:border-sky-400" /></div>
@@ -192,7 +220,14 @@ export function ConnectProjectPage({ onBack }: ConnectProjectPageProps) {
           </div>
 
           {error && <div className="m-4 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/20 px-3 py-2.5 text-xs text-rose-700 dark:text-rose-300">{error}</div>}
-          {loading && source === "profile" ? <div className="p-12 text-center text-xs text-zinc-400"><RefreshCw className="w-4 h-4 animate-spin mx-auto mb-2" />{isPt ? "Carregando seus repositórios…" : "Loading your repositories…"}</div> : (
+          {source === "profile" && !isGitHubConnected ? (
+            <div className="p-12 text-center">
+              <Github className="w-8 h-8 mx-auto mb-3 text-zinc-400" />
+              <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{isPt ? "Seu GitHub ainda não está conectado" : "Your GitHub is not connected yet"}</p>
+              <p className="mx-auto mt-2 max-w-sm text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{isPt ? "Você pode pesquisar repositórios públicos sem conectar nada. Para listar os seus próprios projetos ou acessar repositórios privados, autorize o GitHub." : "You can search public repositories without connecting anything. To list your own projects or access private repositories, authorize GitHub."}</p>
+              <button type="button" onClick={() => void handleConnectGitHub()} disabled={connectingGitHub} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-zinc-900 dark:bg-zinc-100 px-4 py-2.5 text-xs font-medium text-white dark:text-zinc-900 disabled:opacity-50"><Github className="w-3.5 h-3.5"/>{connectingGitHub ? (isPt ? "Aguardando autorização..." : "Waiting for authorization...") : (isPt ? "Conectar conta GitHub" : "Connect GitHub account")}<ArrowRight className="w-3.5 h-3.5"/></button>
+            </div>
+          ) : loading && source === "profile" ? <div className="p-12 text-center text-xs text-zinc-400"><RefreshCw className="w-4 h-4 animate-spin mx-auto mb-2" />{isPt ? "Carregando seus repositórios…" : "Loading your repositories…"}</div> : (
             <div ref={profileScrollRef} className={`p-4 grid grid-cols-1 md:grid-cols-2 gap-3 ${source === "profile" ? "max-h-[68vh] overflow-y-auto overscroll-contain" : ""}`}>
               {repos.map((repo) => (
                 <article key={repo.id || repo.full_name} className="group rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 hover:border-sky-400 dark:hover:border-sky-800 hover:shadow-lg hover:shadow-sky-950/5 transition-all">
