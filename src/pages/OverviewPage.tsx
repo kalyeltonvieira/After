@@ -18,7 +18,6 @@ import { useProject } from "../context/ProjectContext";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { StatusBadge, SeverityBadge } from "../components/StatusBadge";
-import { EmptyState } from "../components/EmptyState";
 import { DashboardWidget } from "../components/DashboardWidget";
 import { ProjectStatistics } from "../components/ProjectStatistics";
 
