@@ -101,7 +101,7 @@ function MainApp() {
   }
 
   return (
-    <div className="after-surface min-h-screen bg-[#fafafa] dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col transition-colors selection:bg-zinc-900 selection:text-white dark:selection:bg-zinc-100 dark:selection:text-zinc-900">
+    <div className="after-surface h-screen max-h-screen overflow-hidden bg-[#fafafa] dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col transition-colors selection:bg-zinc-900 selection:text-white dark:selection:bg-zinc-100 dark:selection:text-zinc-900">
       {/* Top Navbar */}
       <Navbar
         onOpenCommandPalette={() => setIsCmdPaletteOpen(true)}
@@ -123,7 +123,7 @@ function MainApp() {
         />
 
         {/* Dynamic Main View */}
-        <main className="min-w-0 flex-1 h-full overflow-y-auto overscroll-contain transition-[padding] duration-300 ease-out">
+        <main className="min-w-0 min-h-0 flex-1 h-full overflow-x-hidden overflow-y-auto overscroll-y-contain transition-[padding] duration-300 ease-out">
           <Suspense fallback={<div className="p-8 text-xs text-zinc-500 font-mono">Loading view…</div>}>
             <AnimatePresence mode="wait">
               <motion.div
@@ -132,7 +132,7 @@ function MainApp() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-              className="w-full h-full"
+              className="w-full min-h-full"
             >
               {currentView === "overview" && (
                 <OverviewPage
