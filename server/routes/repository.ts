@@ -905,6 +905,7 @@ repositoryRouter.post("/compare-architecture", async (req: AuthenticatedRequest,
     const modifiedFiles = files.filter((file: any) => file.status === "modified");
     const symbolAdded = files.reduce((sum: number, file: any) => sum + file.symbols.added.length, 0);
     const symbolRemoved = files.reduce((sum: number, file: any) => sum + file.symbols.removed.length, 0);
+    const symbolModified = files.reduce((sum: number, file: any) => sum + file.symbols.modified.length, 0);
     const dependencyAdded = files.reduce((sum: number, file: any) => sum + file.dependencies.added.length, 0);
     const dependencyRemoved = files.reduce((sum: number, file: any) => sum + file.dependencies.removed.length, 0);
 
@@ -923,6 +924,7 @@ repositoryRouter.post("/compare-architecture", async (req: AuthenticatedRequest,
           filesModified: modifiedFiles.length,
           symbolsAdded: symbolAdded,
           symbolsRemoved: symbolRemoved,
+          symbolsModified: symbolModified,
           dependenciesAdded: dependencyAdded,
           dependenciesRemoved: dependencyRemoved,
         },
