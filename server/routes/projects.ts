@@ -22,6 +22,7 @@ import {
   linkRepositoryToAfter,
   getCompleteRepositoryTree,
   getGitBlobContent,
+  searchPublicRepositories,
 } from "../services/githubService.js";
 
 export const projectsRouter = Router();
@@ -154,6 +155,30 @@ projectsRouter.get("/github-repos", requireFirebaseUser, async (req: Authenticat
     return res.json({ repos });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
+  }
+});
+
+// Search public GitHub repositories
+projectsRouter.get("/github-search", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+  const q = String(req.query.q || "").trim();
+  if (!q) {
+    return res.json({ total_count: 0, items: [] });
+  }
+
+  const token = (await resolveGitHubToken(req, res)) || undefined;
+  const perPage = Math.min(Math.max(Number(req.query.per_page) || 20, 1), 50);
+  const page = Math.max(Number(req.query.page) || 1, 1);
+  const sort = req.query.sort === "forks" || req.query.sort === "updated" ? req.query.sort : "stars";
+
+  try {
+    const result = await searchPublicRepositories(q, token, {
+      per_page: perPage,
+      page,
+      sort,
+    });
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || "Failed to search GitHub repositories." });
   }
 });
 

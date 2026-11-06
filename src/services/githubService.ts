@@ -226,6 +226,35 @@ export async function listUserRepositories(forceFresh = false): Promise<GitHubRe
 }
 
 /**
+ * Search public repositories on GitHub
+ */
+export async function searchPublicRepositories(
+  query: string,
+  options?: { per_page?: number; page?: number; sort?: "stars" | "forks" | "updated" }
+): Promise<{ total_count: number; items: GitHubRepositoryItem[] }> {
+  const trimmed = query.trim();
+  if (!trimmed) return { total_count: 0, items: [] };
+
+  const params = new URLSearchParams({
+    q: trimmed,
+    ...(options?.sort ? { sort: options.sort } : {}),
+    ...(options?.page ? { page: String(options.page) } : {}),
+    ...(options?.per_page ? { per_page: String(options.per_page) } : {}),
+  });
+
+  const res = await githubRequest(`/api/projects/github-search?${params.toString()}`);
+  const data = await res.json();
+  if (!res.ok || data.error) {
+    throw new Error(data.error || "Failed to search public repositories.");
+  }
+
+  return {
+    total_count: Number(data.total_count) || 0,
+    items: Array.isArray(data.items) ? data.items : [],
+  };
+}
+
+/**
  * List branches for a specific repository
  */
 export async function listRepositoryBranches(

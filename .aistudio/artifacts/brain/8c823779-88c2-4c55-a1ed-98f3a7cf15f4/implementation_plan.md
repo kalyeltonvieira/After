@@ -1,146 +1,123 @@
-# AFTER Platform Mega-Overhaul: Repository Explorer, Code Graph & Architecture Intelligence
+# AFTER UI/UX Overhaul & Premium Engineering Architecture
 
-Comprehensive engineering blueprint to elevate the AFTER platform into an enterprise-grade software evolution and repository architecture suite. This plan eliminates client-side permission errors, implements a complete repository file tree and code viewer, expands the interactive Product Graph with real file dependencies, and hardens continuous GitHub telemetry with hybrid fallbacks.
+Transform AFTER into a Swiss-minimalist, high-performance software intelligence console inspired by Linear and Vercel. Fix the broken theme switcher, implement fluid Motion transitions, and add key architectural features: Visual Architecture Comparator, Executive Integrity Report Export, and Advanced Public Repository Filters.
+
+---
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following decisions were confirmed during interactive clarification and form the foundation of this overhaul:
-
-- **Confirmed Decision 1: Hybrid GitHub Connectivity**: When personal GitHub tokens are absent or rate-limited, the repository engine automatically leverages unauthenticated public GitHub APIs and gracefully falls back to rich, evidence-grounded repository data (branches, commit history, file tree, contributors, and releases) so exploration is never blocked.
-- **Confirmed Decision 2: Seamless Client Resilience**: Client-side Firestore operations and listeners employ automatic local caching and background retry. Ambient authorization drops or `7 PERMISSION_DENIED` errors are caught gracefully, displaying offline cached state instead of blanking out or interrupting the user.
-- **Confirmed Decision 3: Priority Focus on Repository Explorer & Code Graph**: The primary investment targets an interactive, high-density file tree browser, syntax-highlighted code viewer, git blame inspector, and dynamic file-to-component architecture graph linkage.
+> The following directions have been confirmed based on user feedback:
+> - **Visual Direction**: Clean Swiss minimalist (Linear / Vercel design system), featuring crisp monochromatic typography, 1px subtle hairline borders, and zero-pill metadata discipline.
+> - **Motion Experience**: Fluid page transitions (`AnimatePresence` with custom spring curves), layout animations on tab switches, and hover micro-interactions.
+> - **Theme Mode Fix**: Configure Tailwind v4 `@custom-variant dark (&:where(.dark, .dark *));` to ensure immediate and accurate dark/light/system mode switching without split-brain contrast issues.
+> - **Key Priority Features**:
+>   1. Visual Architecture Comparator between branches or tags (`/api/repository/compare-architecture`).
+>   2. Executive Software Integrity & Rationale Report Export (printable/PDF view + JSON download).
+>   3. Advanced Filters for GitHub Public Discovery (stars threshold, language, and license).
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: AFTER provides continuous architectural drift telemetry, software memory tracking, and code graph intelligence. It lets software engineers, architects, and engineering managers inspect repository file hierarchies, explore dependency graphs, analyze commit rationals, monitor forensic risk insights, and run architecture experiments without friction.
-- **Target Audience**: Staff software engineers, solution architects, tech leads, and technical auditors navigating complex codebases, refactorings, and institutional knowledge preservation.
-- **Key Value**: Replaces fragmented Git command-line digging and static README diagrams with a live, continuous institutional memory ledger and interactive codebase topograph.
+- **What It Does**: Elevates AFTER from a functional Git tool into an executive-grade software intelligence command center. Users can inspect repository drift, observe real-time AST graphs, compare component evolutions between branches, and export architectural audit reports.
+- **Target Audience**: Software architects, principal engineers, tech leads, and development teams requiring auditable institutional rationale and architecture tracking.
+- **Key Value**: Instant clarity on software drift, why architectural decisions were made, and zero-confusion theme consistency across all views.
 
 ---
 
 ## 2. User Experience & Visual Design
 
-### Key User Flows
+### Visual Identity & Theme
+- **Aesthetic Direction**: Minimalist Swiss precision (Linear & Vercel). High-density information design with generous whitespace rhythm. No neon clutter, no arbitrary scoreboards, no pill badge clutter.
+- **Color System (60-30-10)**:
+  - *Light Mode*: Canvas `#FAFAFA` (zinc-50), surfaces `#FFFFFF` with `border-zinc-200/80`, text `zinc-950` / `zinc-600`.
+  - *Dark Mode*: Canvas `#09090B` (zinc-950), surfaces `#121215` with `border-zinc-800/80`, text `zinc-50` / `zinc-400`.
+  - *Accents (10%)*: Monochromatic high-contrast buttons (`bg-zinc-900 text-white` / `dark:bg-zinc-100 dark:text-zinc-900`) with emerald (`#10B981`) for nominal/known status and amber (`#F59E0B`) for warnings.
+- **Typography & Tabular Numerals**:
+  - Headings: Crisp semi-bold sans with balanced measure (`text-wrap: balance`).
+  - Numbers & Metrics: Strictly monospace tabular figures (`font-mono tabular-nums`).
+  - Metadata: Unboxed text separated by quiet interpuncts (`·`).
 
-1. **Repository Exploration Flow (`/repository`)**:
-   - The user selects a branch from the branch switcher.
-   - The left pane displays a responsive, collapsable directory tree with folder icons, file size badges, and search filter (`Search files…`).
-   - Clicking any file opens the high-performance Code Viewer with line numbering, file metadata (extension, LOC, size), blame view, and quick navigation to the Product Graph node representing that file.
-   - Tabbed workspace switcher seamlessly toggles between **Code**, **Branches**, **Commits**, **Pull Requests**, **Issues**, **Releases**, **Tags**, **Contributors**, and **Activity**.
-
-2. **Product Graph Inspection Flow (`/graph`)**:
-   - Interactive force-directed canvas displaying modules, components, and dependency links.
-   - Selecting a file node in the sidebar or clicking in the graph immediately highlights incoming/outgoing dependency edges and opens the deep-inspection drawer with AST rationale, cyclomatic metrics, and why-rationale notes.
-
-3. **Software Memory & Insights Flow (`/memory`, `/insights`)**:
-   - Forensic scanners correlate git commits and PRs with architectural changes.
-   - Actionable drift radar categorizes risk by impact (Critical, High, Medium, Low) with automated fix suggestions.
-
-### Visual Identity & Theme Tokens
-
-- **Aesthetic Direction**: Ultra-clean, high-density developer console inspired by linear engineering tools and modern IDEs. Flat single-elevation surfaces with hairline borders.
-- **Typography & Formatting**:
-  - Display & Headings: `Plus Jakarta Sans` / `Outfit` with crisp tracking (`tracking-tight`).
-  - Body & Labels: Clean unboxed metadata with subtle dot separators (`·`).
-  - Code & Telemetry: `JetBrains Mono` / `font-mono` with strict tabular numerals (`tabular-nums`) across all LOC counts, commit counts, and timestamps.
-- **Zero-Pill Discipline**: Eliminates static candy capsules. Status indicators use subtle semantic dot indicators and quiet text (`text-emerald-500`, `text-amber-500`, `text-rose-500`) with high-contrast WCAG AA compliance.
-- **Color System**:
-  - Surface Light: `#FFFFFF` and `#F8FAFC` with `#E2E8F0` hairline borders.
-  - Surface Dark: `#09090B` and `#18181B` with `#27272A` borders.
-  - Accent: High-contrast zinc/indigo telemetry indicators.
+### Motion & Interactions
+- **Page & View Transitions**: Custom easing curve `cubic-bezier(0.16, 1, 0.3, 1)` with subtle vertical drift (`y: 6px → 0px`, duration `180ms`).
+- **Interactive State Feedback**: Active tabs use Motion `layoutId="activeTabPill"` for seamless sliding highlights.
+- **Skeleton Shimmer**: Replaces static loading spinners with geometry-matched skeleton placeholders.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-### Decision 1: Client-Side Firestore Fallback & State Mirroring
-- **Chosen Approach**: Wrap client-side Firestore `onSnapshot` and `fetch` calls with an intelligent local memory cache (`localStorage` + in-memory store).
-- **Why**: Prevents UI crash loops or `7 PERMISSION_DENIED` curtains when running in restricted iframe sandboxes or when network tokens expire.
-- **Trade-off**: In offline mode, mutations are queued locally and synchronized once connectivity resumes.
-
-### Decision 2: High-Performance Code Viewer with Virtualization & Search
-- **Chosen Approach**: Built-in tree filter and lightweight line-by-line syntax renderer with blame annotations.
-- **Why**: Instant file switching without heavy external web-worker dependencies that could fail in strict CSP environments.
-
-### Decision 3: Graph-to-Code Bi-Directional Synchronization
-- **Chosen Approach**: Clicking a file in the Repository explorer offers a "View in Graph" action, and selecting a graph node offers "Open File in Code Viewer".
-- **Why**: Creates unified mental models linking architectural abstractions directly to concrete implementation lines.
-
----
-
-## 4. Technical Architecture & Data Strategy
-
-### System Component Diagram
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                          AFTER Frontend (Vite + React)                 │
-├───────────────────┬───────────────────┬────────────────────────────────┤
-│   Navigation &    │   ProjectContext  │         Active Views           │
-│   Layout Shell    │   & Local Cache   │  ┌───────────────────────────┐ │
-│  ┌─────────────┐  │  ┌──────────────┐ │  │ Overview & Stats Widget   │ │
-│  │   Sidebar   │──┼─>│ Local Storage│ │  ├───────────────────────────┤ │
-│  │   Navbar    │  │  │ State Cache  │─┼─>│ Repository (Tree + Code) │ │
-│  │ Command Bar │  │  └──────┬───────┘ │  ├───────────────────────────┤ │
-│  └─────────────┘  │         │         │  │ Product Graph & Impact    │ │
-│                   │         │         │  ├───────────────────────────┤ │
-│                   │         │         │  │ Software Memory & Radar   │ │
-└───────────────────┴─────────┼─────────┴──┴───────────────────────────┘
-                              │
-                    REST API  │ Bearer Token
-                              ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                        AFTER Express Backend Engine                    │
-├─────────────────────────┬──────────────────────────────┬───────────────┤
-│    /api/projects        │      /api/repository         │  /api/gemini  │
-│  - Statistics & LOC     │  - Tree, Blobs & Blame       │  - Architecture│
-│  - Analysis Enqueue     │  - Commits, PRs & Releases   │    Rationale  │
-│  - Impact Computation   │  - Contributors & Branches   │  - Forensic AI│
-└────────────┬────────────┴──────────────┬───────────────┴───────────────┘
-             │                           │
-   Fallback  │ User ID Token             │ GitHub OAuth / Public API
-             ▼                           ▼
-┌─────────────────────────┐ ┌────────────────────────────────────────────┐
-│ Firestore REST API      │ │ GitHub REST API (v3 / 2022-11-28)          │
-│ - Security Rules Engine │ │ - Hybrid Fallback Dataset for Offline Demos│
-└─────────────────────────┘ └────────────────────────────────────────────┘
-```
-
-### Component & State Transition Mapping
-
-| Component | Trigger / User Action | State Transition & Handler |
-| :--- | :--- | :--- |
-| `RepositoryPage` | Select branch from dropdown | Updates active branch; re-queries tree & commits via `/api/repository/tree?branch=...` |
-| `RepositoryPage` | Search file input typed | Filters tree rows instantly with path match highlights; clears empty-file indicator |
-| `RepositoryPage` | Click file in tree | Fetches blob via `/api/repository/file`, renders syntax lines, enables blame toggle |
-| `ProductGraphPage` | Click architectural node | Centers node, computes incoming/outgoing dependency edges, opens Why rationale drawer |
-| `ProjectStatistics` | Auto-mount / Click refresh | Calls `/api/projects?projectId=...`, computes LOC, commits, and active authors |
-| `ProjectContext` | Firestore connection error | Catches error, switches silently to local cached project state with zero UI disruption |
+1. **Tailwind v4 Theme Engine Fix**:
+   - *Chosen Approach*: Add `@custom-variant dark (&:where(.dark, .dark *));` to `src/index.css` and audit all top-level wrappers to ensure `dark:*` pairs are active.
+   - *Why*: In Tailwind v4, dark variants default to media queries unless the class selector variant is explicitly registered.
+2. **Architecture Comparator**:
+   - *Chosen Approach*: Compare AST nodes, exported symbols, and dependency edges between two candidate refs (e.g. `main` vs `feat/branch`), highlighting added, removed, and modified architectural components.
+   - *Why*: Allows teams to see structural drift before merging PRs.
+3. **Executive Software Health & Integrity Report**:
+   - *Chosen Approach*: Client-rendered, print-optimized document view with standard browser print dialog (`window.print()`) plus structured `.json` audit ledger download.
+   - *Why*: Zero external heavy PDF libraries, instantaneous generation, and pristine typography for executive sharing.
+4. **Advanced Discovery Filters**:
+   - *Chosen Approach*: Expand `searchPublicRepositories` to accept language dropdown (`TypeScript`, `Python`, `Go`, `Rust`), minimum stars filter (`1k+`, `5k+`, `10k+`), and license filter.
+   - *Why*: Turns repository discovery into an intentional research workflow.
 
 ---
 
-## Step-by-Step Implementation Sequence
+## 4. Technical Architecture & Component Flow
 
-1. **Client Firestore Error Boundary & Local Cache Hardening**:
-   - Update `src/context/ProjectContext.tsx` to wrap listeners with fallback error catchers and persist active project state to `localStorage`.
-   - Prevent unhandled `PERMISSION_DENIED` popup alerts from bubbling to the UI.
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Top Navigation Bar                       │
+│  [AFTER Brand] — [Breadcrumbs] — [Theme Toggle | Profile]   │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+            ┌──────────────────┴──────────────────┐
+            ▼                                     ▼
+ ┌──────────────────────┐             ┌──────────────────────┐
+ │    Sidebar Nav       │             │   Main Content Area  │
+ │  - Overview          │             │  (Motion Transition) │
+ │  - Projects / Search │             └──────────┬───────────┘
+ │  - Repository (Tree) │                        │
+ │  - Architecture Graph│       ┌────────────────┼────────────────┐
+ │  - Comparator (New)  │       ▼                ▼                ▼
+ │  - Executive Report  │  ┌──────────┐    ┌───────────┐    ┌───────────┐
+ │  - Software Memory   │  │ Projects │    │ Compare   │    │ Executive │
+ └──────────────────────┘  │ Discovery│    │ Branches  │    │ Report    │
+                           └──────────┘    └───────────┘    └───────────┘
+                                │                │                │
+                                └────────────────┼────────────────┘
+                                                 │
+                                                 ▼
+                                   ┌───────────────────────────┐
+                                   │   Express Backend Routes  │
+                                   │  - /github-search (params)│
+                                   │  - /compare-architecture  │
+                                   │  - /impact-analysis       │
+                                   └───────────────────────────┘
+```
 
-2. **Repository Explorer & Code Viewer Overhaul**:
-   - Enhance `src/pages/RepositoryPage.tsx` with high-density file tree explorer, search filtering, and robust empty-state handling.
-   - Upgrade Code Viewer with syntax formatting, line numbers, line selection, and inline blame badges.
-   - Complete sub-views for **Branches**, **Commits**, **Pull Requests**, **Issues**, **Releases**, **Tags**, and **Contributors**.
+---
 
-3. **Backend Repository Route & Hybrid Fallback Expansion**:
-   - Harden `server/routes/repository.ts` with comprehensive sample tree, commits, and file blob generators for repositories without token access.
-   - Ensure `/api/repository/tree`, `/api/repository/file`, and `/api/repository/commits` never return blank or failed screens.
+## 5. Step-by-Step Implementation Plan
 
-4. **Product Graph & Memory Ledger Polish**:
-   - Enhance `src/pages/ProductGraphPage.tsx` with direct node search, file-path jump, and direct integration with the repository tree.
-   - Polish `OverviewPage` and `TimelinePage` ensuring seamless bilingual telemetry navigation across all views.
+### Step 1: Fix Dark / Light / System Theme Architecture
+- In `src/index.css`: Add `@custom-variant dark (&:where(.dark, .dark *));` below `@import "tailwindcss";`.
+- Audit `src/context/ThemeContext.tsx` and verify `document.documentElement.classList.add/remove("dark")` applies instantly across all components.
+- In `Navbar.tsx` and `SettingsPage.tsx`: Ensure theme toggle triggers smooth view transitions and displays current state accurately.
 
-5. **Compilation, Verification & dev server validation**:
-   - Execute combined `compile_applet` and `lint_applet` to guarantee zero TypeScript or syntax regressions.
-   - Validate live server response on port 3000.
+### Step 2: Implement Advanced Discovery Filters in `ProjectsSearchBar.tsx`
+- Add filter controls: Star thresholds (`All`, `>1,000`, `>5,000`, `>20,000`), Languages (`All`, `TypeScript`, `JavaScript`, `Python`, `Go`, `Rust`), and sorting (`stars`, `forks`, `updated`).
+- Pass filters to `/api/projects/github-search` and display refined metadata cards.
+
+### Step 3: Implement Visual Architecture Comparator View (`ArchitectureCompareModal.tsx` & endpoint)
+- Create backend endpoint `POST /api/repository/compare-architecture`: Compares AST nodes, file changes, and exported components between `base` ref and `head` ref.
+- Create UI modal/view with side-by-side diff highlighting added nodes, removed exports, and dependency graph divergence.
+
+### Step 4: Implement Executive Software Health Report Modal (`ExecutiveReportModal.tsx`)
+- Generates an executive summary of the repository: total AST components, dependency edges, security posture, author breakdown, and known vs inferred rationale ledger.
+- Provides one-click Print / Save as PDF and Export JSON.
+
+### Step 5: Premium Motion & Polish Across Views
+- Enhance `AnimatePresence` and spring transitions on tab switches.
+- Replace remaining spinners with subtle shimmer skeleton lines.
+- Validate via `compile_applet`, `lint_applet`, and test runner.

@@ -21,6 +21,7 @@ import { useLanguage } from "../context/LanguageContext";
 import {
   getConnectedGitHubUser,
   listUserRepositories,
+  searchPublicRepositories,
   validateRepositoryInput,
   sanitizeGitHubRepo,
   GitHubUser,
@@ -54,6 +55,11 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
   const [userRepos, setUserRepos] = useState<GitHubRepositoryItem[]>([]);
   const [repoSearch, setRepoSearch] = useState("");
   const [needsReconnect, setNeedsReconnect] = useState(false);
+  const [repoSourceMode, setRepoSourceMode] = useState<"user" | "public">("user");
+  const [publicSearchQuery, setPublicSearchQuery] = useState("");
+  const [publicSearchResults, setPublicSearchResults] = useState<GitHubRepositoryItem[]>([]);
+  const [searchingPublic, setSearchingPublic] = useState(false);
+
   const filteredRepos = userRepos.filter((repo) => {
     const q = repoSearch.trim().toLowerCase();
     return !q || repo.full_name.toLowerCase().includes(q) || (repo.description || "").toLowerCase().includes(q);
@@ -155,6 +161,24 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
     setRepoInput(repo.full_name);
     setRepoBranch(repo.default_branch || "main");
     setError(null);
+  };
+
+  const handleSearchPublicRepos = async (queryText: string) => {
+    const q = queryText.trim();
+    if (!q || q.length < 2) {
+      setPublicSearchResults([]);
+      return;
+    }
+
+    setSearchingPublic(true);
+    try {
+      const res = await searchPublicRepositories(q, { per_page: 25, sort: "stars" });
+      setPublicSearchResults(res.items || []);
+    } catch (searchErr: any) {
+      console.warn("Public repository search failed:", searchErr?.message);
+    } finally {
+      setSearchingPublic(false);
+    }
   };
 
   const handleConnectGitHub = async (e: React.FormEvent) => {
@@ -351,65 +375,203 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
                 </div>
               )}
 
-              <div className="space-y-2 pt-1 border-t border-zinc-200/60 dark:border-zinc-800/60">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
-                    Repositórios disponíveis ({userRepos.length})
-                  </span>
+              <div className="space-y-3 pt-1 border-t border-zinc-200/60 dark:border-zinc-800/60">
+                {/* Switcher: User repos vs Public GitHub search */}
+                <div className="flex items-center gap-1 p-0.5 bg-zinc-200/70 dark:bg-zinc-800 rounded-lg text-[11px]">
                   <button
                     type="button"
-                    onClick={() => loadGitHubUserData(true)}
-                    className="text-[11px] text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 flex items-center space-x-1 cursor-pointer"
+                    onClick={() => setRepoSourceMode("user")}
+                    className={`flex-1 py-1 px-2 rounded-md font-medium transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
+                      repoSourceMode === "user"
+                        ? "bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs"
+                        : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                    }`}
                   >
-                    <RefreshCw className={`w-3 h-3 ${loadingRepos ? "animate-spin" : ""}`} />
-                    <span>{language === "pt" ? "Atualizar" : "Refresh"}</span>
+                    <span>{language === "pt" ? "Meus Repositórios" : "My Repositories"}</span>
+                    <span className="text-[10px] opacity-75">({userRepos.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRepoSourceMode("public");
+                      if (!publicSearchQuery && userRepos.length > 0) {
+                        const defaultQuery = userRepos[0]?.language || "react";
+                        setPublicSearchQuery(defaultQuery);
+                        void handleSearchPublicRepos(defaultQuery);
+                      }
+                    }}
+                    className={`flex-1 py-1 px-2 rounded-md font-medium transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
+                      repoSourceMode === "public"
+                        ? "bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs"
+                        : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                    }`}
+                  >
+                    <Search className="w-3 h-3" />
+                    <span>{language === "pt" ? "Buscar Repos Públicos" : "Search Public Repos"}</span>
                   </button>
                 </div>
 
-                {userRepos.length > 0 ? (
+                {repoSourceMode === "user" ? (
                   <>
-                    <div className="flex items-center gap-2 mb-2">
-                      <Search className="w-3 h-3 text-zinc-400" />
-                      <input
-                        value={repoSearch}
-                        onChange={(e) => setRepoSearch(e.target.value)}
-                        placeholder="Buscar repositórios…"
-                        className="flex-1 bg-transparent text-[11px] outline-none border-b border-zinc-200 dark:border-zinc-700 py-1"
-                      />
-                      <span className="text-[10px] text-zinc-400">{filteredRepos.length}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
+                        {language === "pt" ? "Repositórios da sua conta" : "Your account repositories"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => loadGitHubUserData(true)}
+                        className="text-[11px] text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 flex items-center space-x-1 cursor-pointer"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${loadingRepos ? "animate-spin" : ""}`} />
+                        <span>{language === "pt" ? "Atualizar" : "Refresh"}</span>
+                      </button>
                     </div>
-                    <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
-                      {filteredRepos.map((repo) => (
-                        <button
-                          key={repo.id}
-                          type="button"
-                          onClick={() => handleSelectRepo(repo)}
-                          className={`w-full p-2 text-left rounded-lg text-xs flex items-center justify-between border transition-all cursor-pointer ${repoInput === repo.full_name
-                            ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 border-transparent shadow-xs"
-                            : "bg-white dark:bg-zinc-800/80 border-zinc-200 dark:border-zinc-700/60 hover:border-zinc-400 dark:hover:border-zinc-600 text-zinc-800 dark:text-zinc-200"
-                          }`}
-                        >
-                          <div className="flex items-center space-x-2 truncate">
-                            {repo.private ? <Lock className="w-3 h-3 text-amber-500 shrink-0" /> : <Globe className="w-3 h-3 text-zinc-400 shrink-0" />}
-                            <span className="font-mono truncate">{repo.full_name}</span>
-                          </div>
-                          <div className="flex items-center space-x-2 shrink-0 text-[10px] opacity-70">
-                            {repo.language && <span>{repo.language}</span>}
-                            {repo.stargazers_count > 0 && (
-                              <span className="flex items-center space-x-0.5">
-                                <Star className="w-2.5 h-2.5 fill-current" />
-                                <span>{repo.stargazers_count}</span>
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
+
+                    {userRepos.length > 0 ? (
+                      <>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Search className="w-3 h-3 text-zinc-400" />
+                          <input
+                            value={repoSearch}
+                            onChange={(e) => setRepoSearch(e.target.value)}
+                            placeholder={language === "pt" ? "Filtrar seus repositórios…" : "Filter your repositories…"}
+                            className="flex-1 bg-transparent text-[11px] outline-none border-b border-zinc-200 dark:border-zinc-700 py-1"
+                          />
+                          <span className="text-[10px] text-zinc-400">{filteredRepos.length}</span>
+                        </div>
+                        <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                          {filteredRepos.map((repo) => (
+                            <button
+                              key={repo.id}
+                              type="button"
+                              onClick={() => handleSelectRepo(repo)}
+                              className={`w-full p-2 text-left rounded-lg text-xs flex items-center justify-between border transition-all cursor-pointer ${
+                                repoInput === repo.full_name
+                                  ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 border-transparent shadow-xs"
+                                  : "bg-white dark:bg-zinc-800/80 border-zinc-200 dark:border-zinc-700/60 hover:border-zinc-400 dark:hover:border-zinc-600 text-zinc-800 dark:text-zinc-200"
+                              }`}
+                            >
+                              <div className="flex items-center space-x-2 truncate">
+                                {repo.private ? <Lock className="w-3 h-3 text-amber-500 shrink-0" /> : <Globe className="w-3 h-3 text-zinc-400 shrink-0" />}
+                                <span className="font-mono truncate">{repo.full_name}</span>
+                              </div>
+                              <div className="flex items-center space-x-2 shrink-0 text-[10px] opacity-70">
+                                {repo.language && <span>{repo.language}</span>}
+                                {repo.stargazers_count > 0 && (
+                                  <span className="flex items-center space-x-0.5">
+                                    <Star className="w-2.5 h-2.5 fill-current" />
+                                    <span>{repo.stargazers_count}</span>
+                                  </span>
+                                )}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-[11px] text-zinc-400">
+                        {loadingRepos
+                          ? (language === "pt" ? "Carregando seus repositórios..." : "Loading your repositories...")
+                          : (language === "pt" ? "Nenhum repositório disponível para esta conta do GitHub." : "No repositories available for this GitHub account.")}
+                      </p>
+                    )}
                   </>
                 ) : (
-                  <p className="text-[11px] text-zinc-400">
-                    {loadingRepos ? "Carregando seus repositórios..." : "Nenhum repositório disponível para esta conta do GitHub."}
-                  </p>
+                  /* Public GitHub Repositories Search */
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-2.5" />
+                        <input
+                          type="text"
+                          value={publicSearchQuery}
+                          onChange={(e) => {
+                            setPublicSearchQuery(e.target.value);
+                            void handleSearchPublicRepos(e.target.value);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              void handleSearchPublicRepos(publicSearchQuery);
+                            }
+                          }}
+                          placeholder={language === "pt" ? "Pesquisar qualquer repositório público (ex: torvalds/linux, tailwindcss)..." : "Search any public repo (e.g. torvalds/linux, tailwindcss)..."}
+                          className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-zinc-250 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs text-zinc-900 dark:text-zinc-100 outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleSearchPublicRepos(publicSearchQuery)}
+                        disabled={searchingPublic || !publicSearchQuery.trim()}
+                        className="px-3 py-1.5 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 rounded-lg text-xs font-semibold hover:opacity-90 disabled:opacity-40 transition-opacity cursor-pointer shrink-0"
+                      >
+                        {searchingPublic ? (
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                        ) : (
+                          language === "pt" ? "Buscar" : "Search"
+                        )}
+                      </button>
+                    </div>
+
+                    {searchingPublic ? (
+                      <div className="py-6 flex flex-col items-center justify-center space-y-2 text-zinc-400 text-xs">
+                        <RefreshCw className="w-4 h-4 animate-spin text-zinc-500" />
+                        <span>{language === "pt" ? "Consultando repositórios no GitHub..." : "Querying repositories on GitHub..."}</span>
+                      </div>
+                    ) : publicSearchResults.length > 0 ? (
+                      <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1">
+                        {publicSearchResults.map((repo) => (
+                          <button
+                            key={repo.id}
+                            type="button"
+                            onClick={() => handleSelectRepo(repo)}
+                            className={`w-full p-2.5 text-left rounded-lg text-xs border transition-all cursor-pointer ${
+                              repoInput === repo.full_name
+                                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 border-transparent shadow-xs"
+                                : "bg-white dark:bg-zinc-800/80 border-zinc-200 dark:border-zinc-700/60 hover:border-zinc-400 dark:hover:border-zinc-600 text-zinc-800 dark:text-zinc-200"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <div className="flex items-center space-x-2 truncate">
+                                <Globe className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                                <span className="font-mono font-semibold truncate">{repo.full_name}</span>
+                              </div>
+                              <div className="flex items-center space-x-2 shrink-0 text-[10px] opacity-80">
+                                {repo.language && (
+                                  <span className="px-1.5 py-0.5 rounded-sm bg-zinc-100 dark:bg-zinc-700 font-medium">
+                                    {repo.language}
+                                  </span>
+                                )}
+                                {repo.stargazers_count > 0 && (
+                                  <span className="flex items-center space-x-0.5 text-amber-500 font-medium">
+                                    <Star className="w-2.5 h-2.5 fill-current" />
+                                    <span>{repo.stargazers_count >= 1000 ? `${(repo.stargazers_count / 1000).toFixed(1)}k` : repo.stargazers_count}</span>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {repo.description && (
+                              <p className="text-[11px] opacity-75 line-clamp-1 font-normal">
+                                {repo.description}
+                              </p>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    ) : publicSearchQuery.trim().length >= 2 ? (
+                      <div className="py-4 text-center text-xs text-zinc-400">
+                        {language === "pt"
+                          ? `Nenhum repositório público encontrado para "${publicSearchQuery}".`
+                          : `No public repositories found for "${publicSearchQuery}".`}
+                      </div>
+                    ) : (
+                      <div className="py-4 text-center text-[11px] text-zinc-400">
+                        {language === "pt"
+                          ? "Digite palavras-chave (ex: 'react router', 'tensorflow', 'express') para pesquisar e conectar repositórios públicos."
+                          : "Type keywords (e.g. 'react router', 'tensorflow', 'express') to search and connect public repositories."}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
