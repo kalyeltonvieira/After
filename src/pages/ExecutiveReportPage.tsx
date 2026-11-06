@@ -51,6 +51,13 @@ export function ExecutiveReportPage() {
       insightCount: insights.length,
       insights,
     },
+    activity: {
+      authorEventCounts: Object.entries(events.reduce<Record<string, number>>((counts, event) => {
+        const actor = typeof event.actor === "string" && event.actor.trim() ? event.actor.trim() : "Unknown";
+        counts[actor] = (counts[actor] || 0) + 1;
+        return counts;
+      }, {})).map(([actor, eventCount]) => ({ actor, eventCount })).sort((a, b) => b.eventCount - a.eventCount),
+    },
     softwareMemory: {
       entryCount: memory.length,
       known: memory.filter((entry) => entry.status === "KNOWN").length,
@@ -118,6 +125,25 @@ export function ExecutiveReportPage() {
           <div><dt className="text-[10px] text-zinc-400">{isPt ? "Linguagem / Framework" : "Language / Framework"}</dt><dd className="mt-1 text-zinc-800 dark:text-zinc-200">{currentProject.language || "—"} / {currentProject.framework || "—"}</dd></div>
           <div><dt className="text-[10px] text-zinc-400">{isPt ? "Status da análise" : "Analysis status"}</dt><dd className="mt-1 text-zinc-800 dark:text-zinc-200">{currentProject.analysisStatus || (currentProject.githubConnected ? "connected (legacy status)" : "unknown")}</dd></div>
         </dl>
+      </section>
+
+      <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+        <h2 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">{isPt ? "Atividade observada por autor" : "Observed activity by author"}</h2>
+        <p className="mt-1 text-[10px] text-zinc-500">{isPt ? "Contagem baseada nos autores associados aos eventos persistidos; não representa colaboradores ativos." : "Counts are based on actors attached to persisted events; this is not an active contributor metric."}</p>
+        {events.length === 0 ? <p className="mt-3 text-xs text-zinc-500">{isPt ? "Nenhum evento com autor foi registrado." : "No events with authors are recorded."}</p> : (
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {Object.entries(events.reduce<Record<string, number>>((counts, event) => {
+              const actor = typeof event.actor === "string" && event.actor.trim() ? event.actor.trim() : "Unknown";
+              counts[actor] = (counts[actor] || 0) + 1;
+              return counts;
+            }, {})).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([actor, count]) => (
+              <div key={actor} className="flex items-center justify-between gap-3 border-b border-zinc-100 py-2 dark:border-zinc-800">
+                <span className="truncate text-xs text-zinc-700 dark:text-zinc-300">{actor}</span>
+                <span className="font-mono text-xs tabular-nums text-zinc-500">{count}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
