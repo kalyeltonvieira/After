@@ -136,6 +136,14 @@ export function ArchitectureComparePage() {
             </button>
           </section>
           {loadingBranches && <p className="text-xs text-zinc-500">{isPt ? "Carregando branches..." : "Loading branches..."}</p>}
+          {comparing && (
+            <section aria-label={isPt ? "Comparando arquitetura" : "Comparing architecture"} className="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+              <div className="after-skeleton h-3 w-40 rounded" />
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{[1,2,3,4].map((item) => <div key={item} className="after-skeleton h-16 rounded-lg" />)}</div>
+              <div className="after-skeleton h-20 rounded-lg" />
+              <div className="after-skeleton h-20 rounded-lg" />
+            </section>
+          )}
           {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
 
           {comparison && (
