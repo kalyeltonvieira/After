@@ -405,6 +405,11 @@ export function ProjectsPage({ onOpenCreateProject, onNavigate }: ProjectsPagePr
                             {repo.language}
                           </span>
                         )}
+                        {repo.license?.spdx_id && (
+                          <span className="px-2 py-0.5 rounded-md border border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400">
+                            {repo.license.spdx_id}
+                          </span>
+                        )}
 
                         <span className="flex items-center space-x-1 text-amber-500 font-medium">
                           <Star className="w-3 h-3 fill-current" />
