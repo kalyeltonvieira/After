@@ -7,6 +7,8 @@ import {
   getPersistentGitHubToken,
   persistGitHubToken,
   revokeGitHubSession,
+  createEncryptedGitHubTokenCookie,
+  readEncryptedGitHubTokenCookie,
 } from "../githubSession.js";
 import { loadProjectContext, listUserProjectsViaRest, fetchProjectViaRest } from "../projectContext.js";
 import { enqueueIncrementalAnalysis } from "../services/incrementalAnalysis.js";
@@ -48,6 +50,9 @@ async function resolveGitHubToken(
   const uid = req.user!.uid;
   const liveToken = getGitHubToken(req.cookies?.after_github_session, uid);
   if (liveToken) return liveToken;
+
+  const cookieToken = readEncryptedGitHubTokenCookie(req.cookies?.after_github_token);
+  if (cookieToken) return cookieToken;
 
   try {
     const persistedToken = await getPersistentGitHubToken(uid);
@@ -120,6 +125,13 @@ projectsRouter.post("/github-session", requireFirebaseUser, async (req: Authenti
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: "/",
     });
+    res.cookie("after_github_token", createEncryptedGitHubTokenCookie(githubAccessToken), {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: "/",
+    });
 
     return res.json({ user: githubUser });
   } catch (err: any) {
@@ -131,6 +143,7 @@ projectsRouter.post("/github-session", requireFirebaseUser, async (req: Authenti
 projectsRouter.post("/github-session/revoke", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
   await revokeGitHubSession(req.cookies?.after_github_session, req.user!.uid);
   res.clearCookie("after_github_session", { path: "/" });
+  res.clearCookie("after_github_token", { path: "/" });
   return res.json({ ok: true });
 });
 
@@ -633,10 +646,12 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
       }
       if (repoRes.status === 403) {
         const rateLimitRemaining = repoRes.headers.get("x-ratelimit-remaining");
-        return res.status(403).json({
+        const rateLimited = rateLimitRemaining === "0";
+        return res.status(rateLimited ? 429 : 403).json({
           error: rateLimitRemaining === "0"
-            ? "GitHub API rate limit exceeded. Please connect your GitHub account or supply a token."
+            ? "GitHub API rate limit exceeded. Reconnect GitHub to refresh the authenticated session, then try again."
             : "Access denied to repository. A GitHub token with repo access is required.",
+          retryAfter: repoRes.headers.get("retry-after"),
         });
       }
       return res.status(repoRes.status).json({
@@ -697,7 +712,7 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
       releases: [],
     };
 
-    await Promise.all([
+    if (githubToken) await Promise.all([
       (async () => {
         try {
           const response = await fetch(

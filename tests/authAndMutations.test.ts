@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { requireFirebaseUser } from "../server/auth.js";
 import { createGitHubBranch, deleteGitHubBranch } from "../server/services/githubMutations.js";
+import { createEncryptedGitHubTokenCookie, readEncryptedGitHubTokenCookie } from "../server/githubSession.js";
 
 test("auth middleware rejects requests without a Firebase bearer token", async () => {
   const req = { headers: {} } as any;
@@ -18,6 +19,16 @@ test("auth middleware rejects requests without a Firebase bearer token", async (
   assert.equal(status, 401);
   assert.deepEqual(payload, { error: "Firebase authentication is required." });
   assert.equal(called, false);
+});
+
+test("encrypted GitHub token cookie round-trips without exposing the token", () => {
+  process.env.GITHUB_TOKEN_ENCRYPTION_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  const token = "gho_example_secret_token";
+  const cookie = createEncryptedGitHubTokenCookie(token);
+
+  assert.notEqual(cookie, token);
+  assert.equal(readEncryptedGitHubTokenCookie(cookie), token);
+  assert.equal(readEncryptedGitHubTokenCookie("not-a-valid-cookie"), null);
 });
 
 test("branch creation propagates GitHub failures instead of fabricating success", async () => {

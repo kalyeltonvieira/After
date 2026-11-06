@@ -66,7 +66,12 @@ export async function revokeGitHubSession(sessionId: string | undefined, uid?: s
     } catch (error: any) {
       // A missing user document should not prevent local session revocation.
       if (error?.code !== 5) {
-        console.warn("Could not remove persisted GitHub token:", error?.message || error);
+        console.warn(
+          "Could not remove persisted GitHub token:",
+          error?.code === 7
+            ? "Firestore Admin lacks IAM permission for the configured database; encrypted cookie fallback remains active."
+            : error?.message || error
+        );
       }
     }
   }
@@ -106,6 +111,20 @@ function decryptToken(data: any): string | null {
   }
 }
 
+export function createEncryptedGitHubTokenCookie(token: string): string {
+  return Buffer.from(JSON.stringify(encryptToken(token.trim())), "utf8").toString("base64url");
+}
+
+export function readEncryptedGitHubTokenCookie(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    const decoded = Buffer.from(value, "base64url").toString("utf8");
+    return decryptToken(JSON.parse(decoded));
+  } catch {
+    return null;
+  }
+}
+
 export async function persistGitHubToken(uid: string, token: string) {
   if (!uid || !token.trim()) return false;
 
@@ -117,7 +136,12 @@ export async function persistGitHubToken(uid: string, token: string) {
     });
     return true;
   } catch (error: any) {
-    console.warn("Could not persist GitHub token:", error?.message || error);
+    console.warn(
+      "Could not persist GitHub token:",
+      error?.code === 7
+        ? "Firestore Admin lacks IAM permission for the configured database; encrypted cookie fallback remains active."
+        : error?.message || error
+    );
     return false;
   }
 }
