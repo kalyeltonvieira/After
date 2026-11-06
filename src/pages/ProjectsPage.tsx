@@ -16,7 +16,7 @@ import {
 import { useProject } from "../context/ProjectContext";
 import { useLanguage } from "../context/LanguageContext";
 import { ProjectStatistics } from "../components/ProjectStatistics";
-import { ProjectsSearchBar, ProjectsSearchTab } from "../components/ProjectsSearchBar";
+import { ProjectsSearchBar, ProjectsSearchTab, DiscoveryFilters } from "../components/ProjectsSearchBar";
 import { searchPublicRepositories, GitHubRepositoryItem } from "../services/githubService";
 
 interface ProjectsPageProps {
@@ -38,6 +38,7 @@ export function ProjectsPage({ onOpenCreateProject, onNavigate }: ProjectsPagePr
   const [loadingPublic, setLoadingPublic] = useState(false);
   const [publicSearchError, setPublicSearchError] = useState<string | null>(null);
   const [connectingRepo, setConnectingRepo] = useState<string | null>(null);
+  const [discoveryFilters, setDiscoveryFilters] = useState<DiscoveryFilters>({ minimumStars: 0, language: "", license: "", sort: "stars" });
 
   // Filter My Projects locally
   const filteredMyProjects = projects.filter((proj) => {
@@ -52,24 +53,16 @@ export function ProjectsPage({ onOpenCreateProject, onNavigate }: ProjectsPagePr
     );
   });
 
-  // Debounced search for public repositories when tab is "discover_public"
+  // Debounced public discovery. Filter changes are translated into GitHub search qualifiers.
   useEffect(() => {
     if (activeTab !== "discover_public") return;
-    const trimmed = searchQuery.trim();
-    if (!trimmed || trimmed.length < 2) {
-      if (!trimmed && publicRepos.length === 0) {
-        // Preload trending/popular software engineering repos as initial inspiration
-        void fetchPublicRepos("react");
-      }
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      void fetchPublicRepos(trimmed);
-    }, 400);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery, activeTab]);
+    const queryText = searchQuery.trim() || "react";
+    if (searchQuery.trim().length === 1) return;
+    const timer = window.setTimeout(() => {
+      void fetchPublicRepos(queryText);
+    }, searchQuery.trim() ? 400 : 0);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery, activeTab, discoveryFilters.minimumStars, discoveryFilters.language, discoveryFilters.license, discoveryFilters.sort]);
 
   const fetchPublicRepos = async (queryText: string) => {
     const q = queryText.trim();
@@ -78,7 +71,13 @@ export function ProjectsPage({ onOpenCreateProject, onNavigate }: ProjectsPagePr
     setLoadingPublic(true);
     setPublicSearchError(null);
     try {
-      const res = await searchPublicRepositories(q, { per_page: 24, sort: "stars" });
+      const res = await searchPublicRepositories(q, {
+        per_page: 24,
+        sort: discoveryFilters.sort,
+        minimumStars: discoveryFilters.minimumStars,
+        ...(discoveryFilters.language ? { language: discoveryFilters.language } : {}),
+        ...(discoveryFilters.license ? { license: discoveryFilters.license } : {}),
+      });
       setPublicRepos(res.items || []);
     } catch (err: any) {
       setPublicSearchError(err?.message || (isPt ? "Erro ao buscar repositórios no GitHub." : "Error searching GitHub repositories."));
@@ -162,6 +161,8 @@ export function ProjectsPage({ onOpenCreateProject, onNavigate }: ProjectsPagePr
         myProjectsCount={projects.length}
         publicResultsCount={publicRepos.length}
         language={language}
+        discoveryFilters={discoveryFilters}
+        onDiscoveryFiltersChange={setDiscoveryFilters}
       />
 
       {/* Error Banner */}
