@@ -74,6 +74,8 @@ export interface Project {
   notifications?: ProjectNotification[];
   analysisJobs?: AnalysisJob[];
   webhookConfigured?: boolean;
+  analysisStatus?: "pending" | "completed" | "failed";
+  analysisError?: string;
 }
 
 export interface ProjectEvent {
