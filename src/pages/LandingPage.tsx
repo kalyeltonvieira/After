@@ -15,8 +15,11 @@ import {
   Search,
   Cpu,
   Globe,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
+import { useTheme } from "../context/ThemeContext";
 
 interface LandingPageProps {
   onOpenAuth: (mode: "signin" | "signup") => void;
@@ -24,6 +27,7 @@ interface LandingPageProps {
 
 export function LandingPage({ onOpenAuth }: LandingPageProps) {
   const { t, language, setLanguage } = useLanguage();
+  const { effectiveTheme, setTheme } = useTheme();
 
   return (
     <div className="min-h-screen bg-[#fafafa] dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 selection:bg-zinc-900 selection:text-white dark:selection:bg-zinc-100 dark:selection:text-zinc-900 transition-colors">
@@ -45,6 +49,17 @@ export function LandingPage({ onOpenAuth }: LandingPageProps) {
           >
             <Globe className="w-3.5 h-3.5" />
             <span className="font-semibold uppercase">{language}</span>
+          </button>
+
+          <button
+            id="landing-theme-toggle-btn"
+            type="button"
+            onClick={() => setTheme(effectiveTheme === "dark" ? "light" : "dark")}
+            className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+            title={effectiveTheme === "dark" ? "Ativar modo claro" : "Ativar modo escuro"}
+            aria-label={effectiveTheme === "dark" ? "Ativar modo claro" : "Ativar modo escuro"}
+          >
+            {effectiveTheme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
 
           <button
