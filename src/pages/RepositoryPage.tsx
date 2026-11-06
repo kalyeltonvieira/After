@@ -664,14 +664,22 @@ export function RepositoryPage() {
       {loading && <div className="py-10 text-center text-xs text-zinc-400">Loading real repository data…</div>}
 
       {!loading && tab === "code" && (
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(280px,360px)_1fr] gap-4">
-          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-            <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2">
-              <Search className="w-3.5 h-3.5 text-zinc-400" />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search files…" className="bg-transparent outline-none text-xs flex-1" />
-              <span className="text-[10px] text-zinc-400">{treeFiles.length}</span>
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)] gap-4 items-start">
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/40 overflow-hidden xl:h-[min(64vh,720px)] xl:flex xl:flex-col">
+            <div className="px-4 pt-4 pb-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/50">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-zinc-400">Explorer</div>
+                  <div className="mt-1 text-xs font-semibold truncate">{currentProject.repository}</div>
+                </div>
+                <span className="shrink-0 rounded-md bg-zinc-200/70 dark:bg-zinc-800 px-1.5 py-1 text-[9px] font-mono text-zinc-500">{treeFiles.length} files</span>
+              </div>
+              <div className="relative mt-3">
+                <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-zinc-400" />
+                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter files and folders…" className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/70 pl-9 pr-3 py-2 text-xs outline-none focus:border-sky-400 dark:focus:border-sky-700" />
+              </div>
             </div>
-            <div className="max-h-[70vh] overflow-auto p-2">
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2 overscroll-contain">
               {treeRows.map((item) => (
                 item.kind === "directory" ? (
                   <button
@@ -683,10 +691,11 @@ export function RepositoryPage() {
                       else next.add(item.path);
                       return next;
                     })}
-                    className="w-full text-left px-2.5 py-1.5 rounded-lg font-mono text-[10px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-1.5"
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg font-mono text-[10px] text-zinc-500 hover:bg-sky-50 dark:hover:bg-sky-950/30 hover:text-zinc-800 dark:hover:text-zinc-200 flex items-center gap-1.5 transition-colors"
                     style={{ paddingLeft: `${8 + item.depth * 14}px` }}
                   >
-                    <Folder className="w-3.5 h-3.5 shrink-0" />
+                    {collapsedDirs.has(item.path) ? <ChevronRight className="w-3 h-3 shrink-0 text-zinc-400" /> : <ChevronDown className="w-3 h-3 shrink-0 text-sky-500" />}
+                    <Folder className={`w-3.5 h-3.5 shrink-0 ${collapsedDirs.has(item.path) ? "text-zinc-400" : "text-sky-500"}`} />
                     <span className="truncate">{item.name}</span>
                   </button>
                 ) : (
@@ -694,11 +703,12 @@ export function RepositoryPage() {
                     key={item.path}
                     type="button"
                     onClick={() => void openFile(item.path)}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg font-mono text-[11px] hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-1.5 ${selectedFile === item.path ? "bg-zinc-100 dark:bg-zinc-800" : ""}`}
+                    className={`group w-full text-left px-2.5 py-1.5 rounded-lg font-mono text-[11px] hover:bg-sky-50 dark:hover:bg-sky-950/30 flex items-center gap-2 transition-colors ${selectedFile === item.path ? "bg-sky-100/80 dark:bg-sky-950/60 text-sky-800 dark:text-sky-200 ring-1 ring-inset ring-sky-300/70 dark:ring-sky-800" : "text-zinc-600 dark:text-zinc-400"}`}
                     style={{ paddingLeft: `${8 + item.depth * 14}px` }}
                     title={item.path}
                   >
-                    <FileCode2 className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
+                    <span className="w-5 shrink-0 text-center text-[8px] font-semibold tracking-tight text-zinc-400 group-hover:text-sky-500">{item.name.split(".").pop()?.slice(0, 4).toUpperCase() || "FILE"}</span>
+                    <FileCode2 className={`w-3.5 h-3.5 shrink-0 ${selectedFile === item.path ? "text-sky-500" : "text-zinc-400"}`} />
                     <span className="truncate">{item.name}</span>
                   </button>
                 )
@@ -707,22 +717,23 @@ export function RepositoryPage() {
             </div>
           </div>
 
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-              <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-3">
+          <div className="min-w-0 space-y-4">
+            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-950 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-zinc-800 bg-zinc-900 flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="font-mono text-xs truncate">{data.file?.path || "Select a file"}</div>
+                  <div className="flex items-center gap-2 text-[10px] text-zinc-500 font-mono"><FileCode2 className="w-3.5 h-3.5 text-sky-400" /> CODE VIEW</div>
+                  <div className="mt-1 font-mono text-xs text-zinc-100 truncate">{data.file?.path || "Select a file"}</div>
                   {data.file?.path && (
                     <>
                       <div className="flex flex-wrap items-center gap-1 mt-1">
-                        {data.file.path.split("/").map((part: string, index: number) => <React.Fragment key={`${part}-${index}`}><span className="font-mono text-[10px] text-zinc-500">{part}</span>{index < data.file.path.split("/").length - 1 && <ChevronRight className="w-3 h-3 text-zinc-600" />}</React.Fragment>)}
+                        {data.file.path.split("/").map((part: string, index: number) => <React.Fragment key={`${part}-${index}`}><span className={`font-mono text-[10px] ${index === data.file.path.split("/").length - 1 ? "text-sky-300" : "text-zinc-500"}`}>{part}</span>{index < data.file.path.split("/").length - 1 && <ChevronRight className="w-3 h-3 text-zinc-700" />}</React.Fragment>)}
                       </div>
-                      <div className="text-[10px] text-zinc-400 mt-1">{languageFromPath(data.file.path)} · {lineCount} lines · {data.file.size ?? "?"} bytes</div>
+                      <div className="text-[10px] text-zinc-500 mt-1">{languageFromPath(data.file.path)} · {lineCount} lines · {data.file.size ?? "?"} bytes · {currentProject.branch}</div>
                     </>
                   )}
                 </div>
                 {data.file?.path && (
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center justify-end gap-1.5">
                     <button type="button" onClick={() => void copyFile()} className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-[11px]">
                       {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} {copied ? "Copied" : "Copy"}
                     </button>
@@ -758,7 +769,7 @@ export function RepositoryPage() {
                   </div>
                 )}
               </div>
-              <div className="max-h-[62vh] overflow-auto bg-zinc-950">
+              <div className="h-[min(64vh,720px)] min-h-[360px] overflow-auto overscroll-contain bg-zinc-950">
                 {data.file?.content ? (
                   <div className="min-w-max font-mono text-[11px] leading-relaxed text-zinc-100">
                     {showBlame && (
