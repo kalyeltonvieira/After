@@ -34,6 +34,7 @@ function MainApp() {
 
   const [currentView, setCurrentView] = useState<string>("overview");
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<"signin" | "signup">("signin");
   const [isCmdPaletteOpen, setIsCmdPaletteOpen] = useState(false);
@@ -53,6 +54,20 @@ function MainApp() {
 
     document.addEventListener("pointerdown", press, { passive: true });
     return () => document.removeEventListener("pointerdown", press);
+  }, []);
+
+  useEffect(() => {
+    const handleSidebarShortcut = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isTyping = target?.matches("input, textarea, select, [contenteditable=\"true\"]");
+      if (isTyping || event.key.toLowerCase() !== "b" || (!event.ctrlKey && !event.metaKey) || event.altKey) return;
+
+      event.preventDefault();
+      setIsSidebarCollapsed((collapsed) => !collapsed);
+    };
+
+    window.addEventListener("keydown", handleSidebarShortcut);
+    return () => window.removeEventListener("keydown", handleSidebarShortcut);
   }, []);
 
   if (authLoading) {
@@ -96,17 +111,19 @@ function MainApp() {
       />
 
       {/* Main Body */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 min-h-0 h-[calc(100vh-3.5rem)] flex overflow-hidden">
         {/* Sidebar */}
         <Sidebar
           currentView={currentView}
           onNavigate={(view) => setCurrentView(view)}
           isMobileOpen={isMobileSidebarOpen}
           onCloseMobile={() => setIsMobileSidebarOpen(false)}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
         />
 
         {/* Dynamic Main View */}
-        <main className="flex-1 overflow-y-auto">
+        <main className="min-w-0 flex-1 h-full overflow-y-auto overscroll-contain transition-[padding] duration-300 ease-out">
           <Suspense fallback={<div className="p-8 text-xs text-zinc-500 font-mono">Loading view…</div>}>
             <AnimatePresence mode="wait">
               <motion.div
