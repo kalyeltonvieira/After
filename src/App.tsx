@@ -18,6 +18,8 @@ import { ExperimentsPage } from "./pages/ExperimentsPage";
 import { TimelinePage } from "./pages/TimelinePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { WatchPage } from "./pages/WatchPage";
+import { ArchitectureComparePage } from "./pages/ArchitectureComparePage";
+import { ExecutiveReportPage } from "./pages/ExecutiveReportPage";
 import { Navbar } from "./components/Navbar";
 import { Sidebar } from "./components/Sidebar";
 import { WhyDrawer } from "./components/WhyDrawer";
@@ -128,6 +130,10 @@ function MainApp() {
               {currentView === "settings" && <SettingsPage />}
 
               {currentView === "watch" && <WatchPage />}
+
+              {currentView === "compare" && <ArchitectureComparePage />}
+
+              {currentView === "report" && <ExecutiveReportPage />}
             </motion.div>
           </AnimatePresence>
         </main>

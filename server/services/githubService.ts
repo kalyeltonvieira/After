@@ -33,6 +33,7 @@ export interface GitHubRepo {
   language: string | null;
   stargazers_count: number;
   forks_count: number;
+  license?: { key?: string; name?: string; spdx_id?: string | null } | null;
   permissions?: {
     admin?: boolean;
     push?: boolean;
@@ -324,7 +325,14 @@ export async function listUserRepositories(
 export async function searchPublicRepositories(
   query: string,
   token?: string,
-  options?: { per_page?: number; page?: number; sort?: "stars" | "forks" | "updated" }
+  options?: {
+    per_page?: number;
+    page?: number;
+    sort?: "stars" | "forks" | "updated";
+    minimumStars?: number;
+    language?: string;
+    license?: string;
+  }
 ): Promise<{ total_count: number; items: GitHubRepo[] }> {
   const trimmed = query.trim();
   if (!trimmed) return { total_count: 0, items: [] };
@@ -332,9 +340,18 @@ export async function searchPublicRepositories(
   const perPage = Math.min(Math.max(Number(options?.per_page) || 20, 1), 50);
   const page = Math.max(Number(options?.page) || 1, 1);
   const sort = options?.sort || "stars";
+  const allowedLanguages = new Set(["TypeScript", "JavaScript", "Python", "Go", "Rust"]);
+  const allowedLicenses = new Set(["mit", "apache-2.0", "gpl-3.0", "bsd-3-clause", "mpl-2.0"]);
+  const minimumStars = Number(options?.minimumStars);
+  const qualifiers = [
+    trimmed,
+    Number.isFinite(minimumStars) && minimumStars > 0 ? `stars:>=${Math.floor(minimumStars)}` : "",
+    options?.language && allowedLanguages.has(options.language) ? `language:${options.language}` : "",
+    options?.license && allowedLicenses.has(options.license) ? `license:${options.license}` : "",
+  ].filter(Boolean);
 
   const searchParams = new URLSearchParams({
-    q: trimmed,
+    q: qualifiers.join(" "),
     sort,
     order: "desc",
     per_page: String(perPage),

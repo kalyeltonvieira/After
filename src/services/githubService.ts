@@ -60,6 +60,7 @@ export interface GitHubRepositoryItem {
   language: string | null;
   stargazers_count: number;
   forks_count: number;
+  license?: { key?: string; name?: string; spdx_id?: string | null } | null;
   owner: {
     login: string;
     avatar_url: string;
@@ -230,7 +231,7 @@ export async function listUserRepositories(forceFresh = false): Promise<GitHubRe
  */
 export async function searchPublicRepositories(
   query: string,
-  options?: { per_page?: number; page?: number; sort?: "stars" | "forks" | "updated" }
+  options?: { per_page?: number; page?: number; sort?: "stars" | "forks" | "updated"; minimumStars?: number; language?: string; license?: string }
 ): Promise<{ total_count: number; items: GitHubRepositoryItem[] }> {
   const trimmed = query.trim();
   if (!trimmed) return { total_count: 0, items: [] };
@@ -238,6 +239,9 @@ export async function searchPublicRepositories(
   const params = new URLSearchParams({
     q: trimmed,
     ...(options?.sort ? { sort: options.sort } : {}),
+    ...(options?.minimumStars ? { minimum_stars: String(options.minimumStars) } : {}),
+    ...(options?.language ? { language: options.language } : {}),
+    ...(options?.license ? { license: options.license } : {}),
     ...(options?.page ? { page: String(options.page) } : {}),
     ...(options?.per_page ? { per_page: String(options.per_page) } : {}),
   });

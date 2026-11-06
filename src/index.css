@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Tailwind v4: use the root .dark class controlled by ThemeContext. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root.theme-transitioning,
 :root.theme-transitioning *,
 :root.theme-transitioning *::before,
@@ -127,4 +130,45 @@
 
 .language-json .token.property {
   color: #93c5fd;
+}
+
+
+@keyframes after-shimmer {
+  0% { background-position: 180% 0; }
+  100% { background-position: -80% 0; }
+}
+
+.after-skeleton {
+  background: linear-gradient(90deg, #e4e4e7 20%, #f4f4f5 38%, #e4e4e7 56%);
+  background-size: 200% 100%;
+  animation: after-shimmer 1.35s ease-in-out infinite;
+}
+
+.dark .after-skeleton {
+  background: linear-gradient(90deg, #27272a 20%, #3f3f46 38%, #27272a 56%);
+  background-size: 200% 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .after-skeleton { animation: none; }
+}
+
+@media print {
+  @page { margin: 14mm; }
+  html, body { background: #fff !important; color: #18181b !important; }
+  body * { visibility: hidden !important; }
+  #after-executive-report,
+  #after-executive-report * { visibility: visible !important; }
+  #after-executive-report {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  #after-executive-report button { display: none !important; }
+  #after-executive-report section,
+  #after-executive-report header,
+  #after-executive-report footer { break-inside: avoid; }
 }
