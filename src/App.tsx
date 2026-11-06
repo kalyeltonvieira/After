@@ -20,6 +20,7 @@ import { CommandPalette } from "./components/CommandPalette";
 const OverviewPage = lazy(() => import("./pages/OverviewPage").then((m) => ({ default: m.OverviewPage })));
 const RepositoryPage = lazy(() => import("./pages/RepositoryPage").then((m) => ({ default: m.RepositoryPage })));
 const ProductGraphPage = lazy(() => import("./pages/ProductGraphPage").then((m) => ({ default: m.ProductGraphPage })));
+const ProjectGraphPage = lazy(() => import("./pages/ProjectGraphPage").then((m) => ({ default: m.ProjectGraphPage })));
 const SoftwareMemoryPage = lazy(() => import("./pages/SoftwareMemoryPage").then((m) => ({ default: m.SoftwareMemoryPage })));
 const InsightsPage = lazy(() => import("./pages/InsightsPage").then((m) => ({ default: m.InsightsPage })));
 const ExperimentsPage = lazy(() => import("./pages/ExperimentsPage").then((m) => ({ default: m.ExperimentsPage })));
@@ -154,6 +155,8 @@ function MainApp() {
               )}
 
               {currentView === "graph" && <ProductGraphPage />}
+
+              {currentView === "project-graph" && <ProjectGraphPage />}
 
               {currentView === "memory" && <SoftwareMemoryPage />}
 

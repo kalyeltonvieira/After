@@ -973,16 +973,15 @@ export function RepositoryPage() {
                     </>
                   )}
                 </div>
-                {data.file?.path && (
-                  <div className="flex flex-wrap items-center justify-end gap-1.5">
-                    {!data.file.isBinary && <button type="button" onClick={() => void copyFile()} className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-[11px]">
+                <div className="flex flex-wrap items-center justify-end gap-1.5">
+                    <button type="button" onClick={() => void copyFile()} disabled={!data.file?.content} className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-[11px] disabled:opacity-40 disabled:cursor-not-allowed">
                       {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} {copied ? "Copied" : "Copy"}
-                    </button>}
-                    {!data.file.isBinary && binaryExtension(data.file.path) !== "csv" && <button
+                    </button>
+                    <button
                       type="button"
                       onClick={() => void toggleBlame()}
-                      disabled={blameLoading}
-                      className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-colors ${
+                      disabled={blameLoading || !data.file?.content || binaryExtension(data.file?.path || "") === "csv"}
+                      className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                         showBlame
                           ? "border-sky-500 bg-sky-500/10 text-sky-400 dark:border-sky-400 dark:bg-sky-950/40 dark:text-sky-300"
                           : "border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
@@ -1000,15 +999,14 @@ export function RepositoryPage() {
                           {blame.length}
                         </span>
                       )}
-                    </button>}
-                    <button type="button" onClick={() => void analyzeChange({ path: data.file.path, question: "Analyze this file's current repository state, recent history, related graph relationships, and potential impact of changing it." })} className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-[11px]">
+                    </button>
+                    <button type="button" disabled={!data.file?.path} onClick={() => data.file?.path && void analyzeChange({ path: data.file.path, question: "Analyze this file's current repository state, recent history, related graph relationships, and potential impact of changing it." })} className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-[11px] disabled:opacity-40 disabled:cursor-not-allowed">
                       <Sparkles className="w-3 h-3" /> Analyze
                     </button>
                     <button type="button" onClick={() => setIsAskAfterOpen(true)} className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 text-[11px] font-medium">
                       Ask AFTER
                     </button>
                   </div>
-                )}
               </div>
               <div
                 key={data.file?.path || "empty-code-view"}
