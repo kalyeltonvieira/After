@@ -114,7 +114,7 @@ export function LandingPage({ onOpenAuth }: LandingPageProps) {
             onClick={() => onOpenAuth("signup")}
             className="w-full sm:w-auto px-7 py-3.5 rounded-full bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-medium text-sm hover:opacity-90 transition-all shadow-sm flex items-center justify-center space-x-2 cursor-pointer active:scale-98"
           >
-            <span>{language === "pt" ? "Conectar um Repositório" : "Connect a Repository"}</span>
+            <span>{language === "pt" ? "Começar agora" : "Get started"}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </div>
@@ -146,8 +146,8 @@ export function LandingPage({ onOpenAuth }: LandingPageProps) {
             </h3>
             <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
               {language === "pt"
-                ? "Conecte via GitHub OAuth ou informe qualquer repositório público. O AFTER faz a varredura de arquivos reais, manifestos de pacotes e histórico Git sem inventar dados falsos."
-                : "Connect via GitHub OAuth or specify any public repository. AFTER scans live files, package manifests, and git history without inventing placeholder artifacts."}
+                ? "Conecte sua conta GitHub quando quiser ou pesquise qualquer repositório público. O AFTER analisa arquivos reais, manifestos e histórico Git sem inventar dados."
+                : "Connect your GitHub account when you want, or search any public repository. AFTER analyzes real files, manifests, and Git history without inventing placeholder data."}
             </p>
           </div>
 
