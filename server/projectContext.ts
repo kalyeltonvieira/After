@@ -1,7 +1,7 @@
 import { getAdminFirestore, firebaseProjectId, firestoreDatabaseId } from "./auth.js";
 import { loadPersistedGraph } from "./services/graphStore.js";
 
-let adminFirestoreKnownUnavailable = true; // In Cloud Run without ambient IAM role, default to true to avoid noisy gRPC logs
+let adminFirestoreKnownUnavailable = false;
 
 export function setAdminFirestoreStatus(available: boolean) {
   adminFirestoreKnownUnavailable = !available;
@@ -145,8 +145,7 @@ export async function loadProjectContext(
     project = await fetchProjectViaRest(projectId, token);
   }
 
-  // 2. Only attempt Firebase Admin SDK if token was not provided or REST returned null,
-  // and we haven't already verified that the ambient service account lacks IAM permissions.
+  // 2. Try Firebase Admin SDK if token was not provided or REST direct doc returned null
   if (!project && !adminFirestoreKnownUnavailable) {
     try {
       const db = getAdminFirestore();
@@ -157,6 +156,15 @@ export async function loadProjectContext(
       }
     } catch {
       adminFirestoreKnownUnavailable = true;
+    }
+  }
+
+  // 3. Fallback: Query user's projects via REST if direct document GET missed
+  if (!project && token) {
+    const userProjects = await listUserProjectsViaRest(uid, token);
+    const matched = userProjects.find((p) => p.id === projectId || p.repository === projectId);
+    if (matched) {
+      project = matched;
     }
   }
 
