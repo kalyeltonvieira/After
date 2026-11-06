@@ -1,5 +1,7 @@
 import express from "express";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
@@ -27,6 +29,16 @@ process.on("uncaughtException", (error: any) => {
 async function startServer() {
   const app = express();
   app.disable("x-powered-by");
+  app.set("trust proxy", 1);
+  app.use(requestIdMiddleware);
+  app.use(helmet({ contentSecurityPolicy: false }));
+  const apiLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 120,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    message: { error: "Too many requests. Please retry shortly." },
+  });
   const envPort = Number(process.env.APP_PORT || process.env.PORT);
   const PORT = envPort && envPort !== 8080 ? envPort : 3000;
 
@@ -39,7 +51,7 @@ async function startServer() {
   app.use(express.json());
   app.use(cookieParser());
 
-  app.use("/api", apiRouter);
+  app.use("/api", apiLimiter, apiRouter);
 
   const isProduction = process.env.NODE_ENV === "production";
 
@@ -85,4 +97,3 @@ startServer().catch((error) => {
   console.error("Failed to start server:", error);
   process.exit(1);
 });
-

@@ -109,12 +109,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           userDocRef,
           (snapshot) => {
             if (snapshot.exists()) {
-              const data = snapshot.data() as UserProfile & { githubIntegration?: { accessToken?: string } };
+              const data = snapshot.data() as UserProfile;
               setProfile(data);
-              // Automatically rehydrate the GitHub token from the user document if present
-              if (data?.githubIntegration?.accessToken) {
-                cacheGitHubAccessToken(data.githubIntegration.accessToken);
-              }
               if (data.username) {
                 onboardingCompletedUidRef.current = currentUser.uid;
                 setNeedsOnboarding(false);

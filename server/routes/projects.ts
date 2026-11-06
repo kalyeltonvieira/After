@@ -128,8 +128,8 @@ projectsRouter.post("/github-session", requireFirebaseUser, async (req: Authenti
 });
 
 // End both browser sessions without disconnecting the persisted GitHub integration.
-projectsRouter.post("/github-session/revoke", async (req, res) => {
-  revokeGitHubSession(req.cookies?.after_github_session);
+projectsRouter.post("/github-session/revoke", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+  await revokeGitHubSession(req.cookies?.after_github_session, req.user!.uid);
   res.clearCookie("after_github_session", { path: "/" });
   return res.json({ ok: true });
 });
