@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Tailwind v4: use the root .dark class controlled by ThemeContext. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root.theme-transitioning,
 :root.theme-transitioning *,
 :root.theme-transitioning *::before,
