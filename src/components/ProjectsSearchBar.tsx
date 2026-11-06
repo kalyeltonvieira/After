@@ -7,6 +7,7 @@ export interface DiscoveryFilters {
   minimumStars: number;
   language: string;
   license: string;
+  topic?: string;
   sort: "stars" | "forks" | "updated";
 }
 
@@ -92,17 +93,23 @@ export function ProjectsSearchBar({
       </div>
 
       {activeTab === "discover_public" && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
           <label className="flex flex-col gap-1 text-[10px] text-zinc-500 dark:text-zinc-400">
             {isPt ? "Estrelas mínimas" : "Minimum stars"}
             <select aria-label={isPt ? "Estrelas mínimas" : "Minimum stars"} value={String(discoveryFilters.minimumStars)} onChange={(e) => updateFilter("minimumStars", Number(e.target.value))} className={inputClass}>
-              <option value="0">{isPt ? "Qualquer" : "Any"}</option><option value="1000">1,000+</option><option value="5000">5,000+</option><option value="20000">20,000+</option>
+              <option value="0">{isPt ? "Qualquer" : "Any"}</option><option value="1000">1,000+</option><option value="5000">5,000+</option><option value="20000">20,000+</option><option value="50000">50,000+</option>
             </select>
           </label>
           <label className="flex flex-col gap-1 text-[10px] text-zinc-500 dark:text-zinc-400">
             {isPt ? "Linguagem" : "Language"}
             <select aria-label={isPt ? "Linguagem" : "Language"} value={discoveryFilters.language} onChange={(e) => updateFilter("language", e.target.value)} className={inputClass}>
               <option value="">{isPt ? "Todas" : "All"}</option><option>TypeScript</option><option>JavaScript</option><option>Python</option><option>Go</option><option>Rust</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-[10px] text-zinc-500 dark:text-zinc-400">
+            {isPt ? "Tópico / Tag" : "Topic / Tag"}
+            <select aria-label={isPt ? "Tópico / Tag" : "Topic / Tag"} value={discoveryFilters.topic || ""} onChange={(e) => updateFilter("topic", e.target.value)} className={inputClass}>
+              <option value="">{isPt ? "Todos" : "All"}</option><option value="ai">AI / LLM</option><option value="react">React</option><option value="devtools">DevTools</option><option value="database">Database</option><option value="cli">CLI</option>
             </select>
           </label>
           <label className="flex flex-col gap-1 text-[10px] text-zinc-500 dark:text-zinc-400">

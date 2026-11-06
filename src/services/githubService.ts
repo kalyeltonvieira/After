@@ -251,7 +251,7 @@ export async function listUserRepositoryPage(
  */
 export async function searchPublicRepositories(
   query: string,
-  options?: { per_page?: number; page?: number; sort?: "stars" | "forks" | "updated"; minimumStars?: number; language?: string; license?: string }
+  options?: { per_page?: number; page?: number; sort?: "stars" | "forks" | "updated"; minimumStars?: number; language?: string; license?: string; topic?: string }
 ): Promise<{ total_count: number; items: GitHubRepositoryItem[] }> {
   const trimmed = query.trim();
   if (!trimmed) return { total_count: 0, items: [] };
@@ -262,6 +262,7 @@ export async function searchPublicRepositories(
     ...(options?.minimumStars ? { minimum_stars: String(options.minimumStars) } : {}),
     ...(options?.language ? { language: options.language } : {}),
     ...(options?.license ? { license: options.license } : {}),
+    ...(options?.topic ? { topic: options.topic } : {}),
     ...(options?.page ? { page: String(options.page) } : {}),
     ...(options?.per_page ? { per_page: String(options.per_page) } : {}),
   });

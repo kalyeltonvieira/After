@@ -67,7 +67,7 @@ export function ProjectsPage({ onOpenCreateProject, onNavigate }: ProjectsPagePr
       void fetchPublicRepos(queryText, 1);
     }, searchQuery.trim() ? 400 : 0);
     return () => window.clearTimeout(timer);
-  }, [searchQuery, activeTab, discoveryFilters.minimumStars, discoveryFilters.language, discoveryFilters.license, discoveryFilters.sort]);
+  }, [searchQuery, activeTab, discoveryFilters.minimumStars, discoveryFilters.language, discoveryFilters.license, discoveryFilters.topic, discoveryFilters.sort]);
 
   const fetchPublicRepos = async (queryText: string, pageNum = 1) => {
     const q = queryText.trim() || "react";
@@ -86,6 +86,7 @@ export function ProjectsPage({ onOpenCreateProject, onNavigate }: ProjectsPagePr
         minimumStars: discoveryFilters.minimumStars,
         ...(discoveryFilters.language ? { language: discoveryFilters.language } : {}),
         ...(discoveryFilters.license ? { license: discoveryFilters.license } : {}),
+        ...(discoveryFilters.topic ? { topic: discoveryFilters.topic } : {}),
       });
 
       const newItems = res.items || [];

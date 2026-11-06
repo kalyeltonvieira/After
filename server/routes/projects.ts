@@ -189,6 +189,7 @@ projectsRouter.get("/github-search", requireFirebaseUser, async (req: Authentica
   const license = ["mit", "apache-2.0", "gpl-3.0", "bsd-3-clause", "mpl-2.0"].includes(String(req.query.license))
     ? String(req.query.license)
     : undefined;
+  const topic = typeof req.query.topic === "string" && req.query.topic.trim() ? req.query.topic.trim() : undefined;
 
   try {
     const result = await searchPublicRepositories(q, token, {
@@ -198,6 +199,7 @@ projectsRouter.get("/github-search", requireFirebaseUser, async (req: Authentica
       minimumStars,
       language,
       license,
+      topic,
     });
     return res.json(result);
   } catch (err: any) {
