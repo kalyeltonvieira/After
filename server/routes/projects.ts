@@ -19,7 +19,7 @@ import {
   parseGitHubRepo,
   sanitizeGitHubRepo,
   getAuthenticatedUser,
-  listUserRepositories,
+  listUserRepositoryPage,
   getRepositoryBranches,
   linkRepositoryToAfter,
   getCompleteRepositoryTree,
@@ -164,8 +164,10 @@ projectsRouter.get("/github-repos", requireFirebaseUser, async (req: Authenticat
   const token = await resolveGitHubToken(req, res);
   if (!token) return res.status(401).json({ error: "Connect GitHub first." });
   try {
-    const repos = await listUserRepositories(token, { page: 1, per_page: 100 });
-    return res.json({ repos });
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const perPage = Math.min(Math.max(Number(req.query.per_page) || 24, 1), 100);
+    const result = await listUserRepositoryPage(token, { page, per_page: perPage });
+    return res.json({ ...result, page, perPage });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
