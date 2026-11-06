@@ -60,6 +60,7 @@ export interface GitHubRepositoryItem {
   language: string | null;
   stargazers_count: number;
   forks_count: number;
+  license?: { key?: string; name?: string; spdx_id?: string | null } | null;
   owner: {
     login: string;
     avatar_url: string;
