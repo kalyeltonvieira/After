@@ -5,6 +5,12 @@ import {
   onAuthStateChanged,
   signInWithPopup,
   reauthenticateWithPopup,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
+  linkWithPopup,
+  linkWithCredential,
+  EmailAuthProvider,
   signOut as firebaseSignOut,
   updateProfile as firebaseUpdateProfile,
 } from "firebase/auth";
@@ -33,7 +39,13 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   needsOnboarding: boolean;
+  signInWithEmail: (email: string, password: string) => Promise<void>;
+  createAccount: (email: string, password: string) => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
   signInWithGitHub: () => Promise<void>;
+  connectGitHub: () => Promise<void>;
+  addEmailPassword: (email: string, password: string) => Promise<void>;
+  isGitHubConnected: boolean;
   refreshGitHubSession: () => Promise<void>;
   signOut: () => Promise<void>;
   updateUserProfile: (data: Partial<UserProfile>) => Promise<void>;
@@ -145,33 +157,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const signInWithGitHub = async () => {
-    let githubAccessToken: string | null = null;
-    let firebaseUser: User | null = null;
-
-    try {
-      const result = await signInWithPopup(auth, githubProvider);
-      firebaseUser = result.user;
-      githubAccessToken =
-        GithubAuthProvider.credentialFromResult(result)?.accessToken || null;
-    } catch (error: any) {
-      if (error?.code === "auth/account-exists-with-different-credential") {
-        throw new Error(
-          "Este e-mail já possui uma conta AFTER vinculada a outro provedor. O login do AFTER é somente pelo GitHub; essa conta precisa ter o GitHub vinculado no Firebase antes de entrar por aqui."
-        );
-      }
-      throw error;
-    }
-
-    if (!firebaseUser || !githubAccessToken) {
-      await firebaseSignOut(auth);
-      throw new Error(
-        "O GitHub não retornou a credencial OAuth necessária para acessar seus repositórios."
-      );
-    }
-
-    cacheGitHubAccessToken(githubAccessToken);
-    const idToken = await firebaseUser.getIdToken();
+  const establishGitHubSession = async (firebaseUser: User, githubAccessToken: string) => {
+    const idToken = await firebaseUser.getIdToken(true);
     const response = await fetch("/api/projects/github-session", {
       method: "POST",
       credentials: "include",
@@ -181,15 +168,72 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
       body: JSON.stringify({ githubAccessToken }),
     });
-
     const data = await response.json().catch(() => ({}));
-
     if (!response.ok) {
-      await firebaseSignOut(auth);
       throw new Error(
-        data.error || "Não foi possível estabelecer a sessão GitHub do AFTER."
+        data.error || "Sua conta AFTER está ativa, mas não foi possível concluir a conexão com o GitHub. Tente conectar novamente."
       );
     }
+  };
+
+  const signInWithEmail = async (email: string, password: string) => {
+    const cleanEmail = email.trim().toLowerCase();
+    await signInWithEmailAndPassword(auth, cleanEmail, password);
+  };
+
+  const createAccount = async (email: string, password: string) => {
+    const cleanEmail = email.trim().toLowerCase();
+    await createUserWithEmailAndPassword(auth, cleanEmail, password);
+  };
+
+  const resetPassword = async (email: string) => {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) throw new Error("Informe seu e-mail para receber o link de redefinição.");
+    await sendPasswordResetEmail(auth, cleanEmail);
+  };
+
+  // Compatibility path for accounts created before AFTER separated identity from GitHub.
+  const signInWithGitHub = async () => {
+    const result = await signInWithPopup(auth, githubProvider);
+    const firebaseUser = result.user;
+    const githubAccessToken =
+      GithubAuthProvider.credentialFromResult(result)?.accessToken || null;
+
+    if (!githubAccessToken) {
+      await firebaseSignOut(auth);
+      throw new Error("O GitHub não retornou uma credencial OAuth válida.");
+    }
+
+    await establishGitHubSession(firebaseUser, githubAccessToken);
+  };
+
+  // GitHub is an integration linked to the signed-in AFTER identity, not the identity itself.
+  const connectGitHub = async () => {
+    if (!user) throw new Error("Entre na sua conta AFTER antes de conectar o GitHub.");
+
+    const alreadyLinked = user.providerData.some(
+      (provider) => provider.providerId === "github.com"
+    );
+    const result = alreadyLinked
+      ? await reauthenticateWithPopup(user, githubProvider)
+      : await linkWithPopup(user, githubProvider);
+
+    const githubAccessToken =
+      GithubAuthProvider.credentialFromResult(result)?.accessToken || null;
+    if (!githubAccessToken) {
+      throw new Error("O GitHub não retornou uma credencial OAuth válida.");
+    }
+
+    setUser(result.user);
+    await establishGitHubSession(result.user, githubAccessToken);
+  };
+
+  // Allows legacy GitHub-only accounts to add an email/password login without losing their UID.
+  const addEmailPassword = async (email: string, password: string) => {
+    if (!user) throw new Error("Entre na sua conta AFTER antes de adicionar e-mail e senha.");
+    const credential = EmailAuthProvider.credential(email.trim().toLowerCase(), password);
+    const result = await linkWithCredential(user, credential);
+    setUser(result.user);
   };
 
   const refreshGitHubSession = async () => {
@@ -375,6 +419,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const isGitHubConnected = Boolean(
+    user?.providerData.some((provider) => provider.providerId === "github.com")
+  );
+
   return (
     <AuthContext.Provider
       value={{
@@ -382,7 +430,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         profile,
         loading,
         needsOnboarding,
+        signInWithEmail,
+        createAccount,
+        resetPassword,
         signInWithGitHub,
+        connectGitHub,
+        addEmailPassword,
+        isGitHubConnected,
         refreshGitHubSession,
         signOut,
         updateUserProfile,
