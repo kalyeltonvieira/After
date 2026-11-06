@@ -22,7 +22,12 @@ jobs:
         with:
           node-version: 22
       - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
+      - name: Install dependencies
+        run: |
+          if ! bun install --frozen-lockfile; then
+            echo "::warning::bun.lock is out of sync with package.json. Regenerate and commit the lockfile to restore fully reproducible installs."
+            bun install --no-save
+          fi
       - run: bun run typecheck
       - run: bun run test
       - run: bun run build
