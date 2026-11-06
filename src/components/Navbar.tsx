@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import {
   Sparkles,
   Search,
@@ -149,13 +150,14 @@ export function Navbar({
             <ChevronDown className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
           </button>
 
+          <AnimatePresence>
           {isProjectDropdownOpen && (
             <>
               <div
                 className="fixed inset-0 z-40"
                 onClick={() => setIsProjectDropdownOpen(false)}
               />
-              <div className="absolute left-0 mt-1.5 w-64 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xl py-1.5 z-50">
+              <motion.div initial={{ opacity: 0, y: -6, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -4, scale: 0.98 }} transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }} className="absolute left-0 mt-1.5 w-64 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xl py-1.5 z-50 origin-top-left">
                 <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
                   {t("nav_projects")} ({projects.length})
                 </div>
@@ -195,9 +197,10 @@ export function Navbar({
                     <span>{t("nav_create_project")}</span>
                   </button>
                 </div>
-              </div>
+              </motion.div>
             </>
           )}
+        </AnimatePresence>
         </div>
       </div>
 
@@ -260,13 +263,14 @@ export function Navbar({
             )}
           </button>
 
+          <AnimatePresence>
           {isNotificationsOpen && (
             <>
               <div
                 className="fixed inset-0 z-40"
                 onClick={() => setIsNotificationsOpen(false)}
               />
-              <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xl p-3 z-50">
+              <motion.div initial={{ opacity: 0, y: -6, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -4, scale: 0.98 }} transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }} className="absolute right-0 mt-2 w-80 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xl p-3 z-50 origin-top-right">
                 <div className="flex items-center justify-between pb-2 border-b border-zinc-100 dark:border-zinc-800">
                   <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
                     {t("nav_notifications")}
@@ -321,9 +325,10 @@ export function Navbar({
                     ))
                   )}
                 </div>
-              </div>
+              </motion.div>
             </>
           )}
+          </AnimatePresence>
         </div>
 
         {/* Quick Theme Switcher */}
@@ -355,13 +360,14 @@ export function Navbar({
             />
           </button>
 
+          <AnimatePresence>
           {isUserDropdownOpen && (
             <>
               <div
                 className="fixed inset-0 z-40"
                 onClick={() => setIsUserDropdownOpen(false)}
               />
-              <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xl py-1.5 z-50">
+              <motion.div initial={{ opacity: 0, y: -6, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -4, scale: 0.98 }} transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }} className="absolute right-0 mt-2 w-56 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xl py-1.5 z-50 origin-top-right">
                 <div className="px-3 py-2 border-b border-zinc-100 dark:border-zinc-800">
                   <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate">
                     {profile?.displayName || user?.displayName || "User"}
@@ -398,9 +404,10 @@ export function Navbar({
                     <span>{t("nav_sign_out")}</span>
                   </button>
                 </div>
-              </div>
+              </motion.div>
             </>
           )}
+          </AnimatePresence>
         </div>
       </div>
     </header>
