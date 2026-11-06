@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Sparkles, Check, AlertCircle, ArrowRight, Github, Search, Link2, SkipForward } from "lucide-react";
+import { Sparkles, Check, AlertCircle, ArrowRight, Github, Search, SkipForward } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 export function OnboardingModal() {
