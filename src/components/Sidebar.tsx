@@ -12,6 +12,8 @@ import {
   Code2,
   Brain,
   Eye,
+  GitCompareArrows,
+  FileText,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useProject } from "../context/ProjectContext";
@@ -53,6 +55,8 @@ export function Sidebar({
     },
     { id: "timeline", label: t("nav_timeline"), icon: History },
     { id: "watch", label: language === "pt" ? "Observar" : "Watch", icon: Eye },
+    { id: "compare", label: language === "pt" ? "Comparar arquitetura" : "Architecture compare", icon: GitCompareArrows },
+    { id: "report", label: language === "pt" ? "Relatório executivo" : "Executive report", icon: FileText },
     { id: "settings", label: t("nav_settings"), icon: Settings },
   ];
 
