@@ -47,6 +47,7 @@ export function Sidebar({
     { id: "projects", label: t("nav_projects"), icon: FolderGit2 },
     { id: "repository", label: language === "pt" ? "Repositório" : "Repository", icon: Code2 },
     { id: "graph", label: t("nav_graph"), icon: Network },
+    { id: "project-graph", label: language === "pt" ? "Grafo" : "Project Graph", icon: Network },
     { id: "memory", label: language === "pt" ? "Memória" : "Memory", icon: Brain },
     {
       id: "insights",

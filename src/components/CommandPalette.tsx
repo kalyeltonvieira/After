@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Search, FolderPlus, Sparkles, Settings as SettingsIcon, Sun, Moon, Laptop,
-  FolderGit2, FileCode2, X, Code2, GitCommit, GitPullRequest, CircleDot, Brain,
+  FolderGit2, FileCode2, X, Code2, GitCommit, GitPullRequest, CircleDot, Brain, Network,
 } from "lucide-react";
 import { useProject } from "../context/ProjectContext";
 import { useTheme } from "../context/ThemeContext";
@@ -87,6 +87,7 @@ export function CommandPalette({
     { id: "create_project", title: "Create New Project", category: "Projects", icon: FolderPlus, run: () => { onClose(); openCreateProject(); } },
     { id: "nav_repository", title: "Open Repository", category: "Navigation", icon: Code2, run: () => { onClose(); onNavigate("repository"); } },
     { id: "nav_graph", title: "Open Product Graph", category: "Navigation", icon: Brain, run: () => { onClose(); onNavigate("graph"); } },
+    { id: "nav_project_graph", title: "Open Project Graph", category: "Navigation", icon: Network, run: () => { onClose(); onNavigate("project-graph"); } },
     { id: "nav_insights", title: "Go to Insights", category: "Navigation", icon: Sparkles, run: () => { onClose(); onNavigate("insights"); } },
     { id: "nav_timeline", title: "View Recent Changes", category: "Navigation", icon: GitCommit, run: () => { onClose(); onNavigate("timeline"); } },
     { id: "nav_settings", title: "Open Settings", category: "Navigation", icon: SettingsIcon, run: () => { onClose(); onNavigate("settings"); } },
