@@ -3,7 +3,6 @@ import {
   User,
   GithubAuthProvider,
   onAuthStateChanged,
-  signInWithPopup,
   reauthenticateWithPopup,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -42,7 +41,6 @@ interface AuthContextType {
   signInWithEmail: (email: string, password: string) => Promise<void>;
   createAccount: (email: string, password: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
-  signInWithGitHub: () => Promise<void>;
   connectGitHub: () => Promise<void>;
   addEmailPassword: (email: string, password: string) => Promise<void>;
   isGitHubConnected: boolean;
@@ -68,7 +66,6 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   experimentalFeatures: false,
 };
 
-const GITHUB_LOGIN_ERROR = "GitHub login did not complete.";
 const GITHUB_SESSION_STORAGE_KEY = "after.github.access_token";
 
 function cacheGitHubAccessToken(_token: string) {
@@ -190,21 +187,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail) throw new Error("Informe seu e-mail para receber o link de redefinição.");
     await sendPasswordResetEmail(auth, cleanEmail);
-  };
-
-  // Compatibility path for accounts created before AFTER separated identity from GitHub.
-  const signInWithGitHub = async () => {
-    const result = await signInWithPopup(auth, githubProvider);
-    const firebaseUser = result.user;
-    const githubAccessToken =
-      GithubAuthProvider.credentialFromResult(result)?.accessToken || null;
-
-    if (!githubAccessToken) {
-      await firebaseSignOut(auth);
-      throw new Error("O GitHub não retornou uma credencial OAuth válida.");
-    }
-
-    await establishGitHubSession(firebaseUser, githubAccessToken);
   };
 
   // GitHub is an integration linked to the signed-in AFTER identity, not the identity itself.
@@ -433,7 +415,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signInWithEmail,
         createAccount,
         resetPassword,
-        signInWithGitHub,
         connectGitHub,
         addEmailPassword,
         isGitHubConnected,
