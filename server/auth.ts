@@ -83,8 +83,10 @@ export async function requireFirebaseUser(
   if (!match) return res.status(401).json({ error: "Firebase authentication is required." });
 
   try {
-    req.user = await getAuth(adminApp).verifyIdToken(match[1]);
-    req.firebaseToken = match[1];
+    const token = match[1].trim();
+    if (!token) throw new Error("Empty ID token");
+    req.user = await getAuth(adminApp).verifyIdToken(token);
+    req.firebaseToken = token;
     next();
   } catch (error: any) {
     console.error("Firebase ID token verification failed:", {

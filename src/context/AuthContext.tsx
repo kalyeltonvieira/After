@@ -1,13 +1,10 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import {
   User,
-  GithubAuthProvider,
   onAuthStateChanged,
-  reauthenticateWithPopup,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
-  linkWithPopup,
   linkWithCredential,
   EmailAuthProvider,
   signOut as firebaseSignOut,
@@ -24,7 +21,6 @@ import {
 import {
   auth,
   db,
-  githubProvider,
   handleFirestoreError,
   OperationType,
   testConnection,
@@ -43,7 +39,6 @@ interface AuthContextType {
   connectGitHub: () => Promise<void>;
   addEmailPassword: (email: string, password: string) => Promise<void>;
   isGitHubConnected: boolean;
-  refreshGitHubSession: () => Promise<void>;
   signOut: () => Promise<void>;
   updateUserProfile: (data: Partial<UserProfile>) => Promise<void>;
   completeOnboarding: (data: {
@@ -192,31 +187,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const connectGitHub = async () => {
     if (!user) throw new Error("Entre na sua conta AFTER antes de conectar o GitHub.");
 
-    const alreadyLinked = user.providerData.some(
-      (provider) => provider.providerId === "github.com"
-    );
-    let result;
     try {
-      result = alreadyLinked
-        ? await reauthenticateWithPopup(user, githubProvider)
-        : await linkWithPopup(user, githubProvider);
+      const response = await fetch("/api/projects/github-auth-url", {
+        headers: {
+            Authorization: `Bearer ${await user.getIdToken()}`
+        }
+      });
+      if (!response.ok) throw new Error("Failed to initiate GitHub OAuth.");
+      const { url } = await response.json();
+
+      const authWindow = window.open(url, 'oauth_popup', 'width=600,height=700');
+      if (!authWindow) throw new Error('Please allow popups for this site to connect your GitHub account.');
+      
+      return new Promise<void>((resolve, reject) => {
+        const handleMessage = (event: MessageEvent) => {
+          if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+            window.removeEventListener('message', handleMessage);
+            resolve();
+          }
+        };
+        window.addEventListener('message', handleMessage);
+      });
     } catch (error: any) {
-      if (error?.code === "auth/operation-not-allowed") {
-        throw new Error(
-          "Para conectar o GitHub como integração, habilite o provedor GitHub em Firebase Authentication. Ele continuará sem aparecer como opção de login na tela do AFTER."
-        );
-      }
       throw error;
     }
-
-    const githubAccessToken =
-      GithubAuthProvider.credentialFromResult(result)?.accessToken || null;
-    if (!githubAccessToken) {
-      throw new Error("O GitHub não retornou uma credencial OAuth válida.");
-    }
-
-    setUser(result.user);
-    await establishGitHubSession(result.user, githubAccessToken);
   };
 
   // Allows legacy GitHub-only accounts to add an email/password login without losing their UID.
@@ -227,39 +221,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(result.user);
   };
 
-  const refreshGitHubSession = async () => {
-    if (!user) throw new Error("No active Firebase session to refresh.");
-
-    const result = await reauthenticateWithPopup(user, githubProvider);
-    const githubAccessToken =
-      GithubAuthProvider.credentialFromResult(result)?.accessToken || null;
-
-    if (!githubAccessToken) {
-      throw new Error(
-        "O GitHub não retornou uma credencial OAuth válida para renovar a conexão."
-      );
-    }
-
-    cacheGitHubAccessToken(githubAccessToken);
-
-    const idToken = await result.user.getIdToken(true);
-    const response = await fetch("/api/projects/github-session", {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${idToken}`,
-      },
-      body: JSON.stringify({ githubAccessToken }),
-    });
-
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(
-        data.error || "Não foi possível renovar a sessão GitHub do AFTER."
-      );
-    }
-  };
 
   const signOut = async () => {
     try {
@@ -410,9 +371,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const isGitHubConnected = Boolean(
-    user?.providerData.some((provider) => provider.providerId === "github.com")
-  );
+  const [isGitHubConnected, setIsGitHubConnected] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      fetch("/api/projects/github-user", {
+        headers: { Authorization: `Bearer ${user.getIdToken(true)}` }
+      }).then(res => setIsGitHubConnected(res.ok)).catch(() => setIsGitHubConnected(false));
+    } else {
+      setIsGitHubConnected(false);
+    }
+  }, [user]);
 
   return (
     <AuthContext.Provider
@@ -427,7 +396,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         connectGitHub,
         addEmailPassword,
         isGitHubConnected,
-        refreshGitHubSession,
         signOut,
         updateUserProfile,
         completeOnboarding,

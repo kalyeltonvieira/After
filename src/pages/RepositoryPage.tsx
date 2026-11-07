@@ -262,7 +262,6 @@ export function RepositoryPage() {
   const [codeScrollTop, setCodeScrollTop] = useState(0);
   const [reconnecting, setReconnecting] = useState(false);
 
-  const { refreshGitHubSession } = useAuth();
   const projectId = currentProject?.id;
   const tabs = useMemo(() => [
     ["code", FileCode2, "Code"],
@@ -300,7 +299,6 @@ export function RepositoryPage() {
           await exchangeGitHubCode(popupRes.code);
         }
       }
-      await refreshGitHubSession();
       await loadBranches();
       await loadTab();
     } catch (err: any) {

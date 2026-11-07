@@ -42,7 +42,7 @@ interface CreateProjectModalProps {
 
 export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProjectModalProps) {
   const { connectRepository, createProject } = useProject();
-  const { user: firebaseUser, refreshGitHubSession } = useAuth();
+  const { user: firebaseUser, connectGitHub } = useAuth();
   const { t, language } = useLanguage();
 
   const [activeTab, setActiveTab] = useState<"github" | "manual">("github");
@@ -156,10 +156,10 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
     try {
       setLoadingRepos(true);
       setError(null);
-      await refreshGitHubSession();
+      await connectGitHub();
       await loadGitHubUserData(true);
     } catch (err: any) {
-      setError(err?.message || (language === "pt" ? "Falha ao renovar conexão GitHub." : "Failed to renew GitHub connection."));
+      setError(err?.message || (language === "pt" ? "Falha ao reconectar ao GitHub." : "Failed to reconnect to GitHub."));
     } finally {
       setLoadingRepos(false);
     }
