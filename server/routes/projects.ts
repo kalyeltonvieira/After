@@ -3,6 +3,8 @@ import type { Response } from "express";
 import { getAdminFirestore, requireFirebaseUser, type AuthenticatedRequest } from "../auth.js";
 import {
   createGitHubSession,
+  createOAuthState,
+  consumeOAuthState,
   getGitHubToken,
   getPersistentGitHubToken,
   persistGitHubToken,
@@ -99,43 +101,84 @@ projectsRouter.get("/validate-username", (req, res) => {
   return res.json({ valid: true, username });
 });
 
-// Establish the AFTER GitHub session from the OAuth credential returned by Firebase Auth.
-projectsRouter.post("/github-session", requireFirebaseUser, async (req: AuthenticatedRequest, res: Response) => {
-  const githubAccessToken = String(req.body?.githubAccessToken || "").trim();
-  if (!githubAccessToken) return res.status(400).json({ error: "GitHub OAuth credential is required." });
+// Start a first-party GitHub OAuth flow. Firebase only authenticates the AFTER user.
+projectsRouter.get("/github-auth-url", requireFirebaseUser, (req: AuthenticatedRequest, res: Response) => {
+  const clientId = process.env.GITHUB_CLIENT_ID;
+  const redirectUri = process.env.GITHUB_CALLBACK_URL;
+  if (!clientId || !redirectUri) {
+    return res.status(503).json({ error: "GitHub OAuth is not configured. Set GITHUB_CLIENT_ID and GITHUB_CALLBACK_URL on the server." });
+  }
+  const state = createOAuthState(req.user!.uid);
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    scope: "read:user user:email repo",
+    state,
+  });
+  return res.json({ url: `https://github.com/login/oauth/authorize?${params.toString()}`, redirectUri });
+});
+
+// GitHub redirects here directly. The authorization code and client secret never reach the browser.
+projectsRouter.get("/github-callback", async (req, res: Response) => {
+  const code = typeof req.query.code === "string" ? req.query.code : "";
+  const state = typeof req.query.state === "string" ? req.query.state : "";
+  const oauthError = typeof req.query.error_description === "string"
+    ? req.query.error_description
+    : typeof req.query.error === "string" ? req.query.error : "";
+  const frontendUrl = (process.env.APP_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+  const finish = (status: string) => res.redirect(`${frontendUrl}/?github=${encodeURIComponent(status)}`);
+
+  if (oauthError) return finish("cancelled");
+  if (!code || !state) return finish("error");
+
+  const stateRecord = consumeOAuthState(state);
+  if (!stateRecord) return finish("invalid_state");
+
+  const clientId = process.env.GITHUB_CLIENT_ID;
+  const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+  const redirectUri = process.env.GITHUB_CALLBACK_URL;
+  if (!clientId || !clientSecret || !redirectUri) return finish("not_configured");
 
   try {
-    const githubUser = await getAuthenticatedUser(githubAccessToken);
-    const sessionId = createGitHubSession(req.user!.uid, githubAccessToken);
-
-    try {
-      await persistGitHubToken(req.user!.uid, githubAccessToken);
-    } catch (persistenceError: any) {
-      // GitHub login remains valid even when server-side token persistence is unavailable.
-      console.warn(
-        "GitHub token persistence skipped:",
-        persistenceError?.message || persistenceError
-      );
+    const tokenResponse = await fetch("https://github.com/login/oauth/access_token", {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+        redirect_uri: redirectUri,
+      }),
+    });
+    const tokenData = await tokenResponse.json() as { access_token?: string; error?: string; error_description?: string };
+    if (!tokenResponse.ok || !tokenData.access_token) {
+      console.error("GitHub OAuth code exchange failed:", tokenData.error || tokenData.error_description || tokenResponse.status);
+      return finish("exchange_failed");
     }
 
-    res.cookie("after_github_session", sessionId, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: "/",
-    });
-    res.cookie("after_github_token", createEncryptedGitHubTokenCookie(githubAccessToken), {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: "/",
-    });
+    const githubAccessToken = tokenData.access_token;
+    await getAuthenticatedUser(githubAccessToken);
+    const sessionId = createGitHubSession(stateRecord.uid, githubAccessToken);
 
-    return res.json({ user: githubUser });
-  } catch (err: any) {
-    return res.status(401).json({ error: err?.message || "Invalid GitHub OAuth credential." });
+    try {
+      await persistGitHubToken(stateRecord.uid, githubAccessToken);
+    } catch (persistenceError: any) {
+      console.warn("GitHub token persistence skipped:", persistenceError?.message || persistenceError);
+    }
+
+    const cookieOptions = {
+      httpOnly: true,
+      sameSite: "lax" as const,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: "/",
+    };
+    res.cookie("after_github_session", sessionId, cookieOptions);
+    res.cookie("after_github_token", createEncryptedGitHubTokenCookie(githubAccessToken), cookieOptions);
+    return finish("connected");
+  } catch (error: any) {
+    console.error("GitHub OAuth callback failed:", error?.message || error);
+    return finish("error");
   }
 });
 
