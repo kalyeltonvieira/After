@@ -8,21 +8,46 @@ interface GitHubSession {
 
 const sessions = new Map<string, GitHubSession>();
 const userSessions = new Map<string, { token: string; expiresAt: number }>();
-const states = new Map<string, { uid: string; expiresAt: number }>();
 const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;
 const STATE_TTL = 10 * 60 * 1000;
 
 export function createOAuthState(uid: string) {
-  const state = crypto.randomBytes(32).toString("hex");
-  states.set(state, { uid, expiresAt: Date.now() + STATE_TTL });
-  return state;
+  const secret = process.env.GITHUB_CLIENT_SECRET;
+  if (!secret) throw new Error("GITHUB_CLIENT_SECRET is not configured.");
+  const payload = Buffer.from(JSON.stringify({
+    uid,
+    issuedAt: Date.now(),
+    nonce: crypto.randomBytes(24).toString("hex"),
+  })).toString("base64url");
+  const signature = crypto.createHmac("sha256", secret).update(payload).digest("base64url");
+  return `${payload}.${signature}`;
 }
 
-export function consumeOAuthState(state: string) {
-  const record = states.get(state);
-  states.delete(state);
-  if (!record || record.expiresAt < Date.now()) return null;
-  return record;
+export function consumeOAuthState(state: string): { uid: string; expiresAt: number } | null {
+  const secret = process.env.GITHUB_CLIENT_SECRET;
+  if (!secret || typeof state !== "string") return null;
+  const [payload, signature, extra] = state.split(".");
+  if (!payload || !signature || extra) return null;
+
+  const expected = crypto.createHmac("sha256", secret).update(payload).digest();
+  let received: Buffer;
+  try {
+    received = Buffer.from(signature, "base64url");
+  } catch {
+    return null;
+  }
+  if (received.length !== expected.length || !crypto.timingSafeEqual(received, expected)) return null;
+
+  try {
+    const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    const issuedAt = Number(decoded?.issuedAt);
+    if (typeof decoded?.uid !== "string" || !decoded.uid || !Number.isFinite(issuedAt)) return null;
+    const expiresAt = issuedAt + STATE_TTL;
+    if (issuedAt > Date.now() + 30_000 || expiresAt < Date.now()) return null;
+    return { uid: decoded.uid, expiresAt };
+  } catch {
+    return null;
+  }
 }
 
 export function createGitHubSession(uid: string, token: string) {
