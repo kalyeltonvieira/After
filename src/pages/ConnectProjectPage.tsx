@@ -32,7 +32,7 @@ type Source = "profile" | "search";
 
 export function ConnectProjectPage({ onBack }: ConnectProjectPageProps) {
   const { connectRepository } = useProject();
-  const { connectGitHub, isGitHubConnected, refreshGitHubSession } = useAuth();
+  const { connectGitHub, isGitHubConnected } = useAuth();
   const { language } = useLanguage();
   const isPt = language === "pt";
 
@@ -245,7 +245,7 @@ export function ConnectProjectPage({ onBack }: ConnectProjectPageProps) {
         </section>
       </div>
 
-      {source === "profile" && error && <button type="button" onClick={() => void refreshGitHubSession().then(() => loadProfileRepos(true)).catch((err) => setError(err?.message || String(err)))} className="inline-flex items-center gap-2 text-xs text-sky-600 dark:text-sky-400 hover:underline"><RefreshCw className="w-3.5 h-3.5" />{isPt ? "Renovar conexão GitHub" : "Refresh GitHub connection"}</button>}
+      {source === "profile" && error && <button type="button" onClick={() => void connectGitHub().then(() => loadProfileRepos(true)).catch((err) => setError(err?.message || String(err)))} className="inline-flex items-center gap-2 text-xs text-sky-600 dark:text-sky-400 hover:underline"><RefreshCw className="w-3.5 h-3.5" />{isPt ? "Reconectar ao GitHub" : "Reconnect to GitHub"}</button>}
     </div>
   );
 }

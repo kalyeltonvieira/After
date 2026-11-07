@@ -1,4 +1,4 @@
-import { Router } from "express";
+import express, { Router } from "express";
 import type { Response } from "express";
 import { getAdminFirestore, requireFirebaseUser, type AuthenticatedRequest } from "../auth.js";
 import {
@@ -9,6 +9,8 @@ import {
   revokeGitHubSession,
   createEncryptedGitHubTokenCookie,
   readEncryptedGitHubTokenCookie,
+  createOAuthState,
+  consumeOAuthState,
 } from "../githubSession.js";
 import { loadProjectContext, listUserProjectsViaRest, fetchProjectViaRest } from "../projectContext.js";
 import { enqueueIncrementalAnalysis } from "../services/incrementalAnalysis.js";
@@ -99,23 +101,44 @@ projectsRouter.get("/validate-username", (req, res) => {
   return res.json({ valid: true, username });
 });
 
-// Establish the AFTER GitHub session from the OAuth credential returned by Firebase Auth.
-projectsRouter.post("/github-session", requireFirebaseUser, async (req: AuthenticatedRequest, res: Response) => {
-  const githubAccessToken = String(req.body?.githubAccessToken || "").trim();
-  if (!githubAccessToken) return res.status(400).json({ error: "GitHub OAuth credential is required." });
+// Establish the AFTER GitHub session via OAuth callback.
+projectsRouter.get("/github-callback", async (req: express.Request, res: express.Response) => {
+  const { code, state } = req.query;
+  if (typeof code !== "string" || typeof state !== "string") {
+    return res.status(400).send("Invalid OAuth callback parameters.");
+  }
+
+  const stateRecord = consumeOAuthState(state);
+  if (!stateRecord) return res.status(400).send("Invalid or expired OAuth state.");
 
   try {
+    // Exchange code for token
+    const tokenResponse = await fetch("https://github.com/login/oauth/access_token", {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        client_id: process.env.GITHUB_CLIENT_ID,
+        client_secret: process.env.GITHUB_CLIENT_SECRET,
+        code,
+        state,
+      }),
+    });
+    const tokenData = await tokenResponse.json();
+    if (!tokenData.access_token) {
+        throw new Error("Failed to exchange code for token.");
+    }
+    const githubAccessToken = tokenData.access_token;
+
     const githubUser = await getAuthenticatedUser(githubAccessToken);
-    const sessionId = createGitHubSession(req.user!.uid, githubAccessToken);
+    const sessionId = createGitHubSession(stateRecord.uid, githubAccessToken);
 
     try {
-      await persistGitHubToken(req.user!.uid, githubAccessToken);
+      await persistGitHubToken(stateRecord.uid, githubAccessToken);
     } catch (persistenceError: any) {
-      // GitHub login remains valid even when server-side token persistence is unavailable.
-      console.warn(
-        "GitHub token persistence skipped:",
-        persistenceError?.message || persistenceError
-      );
+      console.warn("GitHub token persistence skipped:", persistenceError?.message || persistenceError);
     }
 
     res.cookie("after_github_session", sessionId, {
@@ -133,10 +156,32 @@ projectsRouter.post("/github-session", requireFirebaseUser, async (req: Authenti
       path: "/",
     });
 
-    return res.json({ user: githubUser });
+    res.send(`
+      <html>
+        <body>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
+              window.close();
+            } else {
+              window.location.href = '/';
+            }
+          </script>
+          <p>Authentication successful. This window should close automatically.</p>
+        </body>
+      </html>
+    `);
   } catch (err: any) {
-    return res.status(401).json({ error: err?.message || "Invalid GitHub OAuth credential." });
+    console.error("GitHub OAuth callback error:", err);
+    res.status(401).send("Invalid GitHub OAuth credential.");
   }
+});
+
+// Construct the GitHub OAuth URL
+projectsRouter.get("/github-auth-url", requireFirebaseUser, async (req: AuthenticatedRequest, res: express.Response) => {
+  const state = createOAuthState(req.user!.uid);
+  const authUrl = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(`${req.protocol}://${req.get("host")}/api/projects/github-callback`)}&scope=repo%20user:email&state=${state}`;
+  res.json({ url: authUrl });
 });
 
 // End both browser sessions without disconnecting the persisted GitHub integration.
