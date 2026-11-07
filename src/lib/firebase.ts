@@ -4,8 +4,6 @@ import {
   indexedDBLocalPersistence,
   browserLocalPersistence,
   browserSessionPersistence,
-  browserPopupRedirectResolver,
-  GithubAuthProvider,
 } from "firebase/auth";
 import { getFirestore, doc, getDocFromServer } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
@@ -22,11 +20,7 @@ export const auth = initializeAuth(app, {
     browserLocalPersistence,
     browserSessionPersistence,
   ],
-  popupRedirectResolver: browserPopupRedirectResolver,
 });
-export const githubProvider = new GithubAuthProvider();
-githubProvider.addScope("repo");
-githubProvider.addScope("user:email");
 export const storage = getStorage(app);
 
 export enum OperationType {
