@@ -70,13 +70,14 @@ function MainApp() {
     return () => window.removeEventListener("keydown", handleSidebarShortcut);
   }, []);
 
+  // Instead of showing a full-screen loader, render the LandingPage immediately if auth is loading, 
+  // or allow the MainApp to handle user-null state.
   if (authLoading) {
     return (
       <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex flex-col items-center justify-center space-y-4">
         <span className="font-mono font-bold tracking-tighter text-2xl text-zinc-950 dark:text-zinc-50 animate-pulse">
           AFTER
         </span>
-        <p className="text-xs text-zinc-400 font-mono">Initializing platform...</p>
       </div>
     );
   }
