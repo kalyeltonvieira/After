@@ -63,10 +63,6 @@ const DEFAULT_PREFERENCES: UserPreferences = {
 
 const GITHUB_SESSION_STORAGE_KEY = "after.github.access_token";
 
-function cacheGitHubAccessToken(_token: string) {
-  // No-op: Tokens are secured server-side only
-}
-
 function clearCachedGitHubAccessToken() {
   try {
     sessionStorage.removeItem(GITHUB_SESSION_STORAGE_KEY);
