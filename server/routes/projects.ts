@@ -128,7 +128,8 @@ projectsRouter.get("/github-callback", async (req: express.Request, res: express
     });
     const tokenData = await tokenResponse.json();
     if (!tokenData.access_token) {
-        throw new Error("Failed to exchange code for token.");
+        console.error("GitHub OAuth token exchange failed. Response:", JSON.stringify(tokenData));
+        throw new Error("Failed to exchange code for token: " + JSON.stringify(tokenData));
     }
     const githubAccessToken = tokenData.access_token;
 
