@@ -203,13 +203,19 @@ function BinaryFilePreview({ file }: { file: any }) {
     let active = true;
     setSpreadsheet(null);
     if (file?.contentBase64 && ["xlsx", "xls", "xlsm", "xlsb"].includes(extension)) {
-      void import("xlsx").then((XLSX) => {
+      void import("exceljs").then((ExcelJS) => {
         try {
           const bytes = Uint8Array.from(atob(file.contentBase64), (char) => char.charCodeAt(0));
-          const workbook = XLSX.read(bytes, { type: "array", cellDates: true });
-          const sheetName = workbook.SheetNames[0];
-          const rows = sheetName ? XLSX.utils.sheet_to_json<any[]>(workbook.Sheets[sheetName], { header: 1, raw: false }) : [];
-          if (active && sheetName) setSpreadsheet({ sheetName, sheetCount: workbook.SheetNames.length, rows });
+          const workbook = new ExcelJS.Workbook();
+          workbook.xlsx.load(bytes.buffer).then((wb) => {
+            const worksheet = wb.worksheets[0];
+            if (!worksheet || !active) return;
+            const rows: any[][] = [];
+            worksheet.eachRow({ includeEmpty: true }, (row) => {
+              rows.push(row.values as any[]);
+            });
+            setSpreadsheet({ sheetName: worksheet.name, sheetCount: wb.worksheets.length, rows });
+          });
         } catch {
           if (active) setSpreadsheet(null);
         }

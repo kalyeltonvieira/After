@@ -180,7 +180,11 @@ projectsRouter.get("/github-callback", async (req: express.Request, res: express
 // Construct the GitHub OAuth URL
 projectsRouter.get("/github-auth-url", requireFirebaseUser, async (req: AuthenticatedRequest, res: express.Response) => {
   const state = createOAuthState(req.user!.uid);
-  const authUrl = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(`${req.protocol}://${req.get("host")}/api/projects/github-callback`)}&scope=repo%20user:email&state=${state}`;
+  const protocol = req.get('x-forwarded-proto') || req.protocol;
+  const host = req.get('host');
+  const baseUrl = process.env.APP_URL || 
+                  (process.env.NODE_ENV === 'production' ? 'https://ais-pre-g6ya6dmrcw76moj3b7zpt7-272061137988.us-west2.run.app' : `${protocol}://${host}`);
+  const authUrl = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(`${baseUrl}/api/projects/github-callback`)}&scope=repo%20user:email&state=${state}`;
   res.json({ url: authUrl });
 });
 
