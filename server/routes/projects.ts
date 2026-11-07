@@ -104,9 +104,10 @@ projectsRouter.get("/validate-username", (req, res) => {
 // Start a first-party GitHub OAuth flow. Firebase only authenticates the AFTER user.
 projectsRouter.get("/github-auth-url", requireFirebaseUser, (req: AuthenticatedRequest, res: Response) => {
   const clientId = process.env.GITHUB_CLIENT_ID;
+  const clientSecret = process.env.GITHUB_CLIENT_SECRET;
   const redirectUri = process.env.GITHUB_CALLBACK_URL;
-  if (!clientId || !redirectUri) {
-    return res.status(503).json({ error: "GitHub OAuth is not configured. Set GITHUB_CLIENT_ID and GITHUB_CALLBACK_URL on the server." });
+  if (!clientId || !clientSecret || !redirectUri) {
+    return res.status(503).json({ error: "GitHub OAuth is not configured. Set GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET and GITHUB_CALLBACK_URL on the server." });
   }
   const state = createOAuthState(req.user!.uid);
   const params = new URLSearchParams({
