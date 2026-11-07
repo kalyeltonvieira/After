@@ -1,13 +1,10 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import {
   User,
-  GithubAuthProvider,
   onAuthStateChanged,
-  reauthenticateWithPopup,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
-  linkWithPopup,
   linkWithCredential,
   EmailAuthProvider,
   signOut as firebaseSignOut,
@@ -24,7 +21,6 @@ import {
 import {
   auth,
   db,
-  githubProvider,
   handleFirestoreError,
   OperationType,
   testConnection,
@@ -90,6 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [isGitHubConnected, setIsGitHubConnected] = useState(false);
   const onboardingCompletedUidRef = React.useRef<string | null>(null);
 
   useEffect(() => {
@@ -103,6 +100,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(currentUser);
       if (!currentUser) {
         onboardingCompletedUidRef.current = null;
+        setIsGitHubConnected(false);
+      } else {
+        void currentUser.getIdToken().then(async (idToken) => {
+          try {
+            const response = await fetch("/api/projects/github-user", {
+              credentials: "include",
+              headers: { Authorization: `Bearer ${idToken}` },
+            });
+            setIsGitHubConnected(response.ok);
+          } catch {
+            setIsGitHubConnected(false);
+          }
+        });
       }
 
       if (unsubscribeProfile) {
@@ -153,25 +163,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const establishGitHubSession = async (firebaseUser: User, githubAccessToken: string) => {
-    const idToken = await firebaseUser.getIdToken(true);
-    const response = await fetch("/api/projects/github-session", {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${idToken}`,
-      },
-      body: JSON.stringify({ githubAccessToken }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(
-        data.error || "Sua conta AFTER está ativa, mas não foi possível concluir a conexão com o GitHub. Tente conectar novamente."
-      );
-    }
-  };
-
   const signInWithEmail = async (email: string, password: string) => {
     const cleanEmail = email.trim().toLowerCase();
     await signInWithEmailAndPassword(auth, cleanEmail, password);
@@ -188,35 +179,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await sendPasswordResetEmail(auth, cleanEmail);
   };
 
-  // GitHub is an integration linked to the signed-in AFTER identity, not the identity itself.
+  // GitHub is authorized directly with GitHub OAuth; Firebase remains the AFTER identity provider.
   const connectGitHub = async () => {
     if (!user) throw new Error("Entre na sua conta AFTER antes de conectar o GitHub.");
-
-    const alreadyLinked = user.providerData.some(
-      (provider) => provider.providerId === "github.com"
-    );
-    let result;
-    try {
-      result = alreadyLinked
-        ? await reauthenticateWithPopup(user, githubProvider)
-        : await linkWithPopup(user, githubProvider);
-    } catch (error: any) {
-      if (error?.code === "auth/operation-not-allowed") {
-        throw new Error(
-          "Para conectar o GitHub como integração, habilite o provedor GitHub em Firebase Authentication. Ele continuará sem aparecer como opção de login na tela do AFTER."
-        );
-      }
-      throw error;
+    const idToken = await user.getIdToken();
+    const response = await fetch("/api/projects/github-auth-url", {
+      method: "GET",
+      credentials: "include",
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.url) {
+      throw new Error(data.error || "Não foi possível iniciar a autorização direta do GitHub.");
     }
-
-    const githubAccessToken =
-      GithubAuthProvider.credentialFromResult(result)?.accessToken || null;
-    if (!githubAccessToken) {
-      throw new Error("O GitHub não retornou uma credencial OAuth válida.");
-    }
-
-    setUser(result.user);
-    await establishGitHubSession(result.user, githubAccessToken);
+    window.location.assign(data.url);
   };
 
   // Allows legacy GitHub-only accounts to add an email/password login without losing their UID.
@@ -228,37 +204,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshGitHubSession = async () => {
-    if (!user) throw new Error("No active Firebase session to refresh.");
-
-    const result = await reauthenticateWithPopup(user, githubProvider);
-    const githubAccessToken =
-      GithubAuthProvider.credentialFromResult(result)?.accessToken || null;
-
-    if (!githubAccessToken) {
-      throw new Error(
-        "O GitHub não retornou uma credencial OAuth válida para renovar a conexão."
-      );
-    }
-
-    cacheGitHubAccessToken(githubAccessToken);
-
-    const idToken = await result.user.getIdToken(true);
-    const response = await fetch("/api/projects/github-session", {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${idToken}`,
-      },
-      body: JSON.stringify({ githubAccessToken }),
-    });
-
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(
-        data.error || "Não foi possível renovar a sessão GitHub do AFTER."
-      );
-    }
+    await connectGitHub();
   };
 
   const signOut = async () => {
@@ -409,10 +355,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw error;
     }
   };
-
-  const isGitHubConnected = Boolean(
-    user?.providerData.some((provider) => provider.providerId === "github.com")
-  );
 
   return (
     <AuthContext.Provider
