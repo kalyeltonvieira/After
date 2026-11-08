@@ -120,8 +120,8 @@ projectsRouter.get("/github-callback", async (req: express.Request, res: express
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        client_id: process.env.GITHUB_CLIENT_ID,
-        client_secret: process.env.GITHUB_CLIENT_SECRET,
+        client_id: process.env.GITHUB_CLIENT_ID || "Ov23linus9XDzPNyi6d8",
+        client_secret: process.env.GITHUB_CLIENT_SECRET || "***REMOVED_GITHUB_OAUTH_SECRET***",
         code,
         state,
       }),
@@ -181,10 +181,11 @@ projectsRouter.get("/github-callback", async (req: express.Request, res: express
 // Construct the GitHub OAuth URL
 projectsRouter.get("/github-auth-url", requireFirebaseUser, async (req: AuthenticatedRequest, res: express.Response) => {
   const state = createOAuthState(req.user!.uid);
-  const protocol = req.get('x-forwarded-proto') || req.protocol;
-  const host = req.get('host');
-  const baseUrl = process.env.APP_URL || 
-                  (process.env.NODE_ENV === 'production' ? 'https://ais-pre-g6ya6dmrcw76moj3b7zpt7-272061137988.us-west2.run.app' : `${protocol}://${host}`);
+  const protocol = req.get('x-forwarded-proto') || 'https';
+  const host = req.get('x-forwarded-host') || req.get('host');
+  // Use the active runtime URL or fallback to the current dev domain
+  const currentHost = host && host.includes('run.app') ? host : 'ais-dev-g6ya6dmrcw76moj3b7zpt7-272061137988.us-west2.run.app';
+  const baseUrl = process.env.APP_URL || `${protocol}://${currentHost}`;
   const authUrl = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(`${baseUrl}/api/projects/github-callback`)}&scope=repo%20user:email&state=${state}`;
   res.json({ url: authUrl });
 });

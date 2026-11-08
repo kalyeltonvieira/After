@@ -83,8 +83,12 @@ export async function requireFirebaseUser(
   if (!match) return res.status(401).json({ error: "Firebase authentication is required." });
 
   try {
-    const token = match[1].trim();
-    if (!token) throw new Error("Empty ID token");
+    let token = match[1].trim();
+    // Remove surrounding quotes or accidental duplicated Bearer prefix
+    token = token.replace(/^["']|["']$/g, "").replace(/^bearer\s+/i, "").trim();
+    if (!token || token.split(".").length !== 3) {
+      throw new Error("Invalid JWT format (expected 3 dot-separated segments)");
+    }
     req.user = await getAuth(adminApp).verifyIdToken(token);
     req.firebaseToken = token;
     next();
@@ -94,7 +98,7 @@ export async function requireFirebaseUser(
       message: error?.message || "unknown error",
       projectId: adminApp.options.projectId || firebaseProjectId || "unknown",
     });
-    return res.status(401).json({ error: "Invalid or expired Firebase session." });
+    return res.status(401).json({ error: "Invalid or expired Firebase session. Please log in again." });
   }
 }
 
