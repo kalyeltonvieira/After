@@ -110,7 +110,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
 
   // 1. Subscribe to User's Projects in Firestore
   useEffect(() => {
-    if (!user) {
+    if (!user?.uid) {
       setProjects([]);
       setCurrentProject(null);
       setEvents([]);
@@ -199,7 +199,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     );
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user?.uid]);
 
   // 2. Hydrate analysis state from the project document itself.
   // This keeps repository connection functional even when named Firestore
