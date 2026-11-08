@@ -1436,8 +1436,8 @@ projectsRouter.post("/analyze-repository", requireGitHubUser, async (req: Authen
     // The browser may be unable to write directly when client-side Firestore rules
     // are stricter; without this write the UI can show a local cached project while
     // telemetry endpoints correctly report that no owned server-side project exists.
-    const requestedProjectId = validateFirestoreDocPath(req.body?.projectId);
-    if (!requestedProjectId) {
+    const persistedProjectId = validateFirestoreDocPath(req.body?.projectId);
+    if (!persistedProjectId) {
       return res.status(400).json({ error: "A valid projectId is required to save repository analysis." });
     }
 
@@ -1446,7 +1446,7 @@ projectsRouter.post("/analyze-repository", requireGitHubUser, async (req: Authen
       return res.status(401).json({ error: "Authenticated GitHub user identity is missing." });
     }
 
-    const projectRef = getAdminFirestore().collection("projects").doc(requestedProjectId);
+    const projectRef = getAdminFirestore().collection("projects").doc(persistedProjectId);
     const existingProject = await projectRef.get();
     const existingOwnerId = existingProject.exists ? existingProject.get("ownerId") : undefined;
 
@@ -1457,7 +1457,7 @@ projectsRouter.post("/analyze-repository", requireGitHubUser, async (req: Authen
     }
 
     const analyzedProject = {
-      id: requestedProjectId,
+      id: persistedProjectId,
       ownerId,
       name: repoData.name,
       description: repoData.description || `Monitored GitHub repository (${repoData.full_name})`,
