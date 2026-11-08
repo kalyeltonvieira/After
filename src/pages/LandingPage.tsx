@@ -20,14 +20,26 @@ import {
 } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
 import { useTheme } from "../context/ThemeContext";
+import { useAuth } from "../context/AuthContext";
 
-interface LandingPageProps {
-  onOpenAuth: () => void;
-}
-
-export function LandingPage({ onOpenAuth }: LandingPageProps) {
+export function LandingPage() {
   const { t, language, setLanguage } = useLanguage();
   const { effectiveTheme, setTheme } = useTheme();
+  const { loginWithGitHub } = useAuth();
+
+  const [isLoggingIn, setIsLoggingIn] = React.useState(false);
+  const [loginError, setLoginError] = React.useState<string | null>(null);
+
+  const handleLogin = async () => {
+    setIsLoggingIn(true);
+    setLoginError(null);
+    try {
+      await loginWithGitHub();
+    } catch (err: any) {
+      setLoginError(err?.message || (language === "pt" ? "Falha ao conectar com o GitHub." : "Failed to connect with GitHub."));
+      setIsLoggingIn(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#fafafa] dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 selection:bg-zinc-900 selection:text-white dark:selection:bg-zinc-100 dark:selection:text-zinc-900 transition-colors">
@@ -65,19 +77,21 @@ export function LandingPage({ onOpenAuth }: LandingPageProps) {
           <button
             id="landing-signin-btn"
             type="button"
-            onClick={onOpenAuth}
-            className="text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-zinc-50 px-3.5 py-1.5 rounded-lg transition-colors cursor-pointer inline-flex items-center space-x-1.5"
+            onClick={handleLogin}
+            disabled={isLoggingIn}
+            className="text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-zinc-50 px-3.5 py-1.5 rounded-lg transition-colors cursor-pointer inline-flex items-center space-x-1.5 disabled:opacity-50"
           >
-            <Github className="w-3.5 h-3.5" />
-            <span>{language === "pt" ? "Entrar com GitHub" : "Sign in with GitHub"}</span>
+            {isLoggingIn ? <Sparkles className="w-3.5 h-3.5 animate-spin" /> : <Github className="w-3.5 h-3.5" />}
+            <span>{language === "pt" ? (isLoggingIn ? "Autorizando..." : "Entrar com GitHub") : (isLoggingIn ? "Authorizing..." : "Sign in with GitHub")}</span>
           </button>
           <button
             id="landing-getstarted-btn"
             type="button"
-            onClick={onOpenAuth}
-            className="text-xs font-medium px-4 py-2 rounded-full bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:opacity-90 transition-all shadow-xs cursor-pointer active:scale-98 inline-flex items-center space-x-1.5"
+            onClick={handleLogin}
+            disabled={isLoggingIn}
+            className="text-xs font-medium px-4 py-2 rounded-full bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:opacity-90 transition-all shadow-xs cursor-pointer active:scale-98 inline-flex items-center space-x-1.5 disabled:opacity-50"
           >
-            <span>{language === "pt" ? "Começar Agora" : "Get Started"}</span>
+            <span>{language === "pt" ? (isLoggingIn ? "Aguarde..." : "Começar Agora") : (isLoggingIn ? "Wait..." : "Get Started")}</span>
             <ArrowRight className="w-3 h-3" />
           </button>
         </div>
@@ -113,14 +127,21 @@ export function LandingPage({ onOpenAuth }: LandingPageProps) {
           <button
             id="hero-cta-start-btn"
             type="button"
-            onClick={onOpenAuth}
-            className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 font-semibold text-sm hover:opacity-95 transition-all shadow-lg flex items-center justify-center space-x-2.5 cursor-pointer active:scale-98"
+            onClick={handleLogin}
+            disabled={isLoggingIn}
+            className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 font-semibold text-sm hover:opacity-95 transition-all shadow-lg flex items-center justify-center space-x-2.5 cursor-pointer active:scale-98 disabled:opacity-70"
           >
-            <Github className="w-5 h-5" />
-            <span>{language === "pt" ? "Entrar com GitHub" : "Sign in with GitHub"}</span>
-            <ArrowRight className="w-4 h-4 ml-1 opacity-70" />
+            {isLoggingIn ? <Sparkles className="w-5 h-5 animate-spin" /> : <Github className="w-5 h-5" />}
+            <span>{language === "pt" ? (isLoggingIn ? "Conectando..." : "Entrar com GitHub") : (isLoggingIn ? "Connecting..." : "Sign in with GitHub")}</span>
+            {!isLoggingIn && <ArrowRight className="w-4 h-4 ml-1 opacity-70" />}
           </button>
         </div>
+
+        {loginError && (
+          <div className="mt-6 p-3 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 text-red-600 dark:text-red-400 text-xs max-w-sm mx-auto">
+            {loginError}
+          </div>
+        )}
 
         {/* Evidence loop indicators */}
         <div className="mt-14 pt-8 border-t border-zinc-200/50 dark:border-zinc-800/50 flex flex-wrap items-center justify-center gap-x-8 gap-y-3 text-xs text-zinc-500 dark:text-zinc-400 font-mono">

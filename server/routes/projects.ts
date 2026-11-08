@@ -500,7 +500,7 @@ projectsRouter.get("/", requireFirebaseUser, async (req: AuthenticatedRequest, r
       const cleanId = validateFirestoreDocPath(requestedId);
       if (!cleanId) return res.status(400).json({ error: "A valid, non-empty projectId is required." });
 
-      const context = await loadProjectContext(cleanId, req.user?.uid || "github-user", req.firebaseToken);
+      const context = await loadProjectContext(cleanId, req.user?.uid || "github-user", req.firebaseToken || req.githubToken);
       if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
 
       const statistics = await computeProjectStatistics(context, githubToken);
@@ -523,11 +523,14 @@ projectsRouter.get("/", requireFirebaseUser, async (req: AuthenticatedRequest, r
     }
 
     // List all projects for current user using authenticated token
+    // List all projects for current user using REST API
     let projectsList: any[] = [];
-    if (req.firebaseToken) {
+    const authToken = req.firebaseToken || req.githubToken;
+    if (authToken) {
       try {
-        projectsList = await listUserProjectsViaRest(req.user?.uid || "github-user", req.firebaseToken);
-      } catch {
+        projectsList = await listUserProjectsViaRest(req.user?.uid || "github-user", authToken);
+      } catch (err: any) {
+        console.warn("REST project listing failed:", err.message);
         projectsList = [];
       }
     }
@@ -579,7 +582,7 @@ projectsRouter.get("/:projectId", requireFirebaseUser, async (req: Authenticated
     if (!cleanId) return res.status(400).json({ error: "Invalid projectId." });
 
     const githubToken = (await resolveGitHubToken(req, res)) || undefined;
-    const context = await loadProjectContext(cleanId, req.user?.uid || "github-user", req.firebaseToken);
+    const context = await loadProjectContext(cleanId, req.user?.uid || "github-user", req.firebaseToken || req.githubToken);
     if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
 
     const statistics = await computeProjectStatistics(context, githubToken);
@@ -600,7 +603,7 @@ projectsRouter.get("/analysis-jobs/latest", requireFirebaseUser, async (req: Aut
   try {
     const projectId = validateFirestoreDocPath(req.query.projectId);
     if (!projectId) return res.status(400).json({ error: "A valid, non-empty projectId is required." });
-    const context = await loadProjectContext(projectId, req.user?.uid || "github-user", req.firebaseToken);
+    const context = await loadProjectContext(projectId, req.user?.uid || "github-user", req.firebaseToken || req.githubToken);
     if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
     const jobs = Array.isArray(context.project.analysisJobs)
       ? [...context.project.analysisJobs]

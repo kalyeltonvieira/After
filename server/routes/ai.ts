@@ -21,7 +21,7 @@ function resolveRequestGitHubToken(req: AuthenticatedRequest): string | undefine
 aiRouter.post("/why", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
   const { nodeName, nodeType, projectId } = req.body;
   const uid = req.user?.uid || "github-user";
-  const context = projectId ? await loadProjectContext(String(projectId), uid) : null;
+  const context = projectId ? await loadProjectContext(String(projectId), uid, req.firebaseToken || req.githubToken) : null;
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
   const projectContext: any = context.project;
   const recentEvents = context.timeline;
@@ -216,7 +216,7 @@ aiRouter.post("/ask", requireFirebaseUser, async (req: AuthenticatedRequest, res
   } = req.body;
 
   const uid = req.user?.uid || "github-user";
-  const context = projectId ? await loadProjectContext(String(projectId), uid) : null;
+  const context = projectId ? await loadProjectContext(String(projectId), uid, req.firebaseToken || req.githubToken) : null;
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
   if (!question || typeof question !== "string") {
     return res.status(400).json({ error: "question is required" });
@@ -446,7 +446,7 @@ Answer the user's question using the repository evidence above. Keep the answer 
 aiRouter.post("/change-analysis", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
   const { projectId, sha, path, pullRequestNumber, question } = req.body;
   const uid = req.user?.uid || "github-user";
-  const context = projectId ? await loadProjectContext(String(projectId), uid) : null;
+  const context = projectId ? await loadProjectContext(String(projectId), uid, req.firebaseToken || req.githubToken) : null;
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
   if (!sha && !path) return res.status(400).json({ error: "sha or path is required." });
 
@@ -689,7 +689,7 @@ ${JSON.stringify(evidence, null, 2)}`;
 aiRouter.post("/analyze-insights", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
   const { projectId } = req.body;
   const uid = req.user?.uid || "github-user";
-  const context = projectId ? await loadProjectContext(String(projectId), uid) : null;
+  const context = projectId ? await loadProjectContext(String(projectId), uid, req.firebaseToken || req.githubToken) : null;
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
   const project = context.project;
   const events = context.timeline;
@@ -780,7 +780,7 @@ Perform a deep architectural and evolutionary scan.`;
 aiRouter.post("/structure-experiment", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
   const { objective, projectId } = req.body;
   const uid = req.user?.uid || "github-user";
-  const context = projectId ? await loadProjectContext(String(projectId), uid) : null;
+  const context = projectId ? await loadProjectContext(String(projectId), uid, req.firebaseToken || req.githubToken) : null;
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
   const projectContext: any = context.project;
 

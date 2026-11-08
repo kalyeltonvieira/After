@@ -7,8 +7,6 @@ import { ProjectProvider, useProject } from "./context/ProjectContext";
 import { ToastProvider } from "./context/ToastContext";
 import { LandingPage } from "./pages/LandingPage";
 import { GitHubAuthPage } from "./pages/GitHubAuthPage";
-import { AuthModal } from "./pages/AuthModal";
-import { OnboardingModal } from "./pages/OnboardingModal";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { ConnectProjectPage } from "./pages/ConnectProjectPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -37,9 +35,8 @@ function MainApp() {
   const [currentView, setCurrentView] = useState<string>("overview");
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authModalMode, setAuthModalMode] = useState<"signin" | "signup">("signin");
   const [isCmdPaletteOpen, setIsCmdPaletteOpen] = useState(false);
+  const [forceDashboard, setForceDashboard] = useState(false);
 
   useEffect(() => {
     const press = (event: PointerEvent) => {
@@ -71,6 +68,8 @@ function MainApp() {
     return () => window.removeEventListener("keydown", handleSidebarShortcut);
   }, []);
 
+
+
   // Instead of showing a full-screen loader, render the LandingPage immediately if auth is loading, 
   // or allow the MainApp to handle user-null state.
   if (authLoading) {
@@ -85,26 +84,17 @@ function MainApp() {
 
   // If user is not logged in:
   if (!user) {
-    if (isAuthModalOpen) {
-      return (
-        <GitHubAuthPage
-          onBackToLanding={() => setIsAuthModalOpen(false)}
-          onComplete={() => setIsAuthModalOpen(false)}
-        />
-      );
-    }
-    return (
-      <LandingPage
-        onOpenAuth={() => setIsAuthModalOpen(true)}
-      />
-    );
+    return <LandingPage />;
   }
 
   // If user is logged in but has no projects yet, show onboarding repository selection
-  if (!loadingProjects && projects.length === 0 && currentView !== "connect-project") {
+  if (!loadingProjects && projects.length === 0 && currentView !== "connect-project" && !forceDashboard) {
     return (
       <GitHubAuthPage
-        onComplete={() => setCurrentView("overview")}
+        onComplete={() => {
+          setForceDashboard(true);
+          setCurrentView("overview");
+        }}
       />
     );
   }
@@ -200,12 +190,6 @@ function MainApp() {
         onNavigate={(view) => setCurrentView(view)}
         openCreateProject={() => setCurrentView("connect-project")}
       />
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-        defaultMode={authModalMode}
-      />
-      <OnboardingModal />
     </div>
   );
 }

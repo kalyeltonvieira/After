@@ -1,6 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
 import { getApps, initializeApp, applicationDefault } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 import fs from "node:fs";
 import path from "node:path";
@@ -113,16 +112,6 @@ async function authenticateRequest(req: AuthenticatedRequest): Promise<boolean> 
     return true;
   }
 
-  if (token.split(".").length === 3) {
-    try {
-      const verifiedUser = await getAuth(adminApp).verifyIdToken(token);
-      req.user = { uid: verifiedUser.uid, login: verifiedUser.email || verifiedUser.uid, email: verifiedUser.email };
-      req.firebaseToken = token;
-      return true;
-    } catch {
-      return false;
-    }
-  }
   return false;
 }
 

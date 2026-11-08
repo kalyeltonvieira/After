@@ -36,11 +36,6 @@ interface AuthContextType {
   }) => Promise<void>;
   checkUsernameAvailable: (username: string) => Promise<boolean>;
   deleteUserAccount: () => Promise<void>;
-  // Legacy stubs kept for backwards compatibility
-  signInWithEmail: (email: string, password: string) => Promise<void>;
-  createAccount: (email: string, password: string) => Promise<void>;
-  resetPassword: (email: string) => Promise<void>;
-  addEmailPassword: (email: string, password: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -167,97 +162,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await fetch("/api/projects/github-auth-url");
       const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data.url) {
-        throw new Error(data.error || "Não foi possível obter a URL de autorização do GitHub.");
+      if (response.ok && data.url) {
+        window.location.href = data.url;
+        // The page redirects, but we return a never-resolving promise to prevent
+        // the caller from proceeding in the current execution context.
+        return new Promise(() => {});
+      } else {
+        throw new Error(data.error || "Não foi possível obter a URL de autorização.");
       }
-
-      const width = 600;
-      const height = 700;
-      const left = window.screenX + (window.outerWidth - width) / 2;
-      const top = window.screenY + (window.outerHeight - height) / 2;
-
-      const authWindow = window.open(
-        data.url,
-        "github_oauth",
-        `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes`
-      );
-
-      if (!authWindow) {
-        throw new Error("O navegador bloqueou a janela pop-up. Por favor, permita pop-ups para fazer login.");
-      }
-
-      return new Promise<GitHubAuthUser>((resolve, reject) => {
-        let isDone = false;
-
-        const handleMessage = async (event: MessageEvent) => {
-          const origin = event.origin;
-          const isAllowed =
-            origin === window.location.origin ||
-            origin.endsWith(".run.app") ||
-            origin.includes("localhost");
-
-          if (!isAllowed) return;
-
-          if (event.data?.type === "OAUTH_AUTH_SUCCESS") {
-            isDone = true;
-            window.removeEventListener("message", handleMessage);
-            clearInterval(timer);
-
-            let rawUser = event.data.user;
-            if (!rawUser) {
-              try {
-                const userRes = await fetch("/api/projects/github-user", { credentials: "include" });
-                if (userRes.ok) {
-                  const d = await userRes.json();
-                  rawUser = d.user;
-                }
-              } catch {}
-            }
-
-            const enriched = enrichGitHubUser(rawUser || { login: "github-user" });
-            setUser(enriched);
-            localStorage.setItem(CACHED_USER_KEY, JSON.stringify(enriched));
-            setProfile({
-              id: enriched.login,
-              email: enriched.email || "",
-              displayName: enriched.name || enriched.login,
-              username: enriched.login,
-              photoURL: enriched.avatar_url,
-              bio: enriched.bio || "",
-              createdAt: new Date().toISOString(),
-              preferences: DEFAULT_PREFERENCES,
-            });
-            resolve(enriched);
-          }
-        };
-
-        window.addEventListener("message", handleMessage);
-
-        const timer = setInterval(() => {
-          if (authWindow.closed) {
-            clearInterval(timer);
-            window.removeEventListener("message", handleMessage);
-            if (!isDone) {
-              // Check if cookie was set regardless
-              fetch("/api/projects/github-user", { credentials: "include" })
-                .then((r) => r.json())
-                .then((d) => {
-                  if (d?.user) {
-                    const enriched = enrichGitHubUser(d.user);
-                    setUser(enriched);
-                    localStorage.setItem(CACHED_USER_KEY, JSON.stringify(d.user));
-                    resolve(enriched);
-                  } else {
-                    reject(new Error("A janela de autorização do GitHub foi fechada antes de concluir o login."));
-                  }
-                })
-                .catch(() => {
-                  reject(new Error("A janela de autorização do GitHub foi fechada."));
-                });
-            }
-          }
-        }, 800);
-      });
     } catch (err: any) {
       throw err;
     }
@@ -311,15 +223,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await signOut();
   };
 
-  // Stubs for legacy email auth interfaces
-  const signInWithEmail = async () => {
-    throw new Error("O AFTER utiliza autenticação exclusiva via GitHub. Por favor, use 'Entrar com GitHub'.");
-  };
-  const createAccount = async () => {
-    throw new Error("O AFTER utiliza autenticação exclusiva via GitHub. Por favor, use 'Entrar com GitHub'.");
-  };
-  const resetPassword = async () => {};
-  const addEmailPassword = async () => {};
 
   return (
     <AuthContext.Provider
@@ -337,10 +240,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         completeOnboarding,
         checkUsernameAvailable,
         deleteUserAccount,
-        signInWithEmail,
-        createAccount,
-        resetPassword,
-        addEmailPassword,
       }}
     >
       {children}

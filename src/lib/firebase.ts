@@ -1,11 +1,4 @@
 import { initializeApp } from "firebase/app";
-import {
-  initializeAuth,
-  indexedDBLocalPersistence,
-  browserLocalPersistence,
-  browserSessionPersistence,
-  browserPopupRedirectResolver,
-} from "firebase/auth";
 import { getFirestore, doc, getDocFromServer } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import firebaseConfig from "../../firebase-applet-config.json";
@@ -15,14 +8,6 @@ const app = initializeApp(firebaseConfig);
 
 // CRITICAL: Must include firestoreDatabaseId parameter as mandated by skill
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = initializeAuth(app, {
-  persistence: [
-    indexedDBLocalPersistence,
-    browserLocalPersistence,
-    browserSessionPersistence,
-  ],
-  popupRedirectResolver: browserPopupRedirectResolver,
-});
 export const storage = getStorage(app);
 
 export enum OperationType {
@@ -58,18 +43,7 @@ export function handleFirestoreError(
 ): never {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo:
-        auth.currentUser?.providerData?.map((provider) => ({
-          providerId: provider.providerId,
-          email: provider.email,
-        })) || [],
-    },
+    authInfo: {},
     operationType,
     path,
   };

@@ -15,8 +15,10 @@ import {
   RefreshCw,
   LogOut,
   ExternalLink,
+  X,
 } from "lucide-react";
 import { PixelCanvas } from "../components/PixelCanvas";
+import { OnboardingOverlay } from "../components/OnboardingOverlay";
 import { useAuth } from "../context/AuthContext";
 import { useProject } from "../context/ProjectContext";
 import { useLanguage } from "../context/LanguageContext";
@@ -44,6 +46,7 @@ export function GitHubAuthPage({ onBackToLanding, onComplete }: GitHubAuthPagePr
   const [selectedFilter, setSelectedFilter] = useState<"all" | "public" | "private" | "ts">("all");
   const [connectingRepo, setConnectingRepo] = useState<string | null>(null);
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   // Determine active step: "login" if not authenticated, "onboarding" if authenticated
   const step = user ? "onboarding" : "login";
@@ -99,9 +102,8 @@ export function GitHubAuthPage({ onBackToLanding, onComplete }: GitHubAuthPagePr
         repository: repo.full_name,
         branch: repo.default_branch || "main",
       });
-      if (onComplete) {
-        onComplete();
-      }
+      // Show onboarding before completing
+      setShowOnboarding(true);
     } catch (err: any) {
       setConnectError(err?.message || (isPt ? "Erro ao importar este repositório." : "Failed to import this repository."));
     } finally {
@@ -464,6 +466,16 @@ export function GitHubAuthPage({ onBackToLanding, onComplete }: GitHubAuthPagePr
         <div>AFTER · Software Evolution Platform</div>
         <div>{isPt ? "Software que não envelhece sozinho." : "Software that doesn't age alone."}</div>
       </footer>
+
+      <AnimatePresence>
+        {showOnboarding && (
+          <OnboardingOverlay 
+            language={language}
+            onComplete={() => onComplete?.()}
+            onSkip={() => onComplete?.()}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

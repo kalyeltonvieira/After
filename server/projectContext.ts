@@ -145,17 +145,30 @@ export async function loadProjectContext(
     project = await fetchProjectViaRest(projectId, token);
   }
 
-  // 2. Try Firebase Admin SDK if token was not provided or REST direct doc returned null
-  if (!project && !adminFirestoreKnownUnavailable) {
+  // Admin SDK access is restricted in pure GitHub-auth mode due to service account IAM constraints.
+  // We prioritize the authenticated Firestore REST API using the user's active session.
+  const adminAccessDisabled = true; 
+
+  // 2. Try Firebase Admin SDK (Disabled for pure GitHub sessions)
+  if (!project && !adminAccessDisabled && !adminFirestoreKnownUnavailable) {
     try {
       const db = getAdminFirestore();
       const snap = await db.collection("projects").doc(projectId).get();
       if (snap.exists) {
         projectSnap = snap;
         project = snap.data() || {};
+      } else {
+        const repoSnap = await db.collection("projects").where("repository", "==", projectId).limit(1).get();
+        if (!repoSnap.empty) {
+          projectSnap = repoSnap.docs[0];
+          project = projectSnap.data() || {};
+        }
       }
-    } catch {
-      adminFirestoreKnownUnavailable = true;
+    } catch (err: any) {
+      console.warn(`Skipping Admin Firestore for project ${projectId} (using REST fallback):`, err.message || err);
+      if (err.message?.includes("PERMISSION_DENIED")) {
+        adminFirestoreKnownUnavailable = true;
+      }
     }
   }
 
@@ -168,8 +181,20 @@ export async function loadProjectContext(
     }
   }
 
-  if (!project) return null;
-  if (project.ownerId && project.ownerId !== uid) return null;
+  if (!project) {
+    console.warn(`loadProjectContext: Project ${projectId} not found.`);
+    return null;
+  }
+  
+  if (project.ownerId && project.ownerId !== uid) {
+    // If project owner is "github-user" (from a fallback session) and current user is authenticated via GitHub, allow it.
+    if (project.ownerId === "github-user" && uid !== "github-user") {
+      // Allow current authenticated user to claim or view this project
+    } else {
+      console.warn(`loadProjectContext: Project ownership mismatch. Owner: ${project.ownerId}, Current: ${uid}`);
+      return null;
+    }
+  }
 
   let timeline: any[] = Array.isArray(project.events) ? project.events : [];
   let insights: any[] = Array.isArray(project.insights) ? project.insights : [];
