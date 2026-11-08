@@ -15,17 +15,16 @@ import { requestIdMiddleware } from "./server/observability.ts";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Preserve dev server uptime against unhandled rejections
+// Unhandled failures can leave the process in an unknown state. Log them and
+// terminate so the process supervisor can restart a clean instance.
 process.on("unhandledRejection", (reason) => {
-  console.warn("Ignored unhandledRejection to preserve dev server uptime:", (reason as any)?.message || reason);
+  console.error("Unhandled promise rejection; terminating process:", reason);
+  process.exit(1);
 });
 
 process.on("uncaughtException", (error: any) => {
-  if (error?.code === "EADDRINUSE" || String(error?.message || "").includes("EADDRINUSE")) {
-    console.error("Fatal: Port is already in use (EADDRINUSE). Exiting to permit clean restart.", error?.message || error);
-    process.exit(1);
-  }
-  console.warn("Ignored uncaughtException to preserve dev server uptime:", error?.message || error);
+  console.error("Uncaught exception; terminating process:", error);
+  process.exit(1);
 });
 
 async function startServer() {

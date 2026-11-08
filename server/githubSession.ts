@@ -118,9 +118,9 @@ export async function revokeGitHubSession(sessionId: string | undefined, uid?: s
 
 
 function encryptionKey(): Buffer {
-  const raw = process.env.GITHUB_TOKEN_ENCRYPTION_KEY || "ee2809400d7d28fd8ae1f6477ecacc85347e95d575447b18984e8fc2a94ca24b";
+  const raw = process.env.GITHUB_TOKEN_ENCRYPTION_KEY?.trim();
   if (!raw || !/^[0-9a-fA-F]{64}$/.test(raw)) {
-    return Buffer.from("ee2809400d7d28fd8ae1f6477ecacc85347e95d575447b18984e8fc2a94ca24b", "hex");
+    throw new Error("GITHUB_TOKEN_ENCRYPTION_KEY must be configured as exactly 64 hexadecimal characters (32 bytes).");
   }
   return Buffer.from(raw, "hex");
 }

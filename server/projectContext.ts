@@ -145,11 +145,12 @@ export async function loadProjectContext(
     project = await fetchProjectViaRest(projectId, token);
   }
 
-  // Admin SDK access is restricted in pure GitHub-auth mode due to service account IAM constraints.
-  // We prioritize the authenticated Firestore REST API using the user's active session.
-  const adminAccessDisabled = true; 
+  // GitHub OAuth tokens are not Firebase credentials. Use the server's configured
+  // Firebase Admin identity as the trusted Firestore access path when no Firebase
+  // ID token was supplied by a Firebase-authenticated client.
+  const adminAccessDisabled = false;
 
-  // 2. Try Firebase Admin SDK (Disabled for pure GitHub sessions)
+  // 2. Try Firebase Admin SDK using the server's application credentials
   if (!project && !adminAccessDisabled && !adminFirestoreKnownUnavailable) {
     try {
       const db = getAdminFirestore();
@@ -187,13 +188,8 @@ export async function loadProjectContext(
   }
   
   if (project.ownerId && project.ownerId !== uid) {
-    // If project owner is "github-user" (from a fallback session) and current user is authenticated via GitHub, allow it.
-    if (project.ownerId === "github-user" && uid !== "github-user") {
-      // Allow current authenticated user to claim or view this project
-    } else {
-      console.warn(`loadProjectContext: Project ownership mismatch. Owner: ${project.ownerId}, Current: ${uid}`);
-      return null;
-    }
+    console.warn(`loadProjectContext: Project ownership mismatch. Owner: ${project.ownerId}, Current: ${uid}`);
+    return null;
   }
 
   let timeline: any[] = Array.isArray(project.events) ? project.events : [];
