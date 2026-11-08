@@ -3,31 +3,58 @@ service cloud.firestore {
   match /databases/{database}/documents {
     match /test/connection {
       allow read: if true;
+      allow write: if false;
     }
 
     match /users/{userId} {
-      allow read, write: if true;
+      allow get: if request.auth != null && request.auth.uid == userId;
+      allow list: if false;
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.uid == userId;
+      allow update: if request.auth != null
+        && request.auth.uid == userId
+        && resource.data.uid == userId
+        && request.resource.data.uid == userId;
+      allow delete: if request.auth != null && request.auth.uid == userId;
     }
 
     match /usernames/{username} {
-      allow read, write: if true;
+      allow get: if true;
+      allow list: if false;
+      allow create: if request.auth != null
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if request.auth != null
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow delete: if request.auth != null
+        && resource.data.ownerUid == request.auth.uid;
     }
 
-    // GitHub OAuth tokens remain backend-only
+    // GitHub tokens are server-only. Admin SDK access is not governed by these rules.
     match /githubTokenVault/{userId} {
       allow read, write: if false;
     }
 
     match /projects/{projectId} {
-      allow read, write: if true;
+      allow get, list: if request.auth != null
+        && resource.data.ownerId == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update: if request.auth != null
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == request.auth.uid;
+      allow delete: if request.auth != null
+        && resource.data.ownerId == request.auth.uid;
 
       match /{subcollection=**} {
-        allow read, write: if true;
+        allow read, write: if request.auth != null
+          && get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid;
       }
     }
 
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }
