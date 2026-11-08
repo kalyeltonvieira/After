@@ -337,12 +337,40 @@ export async function listUserRepositoryPage(
   const params = new URLSearchParams({
     page: String(page), per_page: String(perPage), sort, direction: "desc",
   });
+  params.set("visibility", "all");
+  params.set("affiliation", options?.affiliation || "owner,collaborator,organization_member");
+
   const res = await fetch(`https://api.github.com/user/repos?${params.toString()}`, {
     headers: getGitHubHeaders(token),
   });
   if (!res.ok) {
-    if (res.status === 401) throw new Error("GitHub token is invalid or expired.");
-    throw new Error(`Failed to list GitHub repositories: ${res.statusText}`);
+    let details = "";
+    try {
+      const payload = await res.json() as { message?: string; documentation_url?: string };
+      details = payload?.message ? `: ${payload.message}` : "";
+    } catch {
+      // GitHub may return an empty or non-JSON error response.
+    }
+    const scopes = res.headers.get("x-oauth-scopes");
+    const sso = res.headers.get("x-github-sso");
+    const hints = [
+      scopes ? `OAuth scopes granted: ${scopes || "(none reported)"}.` : "",
+      sso ? `GitHub organization SSO: ${sso}.` : "",
+    ].filter(Boolean).join(" ");
+    if (res.status === 401) {
+      throw Object.assign(new Error(`GitHub token is invalid or expired.${details}`), { status: 401 });
+    }
+    if (res.status === 403) {
+      const scopeHint = scopes && !scopes.split(",").map((scope) => scope.trim()).includes("repo")
+        ? " Reauthorize AFTER with the 'repo' OAuth scope to access private repositories."
+        : "";
+      const ssoHint = sso ? " The organization may require authorizing this OAuth app for SSO." : "";
+      throw Object.assign(
+        new Error(`GitHub refused repository listing (403)${details}. ${hints}${scopeHint}${ssoHint}`),
+        { status: 403, githubScopes: scopes || null, githubSso: sso || null }
+      );
+    }
+    throw Object.assign(new Error(`Failed to list GitHub repositories: HTTP ${res.status}${details}`), { status: res.status });
   }
   const repos = await safeJson<GitHubRepo[]>(res, "repos page");
   const link = res.headers.get("link") || "";

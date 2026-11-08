@@ -258,7 +258,14 @@ projectsRouter.get("/github-repos", requireGitHubUser, async (req: Authenticated
     const result = await listUserRepositoryPage(token, { page, per_page: perPage });
     return res.json({ ...result, page, perPage });
   } catch (err: any) {
-    return res.status(400).json({ error: err.message });
+    const status = Number(err?.status) || 400;
+    console.error("GitHub repository listing failed:", {
+      status,
+      message: err?.message || "Unknown GitHub API error",
+      scopes: err?.githubScopes || null,
+      sso: err?.githubSso || null,
+    });
+    return res.status(status).json({ error: err.message || "Failed to list GitHub repositories." });
   }
 });
 
