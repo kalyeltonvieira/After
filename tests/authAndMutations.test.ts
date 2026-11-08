@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { requireGitHubUser } from "../server/auth.js";
 import { createGitHubBranch, deleteGitHubBranch } from "../server/services/githubMutations.js";
-import { createEncryptedGitHubTokenCookie, readEncryptedGitHubTokenCookie } from "../server/githubSession.js";
+import { createEncryptedGitHubTokenCookie, readEncryptedGitHubTokenCookie, createOAuthState, consumeOAuthState } from "../server/githubSession.js";
 
 test("auth middleware rejects requests without a valid GitHub session", async () => {
   const req = { headers: {}, cookies: {} } as any;
@@ -67,4 +67,27 @@ test("branch deletion propagates GitHub failures", async () => {
     () => deleteGitHubBranch(request, "owner", "repo", "missing"),
     (error: any) => error.status === 404,
   );
+});
+
+
+test("token encryption fails closed when the encryption key is missing or invalid", () => {
+  const original = process.env.GITHUB_TOKEN_ENCRYPTION_KEY;
+  try {
+    delete process.env.GITHUB_TOKEN_ENCRYPTION_KEY;
+    assert.throws(() => createEncryptedGitHubTokenCookie("gho_secret"), /GITHUB_TOKEN_ENCRYPTION_KEY/);
+    process.env.GITHUB_TOKEN_ENCRYPTION_KEY = "not-a-hex-key";
+    assert.throws(() => createEncryptedGitHubTokenCookie("gho_secret"), /GITHUB_TOKEN_ENCRYPTION_KEY/);
+  } finally {
+    if (original === undefined) delete process.env.GITHUB_TOKEN_ENCRYPTION_KEY;
+    else process.env.GITHUB_TOKEN_ENCRYPTION_KEY = original;
+  }
+});
+
+test("OAuth state is consumed once and cannot be replayed", async () => {
+  const state = await createOAuthState("test-user");
+  const first = await consumeOAuthState(state);
+  const second = await consumeOAuthState(state);
+
+  assert.equal(first?.uid, "test-user");
+  assert.equal(second, null);
 });
