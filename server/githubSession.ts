@@ -79,10 +79,9 @@ export async function revokeGitHubSession(sessionId: string | undefined, uid?: s
 
 
 function encryptionKey(): Buffer {
-  const raw = process.env.GITHUB_TOKEN_ENCRYPTION_KEY || "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-  if (!/^[0-9a-fA-F]{64}$/.test(raw)) {
-    // Fallback safe 64-hex key if malformed
-    return Buffer.from("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "hex");
+  const raw = process.env.GITHUB_TOKEN_ENCRYPTION_KEY;
+  if (!raw || !/^[0-9a-fA-F]{64}$/.test(raw)) {
+    throw new Error("GITHUB_TOKEN_ENCRYPTION_KEY must be set to 32 random bytes encoded as 64 hexadecimal characters.");
   }
   return Buffer.from(raw, "hex");
 }

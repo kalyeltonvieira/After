@@ -112,6 +112,11 @@ projectsRouter.get("/github-callback", async (req: express.Request, res: express
   if (!stateRecord) return res.status(400).send("Invalid or expired OAuth state.");
 
   try {
+    const clientId = process.env.GITHUB_CLIENT_ID;
+    const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      throw new Error("GitHub OAuth is not configured on the server.");
+    }
     // Exchange code for token
     const tokenResponse = await fetch("https://github.com/login/oauth/access_token", {
       method: "POST",
@@ -120,16 +125,16 @@ projectsRouter.get("/github-callback", async (req: express.Request, res: express
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        client_id: process.env.GITHUB_CLIENT_ID || "Ov23linus9XDzPNyi6d8",
-        client_secret: process.env.GITHUB_CLIENT_SECRET || "***REMOVED_GITHUB_OAUTH_SECRET***",
+        client_id: clientId,
+        client_secret: clientSecret,
         code,
         state,
       }),
     });
     const tokenData = await tokenResponse.json();
     if (!tokenData.access_token) {
-        console.error("GitHub OAuth token exchange failed. Response:", JSON.stringify(tokenData));
-        throw new Error("Failed to exchange code for token: " + JSON.stringify(tokenData));
+        console.error("GitHub OAuth token exchange failed.");
+        throw new Error("Failed to exchange GitHub OAuth code.");
     }
     const githubAccessToken = tokenData.access_token;
 
@@ -180,13 +185,15 @@ projectsRouter.get("/github-callback", async (req: express.Request, res: express
 
 // Construct the GitHub OAuth URL
 projectsRouter.get("/github-auth-url", requireFirebaseUser, async (req: AuthenticatedRequest, res: express.Response) => {
+  const clientId = process.env.GITHUB_CLIENT_ID;
+  if (!clientId) return res.status(503).json({ error: "GitHub OAuth is not configured on the server." });
   const state = createOAuthState(req.user!.uid);
   const protocol = req.get('x-forwarded-proto') || 'https';
   const host = req.get('x-forwarded-host') || req.get('host');
   // Use the active runtime URL or fallback to the current dev domain
   const currentHost = host && host.includes('run.app') ? host : 'ais-dev-g6ya6dmrcw76moj3b7zpt7-272061137988.us-west2.run.app';
   const baseUrl = process.env.APP_URL || `${protocol}://${currentHost}`;
-  const authUrl = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(`${baseUrl}/api/projects/github-callback`)}&scope=repo%20user:email&state=${state}`;
+  const authUrl = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(`${baseUrl}/api/projects/github-callback`)}&scope=repo%20user:email&state=${state}`;
   res.json({ url: authUrl });
 });
 
