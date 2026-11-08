@@ -11,7 +11,6 @@ export interface GitHubAuthUser {
   html_url: string;
   public_repos: number;
   bio?: string | null;
-  // Compatibility fields for legacy consumers
   uid: string;
   displayName: string | null;
   photoURL: string;
@@ -36,7 +35,6 @@ interface AuthContextType {
   }) => Promise<void>;
   checkUsernameAvailable: (username: string) => Promise<boolean>;
   deleteUserAccount: () => Promise<void>;
-  // Legacy stubs kept for backwards compatibility
   signInWithEmail: (email: string, password: string) => Promise<void>;
   createAccount: (email: string, password: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -69,7 +67,6 @@ function enrichGitHubUser(raw: any): GitHubAuthUser {
     html_url: raw?.html_url || `https://github.com/${login}`,
     public_repos: Number(raw?.public_repos) || 0,
     bio: raw?.bio || null,
-    // Compatibility fields
     uid: login,
     displayName: name,
     photoURL: avatar,
@@ -80,7 +77,7 @@ function enrichGitHubUser(raw: any): GitHubAuthUser {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<GitHubAuthUser | null>(() => {
     try {
-      const saved = localStorage.getItem(CACHED_USER_KEY);
+      const saved = sessionStorage.getItem(CACHED_USER_KEY);
       return saved ? enrichGitHubUser(JSON.parse(saved)) : null;
     } catch {
       return null;
@@ -89,7 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const [profile, setProfile] = useState<UserProfile | null>(() => {
     try {
-      const saved = localStorage.getItem(CACHED_USER_KEY);
+      const saved = sessionStorage.getItem(CACHED_USER_KEY);
       if (saved) {
         const u = JSON.parse(saved);
         return {
@@ -112,7 +109,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
-  // Restore authenticated session from backend on mount
   useEffect(() => {
     let active = true;
 
@@ -129,7 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (data?.user) {
             const enriched = enrichGitHubUser(data.user);
             setUser(enriched);
-            localStorage.setItem(CACHED_USER_KEY, JSON.stringify(data.user));
+            sessionStorage.setItem(CACHED_USER_KEY, JSON.stringify(data.user));
             setProfile({
               id: enriched.login,
               email: enriched.email || "",
@@ -144,13 +140,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return;
           }
         } else if (res.status === 401) {
-          // If server rejects session, clean local cache
-          localStorage.removeItem(CACHED_USER_KEY);
+          sessionStorage.removeItem(CACHED_USER_KEY);
           setUser(null);
           setProfile(null);
         }
       } catch {
-        // Keep cached state if offline or transient failure
+        // Keep cached session state if offline or transient failure.
       } finally {
         if (active) setLoading(false);
       }
@@ -216,7 +211,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             const enriched = enrichGitHubUser(rawUser || { login: "github-user" });
             setUser(enriched);
-            localStorage.setItem(CACHED_USER_KEY, JSON.stringify(enriched));
+            sessionStorage.setItem(CACHED_USER_KEY, JSON.stringify(enriched));
             setProfile({
               id: enriched.login,
               email: enriched.email || "",
@@ -238,14 +233,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             clearInterval(timer);
             window.removeEventListener("message", handleMessage);
             if (!isDone) {
-              // Check if cookie was set regardless
               fetch("/api/projects/github-user", { credentials: "include" })
                 .then((r) => r.json())
                 .then((d) => {
                   if (d?.user) {
                     const enriched = enrichGitHubUser(d.user);
                     setUser(enriched);
-                    localStorage.setItem(CACHED_USER_KEY, JSON.stringify(d.user));
+                    sessionStorage.setItem(CACHED_USER_KEY, JSON.stringify(d.user));
                     resolve(enriched);
                   } else {
                     reject(new Error("A janela de autorização do GitHub foi fechada antes de concluir o login."));
@@ -274,8 +268,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         credentials: "include",
       }).catch(() => undefined);
     } finally {
-      localStorage.removeItem(CACHED_USER_KEY);
-      sessionStorage.clear();
+      sessionStorage.removeItem(CACHED_USER_KEY);
       setUser(null);
       setProfile(null);
       setNeedsOnboarding(false);
@@ -311,7 +304,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await signOut();
   };
 
-  // Stubs for legacy email auth interfaces
   const signInWithEmail = async () => {
     throw new Error("O AFTER utiliza autenticação exclusiva via GitHub. Por favor, use 'Entrar com GitHub'.");
   };
