@@ -1432,8 +1432,59 @@ projectsRouter.post("/analyze-repository", requireGitHubUser, async (req: Authen
       }
     }
 
+    // Persist the analyzed project through the server's trusted Firestore identity.
+    // The browser may be unable to write directly when client-side Firestore rules
+    // are stricter; without this write the UI can show a local cached project while
+    // telemetry endpoints correctly report that no owned server-side project exists.
+    const requestedProjectId = validateFirestoreDocPath(req.body?.projectId);
+    if (!requestedProjectId) {
+      return res.status(400).json({ error: "A valid projectId is required to save repository analysis." });
+    }
+
+    const ownerId = req.user?.uid;
+    if (!ownerId) {
+      return res.status(401).json({ error: "Authenticated GitHub user identity is missing." });
+    }
+
+    const projectRef = getAdminFirestore().collection("projects").doc(requestedProjectId);
+    const existingProject = await projectRef.get();
+    const existingOwnerId = existingProject.exists ? existingProject.get("ownerId") : undefined;
+
+    if (existingOwnerId && existingOwnerId !== ownerId) {
+      return res.status(403).json({
+        error: "This project belongs to a different account. Reconnect or create the project under the authenticated GitHub account.",
+      });
+    }
+
+    const analyzedProject = {
+      id: requestedProjectId,
+      ownerId,
+      name: repoData.name,
+      description: repoData.description || `Monitored GitHub repository (${repoData.full_name})`,
+      repository: sanitizeGitHubRepo(repoData.full_name) || `${owner}/${repo}`,
+      branch,
+      defaultBranch: repoData.default_branch || "main",
+      framework: detectedFramework,
+      language: detectedLanguage,
+      stars: repoData.stargazers_count || 0,
+      openIssues: repoData.open_issues_count || 0,
+      githubConnected: true,
+      telemetryConnected: false,
+      webhookConfigured,
+      graphNodes,
+      graphEdges,
+      events: realEvents,
+      insights: realInsights,
+      memoryEntries: observedMemoryEntries,
+      updatedAt: new Date().toISOString(),
+      ...(existingProject.exists ? {} : { createdAt: new Date().toISOString() }),
+    };
+
+    await projectRef.set(analyzedProject, { merge: true });
+
     // Return real extracted architecture
     return res.json({
+      projectId: requestedProjectId,
       project: {
         name: repoData.name,
         description: repoData.description || `Monitored GitHub repository (${repoData.full_name})`,
