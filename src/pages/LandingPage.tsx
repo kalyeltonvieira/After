@@ -22,7 +22,7 @@ import { useLanguage } from "../context/LanguageContext";
 import { useTheme } from "../context/ThemeContext";
 
 interface LandingPageProps {
-  onOpenAuth: (mode: "signin" | "signup") => void;
+  onOpenAuth: () => void;
 }
 
 export function LandingPage({ onOpenAuth }: LandingPageProps) {
@@ -65,18 +65,20 @@ export function LandingPage({ onOpenAuth }: LandingPageProps) {
           <button
             id="landing-signin-btn"
             type="button"
-            onClick={() => onOpenAuth("signin")}
-            className="text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-zinc-50 px-3.5 py-1.5 rounded-lg transition-colors cursor-pointer"
+            onClick={onOpenAuth}
+            className="text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-zinc-50 px-3.5 py-1.5 rounded-lg transition-colors cursor-pointer inline-flex items-center space-x-1.5"
           >
-            {language === "pt" ? "Entrar" : "Sign in"}
+            <Github className="w-3.5 h-3.5" />
+            <span>{language === "pt" ? "Entrar com GitHub" : "Sign in with GitHub"}</span>
           </button>
           <button
             id="landing-getstarted-btn"
             type="button"
-            onClick={() => onOpenAuth("signup")}
-            className="text-xs font-medium px-4 py-2 rounded-full bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:opacity-90 transition-all shadow-xs cursor-pointer active:scale-98"
+            onClick={onOpenAuth}
+            className="text-xs font-medium px-4 py-2 rounded-full bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:opacity-90 transition-all shadow-xs cursor-pointer active:scale-98 inline-flex items-center space-x-1.5"
           >
-            {language === "pt" ? "Começar Agora" : "Get Started"}
+            <span>{language === "pt" ? "Começar Agora" : "Get Started"}</span>
+            <ArrowRight className="w-3 h-3" />
           </button>
         </div>
       </nav>
@@ -111,11 +113,12 @@ export function LandingPage({ onOpenAuth }: LandingPageProps) {
           <button
             id="hero-cta-start-btn"
             type="button"
-            onClick={() => onOpenAuth("signup")}
-            className="w-full sm:w-auto px-7 py-3.5 rounded-full bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-medium text-sm hover:opacity-90 transition-all shadow-sm flex items-center justify-center space-x-2 cursor-pointer active:scale-98"
+            onClick={onOpenAuth}
+            className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 font-semibold text-sm hover:opacity-95 transition-all shadow-lg flex items-center justify-center space-x-2.5 cursor-pointer active:scale-98"
           >
-            <span>{language === "pt" ? "Começar agora" : "Get started"}</span>
-            <ArrowRight className="w-4 h-4" />
+            <Github className="w-5 h-5" />
+            <span>{language === "pt" ? "Entrar com GitHub" : "Sign in with GitHub"}</span>
+            <ArrowRight className="w-4 h-4 ml-1 opacity-70" />
           </button>
         </div>
 

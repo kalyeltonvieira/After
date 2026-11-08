@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ProjectProvider, useProject } from "./context/ProjectContext";
 import { ToastProvider } from "./context/ToastContext";
 import { LandingPage } from "./pages/LandingPage";
+import { GitHubAuthPage } from "./pages/GitHubAuthPage";
 import { AuthModal } from "./pages/AuthModal";
 import { OnboardingModal } from "./pages/OnboardingModal";
 import { ProjectsPage } from "./pages/ProjectsPage";
@@ -82,22 +83,29 @@ function MainApp() {
     );
   }
 
-  // Not logged in: Show pristine Landing Page
+  // If user is not logged in:
   if (!user) {
+    if (isAuthModalOpen) {
+      return (
+        <GitHubAuthPage
+          onBackToLanding={() => setIsAuthModalOpen(false)}
+          onComplete={() => setIsAuthModalOpen(false)}
+        />
+      );
+    }
     return (
-      <>
-        <LandingPage
-          onOpenAuth={(mode) => {
-            setAuthModalMode(mode);
-            setIsAuthModalOpen(true);
-          }}
-        />
-        <AuthModal
-          isOpen={isAuthModalOpen}
-          onClose={() => setIsAuthModalOpen(false)}
-          defaultMode={authModalMode}
-        />
-      </>
+      <LandingPage
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+      />
+    );
+  }
+
+  // If user is logged in but has no projects yet, show onboarding repository selection
+  if (!loadingProjects && projects.length === 0 && currentView !== "connect-project") {
+    return (
+      <GitHubAuthPage
+        onComplete={() => setCurrentView("overview")}
+      />
     );
   }
 

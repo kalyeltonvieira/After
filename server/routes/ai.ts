@@ -9,7 +9,8 @@ import { isSensitiveFilePath, redactSecrets } from "../services/sensitiveFileFil
 export const aiRouter = Router();
 
 function resolveRequestGitHubToken(req: AuthenticatedRequest): string | undefined {
-  const sessionToken = getGitHubToken(req.cookies?.after_github_session, req.user!.uid);
+  const uid = req.user?.uid || "github-user";
+  const sessionToken = getGitHubToken(req.cookies?.after_github_session, uid);
   if (sessionToken) return sessionToken;
 
   return undefined;
@@ -19,7 +20,8 @@ function resolveRequestGitHubToken(req: AuthenticatedRequest): string | undefine
 // Endpoint: Why? Engine
 aiRouter.post("/why", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
   const { nodeName, nodeType, projectId } = req.body;
-  const context = projectId ? await loadProjectContext(String(projectId), req.user!.uid) : null;
+  const uid = req.user?.uid || "github-user";
+  const context = projectId ? await loadProjectContext(String(projectId), uid) : null;
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
   const projectContext: any = context.project;
   const recentEvents = context.timeline;
@@ -213,7 +215,8 @@ aiRouter.post("/ask", requireFirebaseUser, async (req: AuthenticatedRequest, res
     history = [],
   } = req.body;
 
-  const context = projectId ? await loadProjectContext(String(projectId), req.user!.uid) : null;
+  const uid = req.user?.uid || "github-user";
+  const context = projectId ? await loadProjectContext(String(projectId), uid) : null;
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
   if (!question || typeof question !== "string") {
     return res.status(400).json({ error: "question is required" });
@@ -442,7 +445,8 @@ Answer the user's question using the repository evidence above. Keep the answer 
 // Endpoint: Change Analysis (evidence extraction + AI interpretation)
 aiRouter.post("/change-analysis", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
   const { projectId, sha, path, pullRequestNumber, question } = req.body;
-  const context = projectId ? await loadProjectContext(String(projectId), req.user!.uid) : null;
+  const uid = req.user?.uid || "github-user";
+  const context = projectId ? await loadProjectContext(String(projectId), uid) : null;
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
   if (!sha && !path) return res.status(400).json({ error: "sha or path is required." });
 
@@ -684,7 +688,8 @@ ${JSON.stringify(evidence, null, 2)}`;
 // Endpoint: Analyze Insights (Continuous detection of anomalies, risks, cost & performance)
 aiRouter.post("/analyze-insights", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
   const { projectId } = req.body;
-  const context = projectId ? await loadProjectContext(String(projectId), req.user!.uid) : null;
+  const uid = req.user?.uid || "github-user";
+  const context = projectId ? await loadProjectContext(String(projectId), uid) : null;
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
   const project = context.project;
   const events = context.timeline;
@@ -774,7 +779,8 @@ Perform a deep architectural and evolutionary scan.`;
 // Endpoint: Structure Experiment
 aiRouter.post("/structure-experiment", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
   const { objective, projectId } = req.body;
-  const context = projectId ? await loadProjectContext(String(projectId), req.user!.uid) : null;
+  const uid = req.user?.uid || "github-user";
+  const context = projectId ? await loadProjectContext(String(projectId), uid) : null;
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
   const projectContext: any = context.project;
 

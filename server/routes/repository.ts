@@ -108,7 +108,7 @@ function safeDocPath(id: unknown): string | null {
 async function getProjectRepository(req: AuthenticatedRequest, rawProjectId: string) {
   const projectId = safeDocPath(rawProjectId);
   if (!projectId) throw Object.assign(new Error("Valid non-empty projectId is required."), { status: 400 });
-  const context = await loadProjectContext(projectId, req.user!.uid, req.firebaseToken);
+  const context = await loadProjectContext(projectId, req.user?.uid || "github-user", req.firebaseToken);
   if (!context) {
     throw Object.assign(new Error("Project not found or not owned by the current user."), { status: 404 });
   }
@@ -117,7 +117,7 @@ async function getProjectRepository(req: AuthenticatedRequest, rawProjectId: str
   if (!parsed) {
     throw Object.assign(new Error("This project is not connected to a valid GitHub repository."), { status: 400 });
   }
-  const uid = req.user!.uid;
+  const uid = req.user?.uid || "github-user";
   let token = getGitHubToken(req.cookies?.after_github_session, uid)
     || readEncryptedGitHubTokenCookie(req.cookies?.after_github_token)
     || undefined;
@@ -701,7 +701,7 @@ repositoryRouter.get("/global-search", async (req: AuthenticatedRequest, res) =>
     let projects: any[] = [];
     if (req.firebaseToken) {
       try {
-        projects = await listUserProjectsViaRest(req.user!.uid, req.firebaseToken);
+        projects = await listUserProjectsViaRest(req.user?.uid || "github-user", req.firebaseToken);
       } catch {
         projects = [];
       }
@@ -710,6 +710,7 @@ repositoryRouter.get("/global-search", async (req: AuthenticatedRequest, res) =>
       .filter((project: any) => parseGitHubRepo(String(project.repository || "")))
       .slice(0, 20);
 
+    const userUid = req.user?.uid || "github-user";
     const results: any[] = [];
     await Promise.all(projects.map(async (project: any) => {
       const parsed = parseGitHubRepo(String(project.repository || ""));
@@ -717,22 +718,22 @@ repositoryRouter.get("/global-search", async (req: AuthenticatedRequest, res) =>
       try {
         const [code, commits, issues, pulls] = await Promise.all([
           githubFetch(`/search/code?q=${encodeURIComponent(`${q} repo:${parsed.owner}/${parsed.repo}`)}&per_page=8`, (
-          getGitHubToken(req.cookies?.after_github_session, req.user!.uid) ||
+          getGitHubToken(req.cookies?.after_github_session, userUid) ||
           String(req.headers["x-github-access-token"] || "").trim() ||
           undefined
         )),
           githubFetch(`/search/commits?q=${encodeURIComponent(`${q} repo:${parsed.owner}/${parsed.repo}`)}&per_page=8`, (
-          getGitHubToken(req.cookies?.after_github_session, req.user!.uid) ||
+          getGitHubToken(req.cookies?.after_github_session, userUid) ||
           String(req.headers["x-github-access-token"] || "").trim() ||
           undefined
         )),
           githubFetch(`/search/issues?q=${encodeURIComponent(`${q} repo:${parsed.owner}/${parsed.repo}`)}&per_page=8`, (
-          getGitHubToken(req.cookies?.after_github_session, req.user!.uid) ||
+          getGitHubToken(req.cookies?.after_github_session, userUid) ||
           String(req.headers["x-github-access-token"] || "").trim() ||
           undefined
         )),
           githubFetch(`/search/issues?q=${encodeURIComponent(`${q} repo:${parsed.owner}/${parsed.repo} is:pr`)}&per_page=8`, (
-          getGitHubToken(req.cookies?.after_github_session, req.user!.uid) ||
+          getGitHubToken(req.cookies?.after_github_session, userUid) ||
           String(req.headers["x-github-access-token"] || "").trim() ||
           undefined
         )),
@@ -748,7 +749,7 @@ repositoryRouter.get("/global-search", async (req: AuthenticatedRequest, res) =>
 
     try {
       const userSearch = await githubFetch(`/search/users?q=${encodeURIComponent(q)}&per_page=8`, (
-          getGitHubToken(req.cookies?.after_github_session, req.user!.uid) ||
+          getGitHubToken(req.cookies?.after_github_session, userUid) ||
           String(req.headers["x-github-access-token"] || "").trim() ||
           undefined
         ));
@@ -1053,7 +1054,7 @@ repositoryRouter.post("/watch", async (req: AuthenticatedRequest, res) => {
     const watchTarget = {
       id,
       projectId,
-      ownerId: req.user!.uid,
+      ownerId: req.user?.uid || "github-user",
       type,
       target,
       createdAt: existing?.createdAt || now,

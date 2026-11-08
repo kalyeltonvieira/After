@@ -49,23 +49,41 @@ async function resolveGitHubToken(
   req: AuthenticatedRequest,
   res?: Response
 ): Promise<string | null> {
-  const uid = req.user!.uid;
-  const liveToken = getGitHubToken(req.cookies?.after_github_session, uid);
+  const sessionId = req.cookies?.after_github_session;
+  const tokenCookie = req.cookies?.after_github_token;
+
+  // 1. Check live session by cookie directly
+  const liveToken = getGitHubToken(sessionId);
   if (liveToken) return liveToken;
 
-  const cookieToken = readEncryptedGitHubTokenCookie(req.cookies?.after_github_token);
+  // 2. Check encrypted token cookie
+  const cookieToken = readEncryptedGitHubTokenCookie(tokenCookie);
   if (cookieToken) return cookieToken;
+
+  // 3. Check Authorization header
+  const authHeader = req.headers.authorization || "";
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (match) {
+    const raw = match[1].trim().replace(/^["']|["']$/g, "");
+    if (raw.startsWith("gho_") || raw.startsWith("ghp_") || (raw.length >= 30 && !raw.includes("."))) {
+      return raw;
+    }
+  }
+
+  // 4. Persistent token fallback if user UID is present
+  const uid = req.user?.uid || (req.user as any)?.login;
+  if (!uid) return null;
 
   try {
     const persistedToken = await getPersistentGitHubToken(uid);
     if (!persistedToken) return null;
 
     if (res && typeof res.cookie === "function") {
-      const sessionId = createGitHubSession(uid, persistedToken);
-      res.cookie("after_github_session", sessionId, {
+      const newSessionId = createGitHubSession(uid, persistedToken);
+      res.cookie("after_github_session", newSessionId, {
         httpOnly: true,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
+        sameSite: "none",
+        secure: true,
         maxAge: 7 * 24 * 60 * 60 * 1000,
         path: "/",
       });
@@ -139,10 +157,10 @@ projectsRouter.get("/github-callback", async (req: express.Request, res: express
     const githubAccessToken = tokenData.access_token;
 
     const githubUser = await getAuthenticatedUser(githubAccessToken);
-    const sessionId = createGitHubSession(stateRecord.uid, githubAccessToken);
+    const sessionId = createGitHubSession(githubUser.login, githubAccessToken);
 
     try {
-      await persistGitHubToken(stateRecord.uid, githubAccessToken);
+      await persistGitHubToken(githubUser.login, githubAccessToken);
     } catch (persistenceError: any) {
       console.warn("GitHub token persistence skipped:", persistenceError?.message || persistenceError);
     }
@@ -167,13 +185,13 @@ projectsRouter.get("/github-callback", async (req: express.Request, res: express
         <body>
           <script>
             if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
+              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user: ${JSON.stringify(githubUser)} }, '*');
               window.close();
             } else {
               window.location.href = '/';
             }
           </script>
-          <p>Authentication successful. This window should close automatically.</p>
+          <p>Autenticação concluída com sucesso. Esta janela fechará automaticamente.</p>
         </body>
       </html>
     `);
@@ -183,30 +201,32 @@ projectsRouter.get("/github-callback", async (req: express.Request, res: express
   }
 });
 
-// Construct the GitHub OAuth URL
-projectsRouter.get("/github-auth-url", requireFirebaseUser, async (req: AuthenticatedRequest, res: express.Response) => {
+// Construct the GitHub OAuth URL (Public for login)
+projectsRouter.get("/github-auth-url", async (req: express.Request, res: express.Response) => {
   const clientId = process.env.GITHUB_CLIENT_ID;
   if (!clientId) return res.status(503).json({ error: "GitHub OAuth is not configured on the server." });
-  const state = createOAuthState(req.user!.uid);
+  const state = await createOAuthState("guest");
   const protocol = req.get('x-forwarded-proto') || 'https';
   const host = req.get('x-forwarded-host') || req.get('host');
   // Use the active runtime URL or fallback to the current dev domain
   const currentHost = host && host.includes('run.app') ? host : 'ais-dev-g6ya6dmrcw76moj3b7zpt7-272061137988.us-west2.run.app';
-  const baseUrl = process.env.APP_URL || `${protocol}://${currentHost}`;
-  const authUrl = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(`${baseUrl}/api/projects/github-callback`)}&scope=repo%20user:email&state=${state}`;
-  res.json({ url: authUrl });
+  const baseUrl = (process.env.APP_URL || `${protocol}://${currentHost}`).replace(/\/$/, "");
+  const redirectUri = `${baseUrl}/api/projects/github-callback`;
+  const authUrl = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=repo%20user:email&state=${encodeURIComponent(state)}`;
+  res.json({ configured: true, url: authUrl, redirectUri });
 });
 
 // End both browser sessions without disconnecting the persisted GitHub integration.
-projectsRouter.post("/github-session/revoke", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
-  await revokeGitHubSession(req.cookies?.after_github_session, req.user!.uid);
+projectsRouter.post("/github-session/revoke", async (req: express.Request, res: express.Response) => {
+  const sessionId = req.cookies?.after_github_session;
+  await revokeGitHubSession(sessionId);
   res.clearCookie("after_github_session", { path: "/" });
   res.clearCookie("after_github_token", { path: "/" });
   return res.json({ ok: true });
 });
 
 // Get the GitHub identity associated with the server-side session.
-projectsRouter.get("/github-user", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+projectsRouter.get("/github-user", async (req: AuthenticatedRequest, res: express.Response) => {
   const token = await resolveGitHubToken(req, res);
   if (!token) return res.status(401).json({ error: "Connect GitHub first." });
   try {
@@ -321,7 +341,7 @@ projectsRouter.post("/webhook", requireFirebaseUser, async (req: AuthenticatedRe
     return res.status(503).json({ error: "GITHUB_WEBHOOK_SECRET is not configured." });
   }
 
-  const context = await loadProjectContext(projectId, req.user!.uid, req.firebaseToken);
+  const context = await loadProjectContext(projectId, req.user?.uid || "github-user", req.firebaseToken);
   if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
 
   const token = (await resolveGitHubToken(req, res)) || undefined;
@@ -480,7 +500,7 @@ projectsRouter.get("/", requireFirebaseUser, async (req: AuthenticatedRequest, r
       const cleanId = validateFirestoreDocPath(requestedId);
       if (!cleanId) return res.status(400).json({ error: "A valid, non-empty projectId is required." });
 
-      const context = await loadProjectContext(cleanId, req.user!.uid, req.firebaseToken);
+      const context = await loadProjectContext(cleanId, req.user?.uid || "github-user", req.firebaseToken);
       if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
 
       const statistics = await computeProjectStatistics(context, githubToken);
@@ -506,7 +526,7 @@ projectsRouter.get("/", requireFirebaseUser, async (req: AuthenticatedRequest, r
     let projectsList: any[] = [];
     if (req.firebaseToken) {
       try {
-        projectsList = await listUserProjectsViaRest(req.user!.uid, req.firebaseToken);
+        projectsList = await listUserProjectsViaRest(req.user?.uid || "github-user", req.firebaseToken);
       } catch {
         projectsList = [];
       }
@@ -559,7 +579,7 @@ projectsRouter.get("/:projectId", requireFirebaseUser, async (req: Authenticated
     if (!cleanId) return res.status(400).json({ error: "Invalid projectId." });
 
     const githubToken = (await resolveGitHubToken(req, res)) || undefined;
-    const context = await loadProjectContext(cleanId, req.user!.uid, req.firebaseToken);
+    const context = await loadProjectContext(cleanId, req.user?.uid || "github-user", req.firebaseToken);
     if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
 
     const statistics = await computeProjectStatistics(context, githubToken);
@@ -580,7 +600,7 @@ projectsRouter.get("/analysis-jobs/latest", requireFirebaseUser, async (req: Aut
   try {
     const projectId = validateFirestoreDocPath(req.query.projectId);
     if (!projectId) return res.status(400).json({ error: "A valid, non-empty projectId is required." });
-    const context = await loadProjectContext(projectId, req.user!.uid, req.firebaseToken);
+    const context = await loadProjectContext(projectId, req.user?.uid || "github-user", req.firebaseToken);
     if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
     const jobs = Array.isArray(context.project.analysisJobs)
       ? [...context.project.analysisJobs]
@@ -598,7 +618,7 @@ projectsRouter.post("/analysis-jobs", requireFirebaseUser, async (req: Authentic
     const { projectId, changedFiles, removedFiles, commitSha } = req.body || {};
     const cleanProjectId = validateFirestoreDocPath(projectId);
     if (!cleanProjectId) return res.status(400).json({ error: "A valid, non-empty projectId is required." });
-    const context = await loadProjectContext(cleanProjectId, req.user!.uid, req.firebaseToken);
+    const context = await loadProjectContext(cleanProjectId, req.user?.uid || "github-user", req.firebaseToken);
     if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
     const project: any = context.project;
     const files = Array.isArray(changedFiles) ? changedFiles.filter((value: any) => typeof value === "string") : [];
@@ -607,7 +627,7 @@ projectsRouter.post("/analysis-jobs", requireFirebaseUser, async (req: Authentic
     const branch = String(project.branch || project.defaultBranch || "");
     const queued = await enqueueIncrementalAnalysis({
       projectId: cleanProjectId,
-      ownerId: req.user!.uid,
+      ownerId: req.user?.uid || "github-user",
       branch,
       changedFiles: files,
       removedFiles: removed,
@@ -625,7 +645,7 @@ projectsRouter.post("/impact", requireFirebaseUser, async (req: AuthenticatedReq
     const projectId = validateFirestoreDocPath(req.body?.projectId);
     const nodeId = typeof req.body?.nodeId === "string" && req.body.nodeId.trim() ? req.body.nodeId.trim() : null;
     if (!projectId || !nodeId) return res.status(400).json({ error: "A valid, non-empty projectId and nodeId are required." });
-    const context = await loadProjectContext(projectId, req.user!.uid, req.firebaseToken);
+    const context = await loadProjectContext(projectId, req.user?.uid || "github-user", req.firebaseToken);
     if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
     const node = context.graphNodes.find((item: any) => item.id === nodeId);
     if (!node) return res.status(404).json({ error: "Graph node not found." });
@@ -1444,7 +1464,7 @@ projectsRouter.post("/impact-analysis", requireFirebaseUser, async (req: Authent
     return res.status(400).json({ error: "projectId and nodeId are required." });
   }
 
-  const context = await loadProjectContext(projectId, req.user!.uid, req.firebaseToken);
+  const context = await loadProjectContext(projectId, req.user?.uid || "github-user", req.firebaseToken);
   if (!context) {
     return res.status(404).json({ error: "Project not found or not owned by the current user." });
   }

@@ -343,7 +343,12 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         createdAt: now,
         updatedAt: now,
       };
-      await setDoc(projectRef, sanitizeFirestoreData(pendingProject));
+      // Persist provisional project record (non-blocking if Firestore rules/network are slow)
+      try {
+        await setDoc(projectRef, sanitizeFirestoreData(pendingProject));
+      } catch (fsErr) {
+        console.warn("Could not save provisional project to Firestore, proceeding with analysis:", fsErr);
+      }
 
       const res = await fetch("/api/projects/analyze-repository", {
         method: "POST",
@@ -513,13 +518,33 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         updatedAt: now,
       };
 
-      // Firestore receives a sanitized object; optional fields are omitted, never persisted as undefined.
-      await setDoc(projectRef, sanitizeFirestoreData(newProject));
+      // Firestore receives a sanitized object; optional fields are omitted
+      try {
+        await setDoc(projectRef, sanitizeFirestoreData(newProject));
+      } catch (fsErr) {
+        console.warn("Could not save completed project to Firestore, using local cache:", fsErr);
+      }
+
+      // Persist in localStorage so project survives reload
+      try {
+        const cachedStr = localStorage.getItem(`after.cached_projects.${user.uid}`);
+        const cached = cachedStr ? JSON.parse(cachedStr) : [];
+        const existingIdx = cached.findIndex((p: Project) => p.id === newProject.id);
+        if (existingIdx >= 0) {
+          cached[existingIdx] = newProject;
+        } else {
+          cached.unshift(newProject);
+        }
+        localStorage.setItem(`after.cached_projects.${user.uid}`, JSON.stringify(cached));
+      } catch {}
+
+      setProjects((prev) => [newProject, ...prev.filter((p) => p.id !== newProject.id)]);
       setEvents(nextEvents);
       setInsights(nextInsights);
       setExperiments([]);
       setMemoryEntries(nextMemoryEntries);
       setCurrentProject(newProject);
+      setLoadingProjects(false);
       return newProject;
     } catch (err: any) {
       console.error("Connect repository error:", err);
@@ -532,7 +557,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
           updatedAt: new Date().toISOString(),
         }));
       } catch {
-        // The provisional document may not have been created (for example, permission denied).
+        // The provisional document may not have been created
       }
       throw err;
     } finally {
@@ -585,7 +610,20 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     };
 
     try {
-      await setDoc(doc(db, "projects", projectId), newProject);
+      try {
+        await setDoc(doc(db, "projects", projectId), sanitizeFirestoreData(newProject));
+      } catch (fsErr) {
+        console.warn("Could not write project to Firestore, caching locally:", fsErr);
+      }
+
+      try {
+        const cachedStr = localStorage.getItem(`after.cached_projects.${user.uid}`);
+        const cached = cachedStr ? JSON.parse(cachedStr) : [];
+        cached.unshift(newProject);
+        localStorage.setItem(`after.cached_projects.${user.uid}`, JSON.stringify(cached));
+      } catch {}
+
+      setProjects((prev) => [newProject, ...prev.filter((p) => p.id !== newProject.id)]);
       setCurrentProject(newProject);
       return newProject;
     } catch (error) {
@@ -600,8 +638,26 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     const updated = { ...data, updatedAt: now };
 
     try {
-      await updateDoc(doc(db, "projects", currentProject.id), updated);
+      try {
+        await updateDoc(doc(db, "projects", currentProject.id), sanitizeFirestoreData(updated));
+      } catch (fsErr) {
+        console.warn("Could not update project in Firestore, updating locally:", fsErr);
+      }
+
       setCurrentProject((prev) => (prev ? { ...prev, ...updated } : null));
+      setProjects((prev) => prev.map((p) => (p.id === currentProject.id ? { ...p, ...updated } : p)));
+
+      try {
+        const cachedStr = localStorage.getItem(`after.cached_projects.${user.uid}`);
+        if (cachedStr) {
+          const cached = JSON.parse(cachedStr);
+          const idx = cached.findIndex((p: Project) => p.id === currentProject.id);
+          if (idx >= 0) {
+            cached[idx] = { ...cached[idx], ...updated };
+            localStorage.setItem(`after.cached_projects.${user.uid}`, JSON.stringify(cached));
+          }
+        }
+      } catch {}
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `projects/${currentProject.id}`);
     }
@@ -612,8 +668,22 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     if (!user || !currentProject) return;
     const projectId = currentProject.id;
     try {
-      await deleteDoc(doc(db, "projects", projectId));
+      try {
+        await deleteDoc(doc(db, "projects", projectId));
+      } catch (fsErr) {
+        console.warn("Could not delete project in Firestore, deleting locally:", fsErr);
+      }
+
       setCurrentProject(null);
+      setProjects((prev) => prev.filter((p) => p.id !== projectId));
+
+      try {
+        const cachedStr = localStorage.getItem(`after.cached_projects.${user.uid}`);
+        if (cachedStr) {
+          const cached = JSON.parse(cachedStr).filter((p: Project) => p.id !== projectId);
+          localStorage.setItem(`after.cached_projects.${user.uid}`, JSON.stringify(cached));
+        }
+      } catch {}
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `projects/${projectId}`);
     }
@@ -630,11 +700,16 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       ownerId: user.uid,
     } as any;
     const nextEvents = [fullEvent, ...(currentProject.events || [])];
-    await updateDoc(doc(db, "projects", currentProject.id), {
-      events: nextEvents,
-      updatedAt: new Date().toISOString(),
-    });
-    setCurrentProject({ ...currentProject, events: nextEvents, updatedAt: new Date().toISOString() });
+    try {
+      await updateDoc(doc(db, "projects", currentProject.id), sanitizeFirestoreData({
+        events: nextEvents,
+        updatedAt: new Date().toISOString(),
+      }));
+    } catch (fsErr) {
+      console.warn("Could not save event to Firestore:", fsErr);
+    }
+    const updatedEvents = { ...currentProject, events: nextEvents, updatedAt: new Date().toISOString() };
+    setCurrentProject(updatedEvents);
     setEvents(nextEvents);
   };
 
@@ -652,11 +727,16 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       ownerId: user.uid,
     } as any;
     const nextInsights = [fullInsight, ...(currentProject.insights || [])];
-    await updateDoc(doc(db, "projects", currentProject.id), {
-      insights: nextInsights,
-      updatedAt: new Date().toISOString(),
-    });
-    setCurrentProject({ ...currentProject, insights: nextInsights, updatedAt: new Date().toISOString() });
+    try {
+      await updateDoc(doc(db, "projects", currentProject.id), sanitizeFirestoreData({
+        insights: nextInsights,
+        updatedAt: new Date().toISOString(),
+      }));
+    } catch (fsErr) {
+      console.warn("Could not save insight to Firestore:", fsErr);
+    }
+    const updatedInsights = { ...currentProject, insights: nextInsights, updatedAt: new Date().toISOString() };
+    setCurrentProject(updatedInsights);
     setInsights(nextInsights);
   };
 
@@ -675,11 +755,16 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       ownerId: user.uid,
     } as any;
     const nextExperiments = [fullExp, ...(currentProject.experiments || [])];
-    await updateDoc(doc(db, "projects", currentProject.id), {
-      experiments: nextExperiments,
-      updatedAt: new Date().toISOString(),
-    });
-    setCurrentProject({ ...currentProject, experiments: nextExperiments, updatedAt: new Date().toISOString() });
+    try {
+      await updateDoc(doc(db, "projects", currentProject.id), sanitizeFirestoreData({
+        experiments: nextExperiments,
+        updatedAt: new Date().toISOString(),
+      }));
+    } catch (fsErr) {
+      console.warn("Could not save experiment to Firestore:", fsErr);
+    }
+    const updatedExp = { ...currentProject, experiments: nextExperiments, updatedAt: new Date().toISOString() };
+    setCurrentProject(updatedExp);
     setExperiments(nextExperiments);
   };
 
@@ -689,11 +774,16 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     const nextExperiments = (currentProject.experiments || []).map((experiment) =>
       experiment.id === id ? { ...experiment, status, updatedAt: new Date().toISOString() } : experiment
     );
-    await updateDoc(doc(db, "projects", currentProject.id), {
-      experiments: nextExperiments,
-      updatedAt: new Date().toISOString(),
-    });
-    setCurrentProject({ ...currentProject, experiments: nextExperiments, updatedAt: new Date().toISOString() });
+    try {
+      await updateDoc(doc(db, "projects", currentProject.id), sanitizeFirestoreData({
+        experiments: nextExperiments,
+        updatedAt: new Date().toISOString(),
+      }));
+    } catch (fsErr) {
+      console.warn("Could not update experiment status in Firestore:", fsErr);
+    }
+    const updatedExp = { ...currentProject, experiments: nextExperiments, updatedAt: new Date().toISOString() };
+    setCurrentProject(updatedExp);
     setExperiments(nextExperiments);
   };
 

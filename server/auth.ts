@@ -68,9 +68,12 @@ export function getAdminFirestore() {
   return getFirestore(adminApp, firestoreDatabaseId);
 }
 
+import { getSession, readEncryptedGitHubTokenCookie } from "./githubSession.js";
+
 export interface AuthenticatedRequest extends Request {
-  user?: { uid: string; email?: string; [key: string]: unknown };
+  user?: { uid: string; login?: string; email?: string; [key: string]: unknown };
   firebaseToken?: string;
+  githubToken?: string;
 }
 
 export async function requireFirebaseUser(
@@ -78,44 +81,97 @@ export async function requireFirebaseUser(
   res: Response,
   next: NextFunction
 ) {
+  // 1. Check for active GitHub session cookie
+  const sessionId = req.cookies?.after_github_session;
+  if (sessionId) {
+    const session = getSession(sessionId);
+    if (session) {
+      req.user = { uid: session.uid, login: session.uid };
+      req.githubToken = session.token;
+      return next();
+    }
+  }
+
+  // 2. Check for encrypted GitHub token cookie
+  const tokenCookie = req.cookies?.after_github_token;
+  if (tokenCookie) {
+    const decrypted = readEncryptedGitHubTokenCookie(tokenCookie);
+    if (decrypted) {
+      req.user = { uid: "github-user" };
+      req.githubToken = decrypted;
+      return next();
+    }
+  }
+
+  // 3. Check Authorization header
   const header = req.headers.authorization || "";
   const match = header.match(/^Bearer\s+(.+)$/i);
-  if (!match) return res.status(401).json({ error: "Firebase authentication is required." });
-
-  try {
-    let token = match[1].trim();
-    // Remove surrounding quotes or accidental duplicated Bearer prefix
-    token = token.replace(/^["']|["']$/g, "").replace(/^bearer\s+/i, "").trim();
-    if (!token || token.split(".").length !== 3) {
-      throw new Error("Invalid JWT format (expected 3 dot-separated segments)");
+  if (match) {
+    const rawToken = match[1].trim().replace(/^["']|["']$/g, "");
+    // If it's a GitHub token format or custom session
+    if (rawToken.startsWith("gho_") || rawToken.startsWith("ghp_") || (rawToken.length >= 30 && !rawToken.includes("."))) {
+      req.user = { uid: "github-user" };
+      req.githubToken = rawToken;
+      return next();
     }
-    req.user = await getAuth(adminApp).verifyIdToken(token);
-    req.firebaseToken = token;
-    next();
-  } catch (error: any) {
-    console.error("Firebase ID token verification failed:", {
-      code: error?.code || "unknown",
-      message: error?.message || "unknown error",
-      projectId: adminApp.options.projectId || firebaseProjectId || "unknown",
-    });
-    return res.status(401).json({ error: `Invalid or expired Firebase session: ${error?.message || "Authentication failed"}` });
+
+    // Optional legacy Firebase verifyIdToken fallback
+    if (rawToken.split(".").length === 3) {
+      try {
+        req.user = await getAuth(adminApp).verifyIdToken(rawToken);
+        req.firebaseToken = rawToken;
+        return next();
+      } catch (error: any) {
+        // Fall through
+      }
+    }
   }
+
+  return res.status(401).json({ error: "Firebase authentication is required." });
 }
+
+export const requireAuth = requireFirebaseUser;
 
 export function optionalFirebaseUser(
   req: AuthenticatedRequest,
   _res: Response,
   next: NextFunction
 ) {
+  const sessionId = req.cookies?.after_github_session;
+  if (sessionId) {
+    const session = getSession(sessionId);
+    if (session) {
+      req.user = { uid: session.uid, login: session.uid };
+      req.githubToken = session.token;
+      return next();
+    }
+  }
+
+  const tokenCookie = req.cookies?.after_github_token;
+  if (tokenCookie) {
+    const decrypted = readEncryptedGitHubTokenCookie(tokenCookie);
+    if (decrypted) {
+      req.user = { uid: "github-user" };
+      req.githubToken = decrypted;
+      return next();
+    }
+  }
+
   const header = req.headers.authorization || "";
   const match = header.match(/^Bearer\s+(.+)$/i);
   if (!match) return next();
-  req.firebaseToken = match[1];
-  getAuth(adminApp)
-    .verifyIdToken(match[1])
-    .then((user) => {
-      req.user = user;
-      next();
-    })
-    .catch(() => next());
+
+  const token = match[1].trim();
+  if (token.split(".").length === 3) {
+    getAuth(adminApp)
+      .verifyIdToken(token)
+      .then((user) => {
+        req.user = user;
+        req.firebaseToken = token;
+        next();
+      })
+      .catch(() => next());
+  } else {
+    next();
+  }
 }
