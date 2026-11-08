@@ -294,12 +294,11 @@ export async function listUserRepositories(
   const startPage = options?.page || 1;
   const perPage = Math.min(options?.per_page || 100, 100);
   const sort = options?.sort || "pushed";
-  const affiliation = options?.affiliation || "owner,collaborator,organization_member";
   const allRepos: GitHubRepo[] = [];
 
   for (let page = startPage; ; page += 1) {
     const params = new URLSearchParams({
-      page: String(page), per_page: String(perPage), sort, direction: "desc", affiliation,
+      page: String(page), per_page: String(perPage), sort, direction: "desc",
     });
     const res = await fetch(`https://api.github.com/user/repos?${params.toString()}`, {
       headers: getGitHubHeaders(token),
@@ -335,9 +334,8 @@ export async function listUserRepositoryPage(
   const page = Math.max(1, Number(options?.page) || 1);
   const perPage = Math.min(Math.max(Number(options?.per_page) || 24, 1), 100);
   const sort = options?.sort || "pushed";
-  const affiliation = options?.affiliation || "owner,collaborator,organization_member";
   const params = new URLSearchParams({
-    page: String(page), per_page: String(perPage), sort, direction: "desc", affiliation,
+    page: String(page), per_page: String(perPage), sort, direction: "desc",
   });
   const res = await fetch(`https://api.github.com/user/repos?${params.toString()}`, {
     headers: getGitHubHeaders(token),

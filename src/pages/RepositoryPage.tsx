@@ -19,7 +19,7 @@ import "prismjs/components/prism-python";
 import "prismjs/components/prism-yaml";
 import "prismjs/components/prism-sql";
 import { useProject } from "../context/ProjectContext";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../lib/auth";
 import { authenticatedHeaders } from "../lib/api";
 import { EmptyState } from "../components/EmptyState";
 import { LanguageColorDot, getLanguageColorByExtension } from "../utils/languageColors";

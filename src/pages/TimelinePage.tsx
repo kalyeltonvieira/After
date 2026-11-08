@@ -12,7 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { useProject } from "../context/ProjectContext";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../lib/auth";
 import { useLanguage } from "../context/LanguageContext";
 import { ProjectEvent } from "../types";
 import { EmptyState } from "../components/EmptyState";

@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useProject } from "../context/ProjectContext";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../lib/auth";
 import { useLanguage } from "../context/LanguageContext";
 import {
   getConnectedGitHubUser,

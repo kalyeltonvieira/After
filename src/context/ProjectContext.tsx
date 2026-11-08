@@ -11,7 +11,7 @@ import {
   deleteDoc,
   updateDoc,
 } from "firebase/firestore";
-import { useAuth } from "./AuthContext";
+import { useAuth } from "../lib/auth";
 import {
   db,
   handleFirestoreError,

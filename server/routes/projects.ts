@@ -1,6 +1,6 @@
 import express, { Router } from "express";
 import type { Response } from "express";
-import { getAdminFirestore, requireFirebaseUser, type AuthenticatedRequest } from "../auth.js";
+import { getAdminFirestore, requireGitHubUser, type AuthenticatedRequest } from "../auth.js";
 import {
   createGitHubSession,
   getGitHubToken,
@@ -184,14 +184,20 @@ projectsRouter.get("/github-callback", async (req: express.Request, res: express
       <html>
         <body>
           <script>
+            const user = ${JSON.stringify(githubUser)};
+            const token = ${JSON.stringify(githubAccessToken)};
+            
+            localStorage.setItem('after_github_user', JSON.stringify(user));
+            localStorage.setItem('after_github_token', token);
+
             if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user: ${JSON.stringify(githubUser)} }, '*');
+              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user, token }, '*');
               window.close();
             } else {
               window.location.href = '/';
             }
           </script>
-          <p>Autenticação concluída com sucesso. Esta janela fechará automaticamente.</p>
+          <p>Autenticação concluída com sucesso. Redirecionando...</p>
         </body>
       </html>
     `);
@@ -212,7 +218,7 @@ projectsRouter.get("/github-auth-url", async (req: express.Request, res: express
   const currentHost = host && host.includes('run.app') ? host : 'ais-dev-g6ya6dmrcw76moj3b7zpt7-272061137988.us-west2.run.app';
   const baseUrl = (process.env.APP_URL || `${protocol}://${currentHost}`).replace(/\/$/, "");
   const redirectUri = `${baseUrl}/api/projects/github-callback`;
-  const authUrl = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=repo%20user:email&state=${encodeURIComponent(state)}`;
+  const authUrl = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=repo%20read:user%20user:email&state=${encodeURIComponent(state)}`;
   res.json({ configured: true, url: authUrl, redirectUri });
 });
 
@@ -238,7 +244,7 @@ projectsRouter.get("/github-user", async (req: AuthenticatedRequest, res: expres
 });
 
 // List every accessible repository by following GitHub pagination server-side.
-projectsRouter.get("/github-repos", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+projectsRouter.get("/github-repos", requireGitHubUser, async (req: AuthenticatedRequest, res) => {
   const token = await resolveGitHubToken(req, res);
   if (!token) return res.status(401).json({ error: "Connect GitHub first." });
   try {
@@ -252,7 +258,7 @@ projectsRouter.get("/github-repos", requireFirebaseUser, async (req: Authenticat
 });
 
 // Search public GitHub repositories
-projectsRouter.get("/github-search", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+projectsRouter.get("/github-search", requireGitHubUser, async (req: AuthenticatedRequest, res) => {
   const q = String(req.query.q || "").trim();
   if (!q) return res.json({ total_count: 0, items: [] });
 
@@ -286,7 +292,7 @@ projectsRouter.get("/github-search", requireFirebaseUser, async (req: Authentica
 });
 
 // List Branches for a repository
-projectsRouter.get("/github-branches", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+projectsRouter.get("/github-branches", requireGitHubUser, async (req: AuthenticatedRequest, res) => {
   const repository = typeof req.query.repository === "string" ? req.query.repository.trim() : "";
   const token = (await resolveGitHubToken(req, res)) || undefined;
 
@@ -308,7 +314,7 @@ projectsRouter.get("/github-branches", requireFirebaseUser, async (req: Authenti
 });
 
 // Link Repository to AFTER platform
-projectsRouter.post("/github-link", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+projectsRouter.post("/github-link", requireGitHubUser, async (req: AuthenticatedRequest, res) => {
   const { repository, branch } = req.body || {};
   const token = (await resolveGitHubToken(req, res)) || undefined;
   const webhookBaseUrl = req.headers.origin || (req.headers.host ? `${req.protocol}://${req.headers.host}` : undefined);
@@ -334,7 +340,7 @@ projectsRouter.post("/github-link", requireFirebaseUser, async (req: Authenticat
 });
 
 // Configure or repair the GitHub webhook used by Continuous Observation.
-projectsRouter.post("/webhook", requireFirebaseUser, async (req: AuthenticatedRequest, res: Response) => {
+projectsRouter.post("/webhook", requireGitHubUser, async (req: AuthenticatedRequest, res: Response) => {
   const projectId = validateFirestoreDocPath(req.body?.projectId);
   if (!projectId) return res.status(400).json({ error: "A valid, non-empty projectId is required." });
   if (!process.env.GITHUB_WEBHOOK_SECRET) {
@@ -491,7 +497,7 @@ async function computeProjectStatistics(
 }
 
 // GET /api/projects - Retrieves project statistics and metrics for the selected project, or lists user projects
-projectsRouter.get("/", requireFirebaseUser, async (req: AuthenticatedRequest, res: Response) => {
+projectsRouter.get("/", requireGitHubUser, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const requestedId = req.query.projectId || req.query.id;
     const githubToken = (await resolveGitHubToken(req, res)) || undefined;
@@ -576,7 +582,7 @@ projectsRouter.get("/", requireFirebaseUser, async (req: AuthenticatedRequest, r
 });
 
 // GET /api/projects/:projectId - Retrieves specific project with computed statistics
-projectsRouter.get("/:projectId", requireFirebaseUser, async (req: AuthenticatedRequest, res: Response) => {
+projectsRouter.get("/:projectId", requireGitHubUser, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const cleanId = validateFirestoreDocPath(req.params.projectId);
     if (!cleanId) return res.status(400).json({ error: "Invalid projectId." });
@@ -599,7 +605,7 @@ projectsRouter.get("/:projectId", requireFirebaseUser, async (req: Authenticated
 });
 
 // Persistent analysis job status and explicit incremental re-processing.
-projectsRouter.get("/analysis-jobs/latest", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+projectsRouter.get("/analysis-jobs/latest", requireGitHubUser, async (req: AuthenticatedRequest, res) => {
   try {
     const projectId = validateFirestoreDocPath(req.query.projectId);
     if (!projectId) return res.status(400).json({ error: "A valid, non-empty projectId is required." });
@@ -616,7 +622,7 @@ projectsRouter.get("/analysis-jobs/latest", requireFirebaseUser, async (req: Aut
   }
 });
 
-projectsRouter.post("/analysis-jobs", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+projectsRouter.post("/analysis-jobs", requireGitHubUser, async (req: AuthenticatedRequest, res) => {
   try {
     const { projectId, changedFiles, removedFiles, commitSha } = req.body || {};
     const cleanProjectId = validateFirestoreDocPath(projectId);
@@ -643,7 +649,7 @@ projectsRouter.post("/analysis-jobs", requireFirebaseUser, async (req: Authentic
 });
 
 // Calculate direct and transitive impact from persisted, evidence-backed graph edges.
-projectsRouter.post("/impact", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+projectsRouter.post("/impact", requireGitHubUser, async (req: AuthenticatedRequest, res) => {
   try {
     const projectId = validateFirestoreDocPath(req.body?.projectId);
     const nodeId = typeof req.body?.nodeId === "string" && req.body.nodeId.trim() ? req.body.nodeId.trim() : null;
@@ -692,7 +698,7 @@ projectsRouter.post("/impact", requireFirebaseUser, async (req: AuthenticatedReq
 
 
 // Real Repository Analysis Engine
-projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+projectsRouter.post("/analyze-repository", requireGitHubUser, async (req: AuthenticatedRequest, res) => {
   const { repository, branch: requestedBranch } = req.body || {};
   const githubToken = (await resolveGitHubToken(req, res)) || undefined;
 
@@ -1459,7 +1465,7 @@ projectsRouter.post("/analyze-repository", requireFirebaseUser, async (req: Auth
  * Impact Analysis Engine Endpoint
  * Computes direct and transitive dependencies, affected tests/APIs, and blast radius.
  */
-projectsRouter.post("/impact-analysis", requireFirebaseUser, async (req: AuthenticatedRequest, res: Response) => {
+projectsRouter.post("/impact-analysis", requireGitHubUser, async (req: AuthenticatedRequest, res: Response) => {
   const projectId = validateFirestoreDocPath(req.body?.projectId);
   const nodeId = String(req.body?.nodeId || "").trim();
 

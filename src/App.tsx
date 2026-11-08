@@ -2,7 +2,7 @@ import React, { lazy, Suspense, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ThemeProvider } from "./context/ThemeContext";
 import { LanguageProvider, useLanguage } from "./context/LanguageContext";
-import { AuthProvider, useAuth } from "./context/AuthContext";
+import { useAuth } from "./lib/auth";
 import { ProjectProvider, useProject } from "./context/ProjectContext";
 import { ToastProvider } from "./context/ToastContext";
 import { LandingPage } from "./pages/LandingPage";
@@ -198,13 +198,11 @@ export default function App() {
   return (
     <ThemeProvider>
       <LanguageProvider>
-        <AuthProvider>
-          <ProjectProvider>
-            <ToastProvider>
-              <MainApp />
-            </ToastProvider>
-          </ProjectProvider>
-        </AuthProvider>
+        <ProjectProvider>
+          <ToastProvider>
+            <MainApp />
+          </ToastProvider>
+        </ProjectProvider>
       </LanguageProvider>
     </ThemeProvider>
   );

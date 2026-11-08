@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { requireFirebaseUser } from "../server/auth.js";
+import { requireGitHubUser } from "../server/auth.js";
 import { createGitHubBranch, deleteGitHubBranch } from "../server/services/githubMutations.js";
 import { createEncryptedGitHubTokenCookie, readEncryptedGitHubTokenCookie } from "../server/githubSession.js";
 
-test("auth middleware rejects requests without a Firebase bearer token", async () => {
-  const req = { headers: {} } as any;
+test("auth middleware rejects requests without a valid GitHub session", async () => {
+  const req = { headers: {}, cookies: {} } as any;
   let status = 0;
   let payload: unknown;
   const res = {
@@ -14,10 +14,10 @@ test("auth middleware rejects requests without a Firebase bearer token", async (
   } as any;
   let called = false;
 
-  await requireFirebaseUser(req, res, () => { called = true; });
+  await requireGitHubUser(req, res, () => { called = true; });
 
   assert.equal(status, 401);
-  assert.deepEqual(payload, { error: "Firebase authentication is required." });
+  assert.deepEqual(payload, { error: "A valid authenticated session is required." });
   assert.equal(called, false);
 });
 

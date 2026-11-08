@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
 import { useTheme } from "../context/ThemeContext";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../lib/auth";
 
 export function LandingPage() {
   const { t, language, setLanguage } = useLanguage();

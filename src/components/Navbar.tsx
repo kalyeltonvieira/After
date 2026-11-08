@@ -16,7 +16,7 @@ import {
   Menu,
   Globe,
 } from "lucide-react";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../lib/auth";
 import { useProject } from "../context/ProjectContext";
 import { useTheme } from "../context/ThemeContext";
 import { useLanguage } from "../context/LanguageContext";

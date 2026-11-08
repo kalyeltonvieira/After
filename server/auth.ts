@@ -115,13 +115,13 @@ async function authenticateRequest(req: AuthenticatedRequest): Promise<boolean> 
   return false;
 }
 
-export async function requireFirebaseUser(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+export async function requireGitHubUser(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   if (await authenticateRequest(req)) return next();
   return res.status(401).json({ error: "A valid authenticated session is required." });
 }
 
-export const requireAuth = requireFirebaseUser;
+export const requireAuth = requireGitHubUser;
 
-export function optionalFirebaseUser(req: AuthenticatedRequest, _res: Response, next: NextFunction) {
+export function optionalGitHubUser(req: AuthenticatedRequest, _res: Response, next: NextFunction) {
   void authenticateRequest(req).finally(() => next());
 }

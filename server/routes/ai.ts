@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { generateContentWithFallback } from "../gemini.js";
-import { requireFirebaseUser, type AuthenticatedRequest } from "../auth.js";
+import { requireGitHubUser, type AuthenticatedRequest } from "../auth.js";
 import { loadProjectContext } from "../projectContext.js";
 import { getGitHubToken } from "../githubSession.js";
 import { parseGitHubRepo } from "../services/githubService.js";
@@ -18,7 +18,7 @@ function resolveRequestGitHubToken(req: AuthenticatedRequest): string | undefine
 
 
 // Endpoint: Why? Engine
-aiRouter.post("/why", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+aiRouter.post("/why", requireGitHubUser, async (req: AuthenticatedRequest, res) => {
   const { nodeName, nodeType, projectId } = req.body;
   const uid = req.user?.uid || "github-user";
   const context = projectId ? await loadProjectContext(String(projectId), uid, req.firebaseToken || req.githubToken) : null;
@@ -207,7 +207,7 @@ Explain WHY "${nodeName}" exists and analyze its architectural impact using the 
 });
 
 // Endpoint: Ask AFTER (contextual repository Q&A)
-aiRouter.post("/ask", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+aiRouter.post("/ask", requireGitHubUser, async (req: AuthenticatedRequest, res) => {
   const {
     question,
     projectId,
@@ -443,7 +443,7 @@ Answer the user's question using the repository evidence above. Keep the answer 
 });
 
 // Endpoint: Change Analysis (evidence extraction + AI interpretation)
-aiRouter.post("/change-analysis", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+aiRouter.post("/change-analysis", requireGitHubUser, async (req: AuthenticatedRequest, res) => {
   const { projectId, sha, path, pullRequestNumber, question } = req.body;
   const uid = req.user?.uid || "github-user";
   const context = projectId ? await loadProjectContext(String(projectId), uid, req.firebaseToken || req.githubToken) : null;
@@ -686,7 +686,7 @@ ${JSON.stringify(evidence, null, 2)}`;
 });
 
 // Endpoint: Analyze Insights (Continuous detection of anomalies, risks, cost & performance)
-aiRouter.post("/analyze-insights", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+aiRouter.post("/analyze-insights", requireGitHubUser, async (req: AuthenticatedRequest, res) => {
   const { projectId } = req.body;
   const uid = req.user?.uid || "github-user";
   const context = projectId ? await loadProjectContext(String(projectId), uid, req.firebaseToken || req.githubToken) : null;
@@ -777,7 +777,7 @@ Perform a deep architectural and evolutionary scan.`;
 });
 
 // Endpoint: Structure Experiment
-aiRouter.post("/structure-experiment", requireFirebaseUser, async (req: AuthenticatedRequest, res) => {
+aiRouter.post("/structure-experiment", requireGitHubUser, async (req: AuthenticatedRequest, res) => {
   const { objective, projectId } = req.body;
   const uid = req.user?.uid || "github-user";
   const context = projectId ? await loadProjectContext(String(projectId), uid, req.firebaseToken || req.githubToken) : null;

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { AuthenticatedRequest } from "../auth.js";
-import { requireFirebaseUser } from "../auth.js";
+import { requireGitHubUser } from "../auth.js";
 import { getAdminFirestore } from "../auth.js";
 import { loadProjectContext, listUserProjectsViaRest } from "../projectContext.js";
 
@@ -148,7 +148,7 @@ function handleRouteError(res: any, error: any) {
   });
 }
 
-repositoryRouter.use(requireFirebaseUser);
+repositoryRouter.use(requireGitHubUser);
 
 repositoryRouter.get("/info", async (req: AuthenticatedRequest, res) => {
   try {

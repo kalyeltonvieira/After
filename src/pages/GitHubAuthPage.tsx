@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { PixelCanvas } from "../components/PixelCanvas";
 import { OnboardingOverlay } from "../components/OnboardingOverlay";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../lib/auth";
 import { useProject } from "../context/ProjectContext";
 import { useLanguage } from "../context/LanguageContext";
 import { listUserRepositoryPage, getConnectedGitHubUser, type GitHubRepositoryItem } from "../services/githubService";
@@ -48,8 +48,7 @@ export function GitHubAuthPage({ onBackToLanding, onComplete }: GitHubAuthPagePr
   const [connectError, setConnectError] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
-  // Determine active step: "login" if not authenticated, "onboarding" if authenticated
-  const step = user ? "onboarding" : "login";
+
 
   // Load repositories as soon as user is authenticated
   useEffect(() => {
@@ -144,7 +143,7 @@ export function GitHubAuthPage({ onBackToLanding, onComplete }: GitHubAuthPagePr
           <span className="font-mono font-bold tracking-tight text-sm text-white">AFTER</span>
           <span className="text-zinc-600 font-mono text-xs">/</span>
           <span className="text-zinc-400 font-mono text-xs">
-            {step === "login" ? (isPt ? "Autenticação" : "Authentication") : (isPt ? "Onboarding" : "Onboarding")}
+            {isPt ? "Onboarding" : "Onboarding"}
           </span>
         </div>
 
@@ -163,72 +162,7 @@ export function GitHubAuthPage({ onBackToLanding, onComplete }: GitHubAuthPagePr
       {/* Main Centered Content Area */}
       <main className="relative z-10 flex-1 flex items-center justify-center p-4 sm:p-8">
         <AnimatePresence mode="wait">
-          {step === "login" ? (
-            /* STEP 1: Centralized GitHub Login Card */
-            <motion.div
-              key="login-step"
-              initial={{ opacity: 0, scale: 0.96, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: -12 }}
-              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-              className="w-full max-w-md"
-            >
-              <div className="relative rounded-3xl p-8 sm:p-10 bg-zinc-950/85 border border-zinc-800/90 shadow-2xl backdrop-blur-2xl text-center overflow-hidden">
-                {/* Glowing top hairline border */}
-                <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/40 to-transparent" />
-
-                {/* Subdued pill tag */}
-                <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full border border-zinc-800 bg-zinc-900/90 text-[11px] font-mono text-zinc-400 mb-6 shadow-xs">
-                  <span className="w-1.5 h-1.5 bg-white rounded-xs animate-pulse" />
-                  <span>AFTER · INTELLIGENCE</span>
-                </div>
-
-                {/* Main Titles */}
-                <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white mb-3">
-                  {isPt ? "Entrar com GitHub" : "Sign in with GitHub"}
-                </h1>
-                <p className="text-sm text-zinc-400 leading-relaxed mb-8 max-w-sm mx-auto">
-                  {isPt
-                    ? "Conecte sua conta para acessar seus repositórios, mapear grafos de arquitetura e preservar o racional do seu software."
-                    : "Connect your account to access your repositories, generate living architecture graphs, and preserve software rationale."}
-                </p>
-
-                {/* Central High-Contrast Button */}
-                <button
-                  type="button"
-                  onClick={handleGitHubLogin}
-                  disabled={isLoggingIn}
-                  className="w-full group relative inline-flex items-center justify-center space-x-3 px-6 py-4 rounded-2xl bg-white text-zinc-950 hover:bg-zinc-100 active:scale-[0.98] transition-all font-semibold text-sm shadow-xl shadow-white/5 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
-                >
-                  {isLoggingIn ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      <span>{isPt ? "Autorizando com GitHub..." : "Authorizing with GitHub..."}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Github className="w-5 h-5 transition-transform group-hover:scale-105" />
-                      <span>{isPt ? "Continuar com GitHub" : "Continue with GitHub"}</span>
-                      <ArrowRight className="w-4 h-4 text-zinc-500 group-hover:translate-x-0.5 transition-transform" />
-                    </>
-                  )}
-                </button>
-
-                {loginError && (
-                  <div className="mt-4 p-3 rounded-xl bg-red-950/50 border border-red-900/50 text-red-300 text-xs text-left">
-                    {loginError}
-                  </div>
-                )}
-
-                {/* Trust guarantee */}
-                <div className="mt-7 pt-6 border-t border-zinc-850/80 flex items-center justify-center space-x-2 text-xs text-zinc-500 font-mono">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
-                  <span>{isPt ? "OAuth direto e seguro · Sem senhas" : "Direct & secure OAuth · No passwords"}</span>
-                </div>
-              </div>
-            </motion.div>
-          ) : (
-            /* STEP 2: Onboarding - Escolha o Repositório do seu Perfil */
+            {/* STEP 2: Onboarding - Escolha o Repositório do seu Perfil */}
             <motion.div
               key="onboarding-step"
               initial={{ opacity: 0, scale: 0.98, y: 16 }}
@@ -457,7 +391,6 @@ export function GitHubAuthPage({ onBackToLanding, onComplete }: GitHubAuthPagePr
                 )}
               </div>
             </motion.div>
-          )}
         </AnimatePresence>
       </main>
 
