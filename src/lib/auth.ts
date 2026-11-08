@@ -30,7 +30,7 @@ export function setStoredToken(token: string) {
 export function getStoredUser(): GitHubAuthUser | null {
   try {
     const data = localStorage.getItem(USER_STORAGE_KEY);
-    return data ? JSON.parse(data) : null;
+    return data ? enrichGitHubUser(JSON.parse(data)) : null;
   } catch {
     return null;
   }
@@ -38,7 +38,7 @@ export function getStoredUser(): GitHubAuthUser | null {
 
 export function setStoredUser(user: GitHubAuthUser | null) {
   if (user) {
-    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(enrichGitHubUser(user)));
   } else {
     localStorage.removeItem(USER_STORAGE_KEY);
   }
