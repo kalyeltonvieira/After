@@ -98,7 +98,7 @@ export async function requireFirebaseUser(
       message: error?.message || "unknown error",
       projectId: adminApp.options.projectId || firebaseProjectId || "unknown",
     });
-    return res.status(401).json({ error: "Invalid or expired Firebase session. Please log in again." });
+    return res.status(401).json({ error: `Invalid or expired Firebase session: ${error?.message || "Authentication failed"}` });
   }
 }
 

@@ -12,17 +12,45 @@ const states = new Map<string, { uid: string; expiresAt: number }>();
 const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;
 const STATE_TTL = 10 * 60 * 1000;
 
-export function createOAuthState(uid: string) {
+export async function createOAuthState(uid: string): Promise<string> {
   const state = crypto.randomBytes(32).toString("hex");
-  states.set(state, { uid, expiresAt: Date.now() + STATE_TTL });
+  const expiresAt = Date.now() + STATE_TTL;
+  states.set(state, { uid, expiresAt });
+  try {
+    await getAdminFirestore().collection("githubOAuthStates").doc(state).set({
+      uid,
+      expiresAt,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    // In-memory state remains active as fallback
+  }
   return state;
 }
 
-export function consumeOAuthState(state: string) {
+export async function consumeOAuthState(state: string): Promise<{ uid: string; expiresAt: number } | null> {
   const record = states.get(state);
   states.delete(state);
-  if (!record || record.expiresAt < Date.now()) return null;
-  return record;
+  if (record && record.expiresAt >= Date.now()) {
+    try {
+      await getAdminFirestore().collection("githubOAuthStates").doc(state).delete();
+    } catch {}
+    return record;
+  }
+
+  try {
+    const docRef = getAdminFirestore().collection("githubOAuthStates").doc(state);
+    const snap = await docRef.get();
+    if (snap.exists) {
+      const data = snap.data();
+      await docRef.delete();
+      if (data && Number(data.expiresAt) >= Date.now() && data.uid) {
+        return { uid: String(data.uid), expiresAt: Number(data.expiresAt) };
+      }
+    }
+  } catch {}
+
+  return null;
 }
 
 export function createGitHubSession(uid: string, token: string) {

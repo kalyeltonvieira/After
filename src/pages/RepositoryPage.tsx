@@ -22,7 +22,6 @@ import { useProject } from "../context/ProjectContext";
 import { useAuth } from "../context/AuthContext";
 import { authenticatedHeaders } from "../lib/api";
 import { EmptyState } from "../components/EmptyState";
-import { getGitHubAuthUrl, openGitHubOAuthPopup, exchangeGitHubCode } from "../services/githubService";
 import { LanguageColorDot, getLanguageColorByExtension } from "../utils/languageColors";
 
 type Tab = "code" | "branches" | "commits" | "pulls" | "issues" | "releases" | "tags" | "contributors" | "activity";
@@ -239,6 +238,7 @@ function BinaryFilePreview({ file }: { file: any }) {
 
 export function RepositoryPage() {
   const { currentProject, setAiContext, setIsAskAfterOpen, updateCurrentProject, graphNodes, graphEdges } = useProject();
+  const { connectGitHub } = useAuth();
   const [tab, setTab] = useState<Tab>("code");
   const [data, setData] = useState<any>({});
   const [branches, setBranches] = useState<any[]>([]);
@@ -298,17 +298,11 @@ export function RepositoryPage() {
   const handleConnectGitHub = async () => {
     setReconnecting(true);
     try {
-      const authInfo = await getGitHubAuthUrl().catch(() => null);
-      if (authInfo?.configured && authInfo?.url) {
-        const popupRes = await openGitHubOAuthPopup(authInfo.url);
-        if (popupRes.code) {
-          await exchangeGitHubCode(popupRes.code);
-        }
-      }
+      await connectGitHub();
       await loadBranches();
       await loadTab();
     } catch (err: any) {
-      window.alert(err?.message || "Failed to connect GitHub session.");
+      console.error("Failed to connect GitHub session:", err);
     } finally {
       setReconnecting(false);
     }

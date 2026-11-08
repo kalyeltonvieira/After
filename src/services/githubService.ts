@@ -102,35 +102,18 @@ export interface LinkRepositoryResponse {
  */
 export async function getGitHubAuthUrl(): Promise<OAuthUrlResponse> {
   const res = await fetch("/api/projects/github-auth-url", { headers: await authenticatedHeaders() });
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(`Failed to fetch GitHub auth URL (${res.status})`);
+    throw new Error(data.error || `Failed to fetch GitHub auth URL (${res.status})`);
   }
-  return res.json();
+  return data;
 }
 
 /**
- * Exchange GitHub OAuth code for an access token
+ * Open the GitHub OAuth provider URL directly in a popup window
+ * and resolve when the OAuth callback posts back 'OAUTH_AUTH_SUCCESS'.
  */
-export async function exchangeGitHubCode(code: string): Promise<{ connected: boolean }> {
-  const res = await fetch("/api/projects/github-exchange", {
-    method: "POST",
-    headers: await authenticatedHeaders({}, true),
-    body: JSON.stringify({ code }),
-  });
-
-  const data = await res.json();
-  if (!res.ok || data.error) {
-    throw new Error(data.error || "Failed to exchange GitHub authorization code.");
-  }
-
-  return { connected: true };
-}
-
-/**
- * Open the GitHub OAuth provider URL directly in a popup window (as required by AI Studio iframe constraints)
- * and resolve when the OAuth callback in server/app.ts posts back 'OAUTH_AUTH_SUCCESS'.
- */
-export function openGitHubOAuthPopup(authUrl: string): Promise<{ code: string | null; error: string | null }> {
+export function openGitHubOAuthPopup(authUrl: string): Promise<boolean> {
   return new Promise((resolve, reject) => {
     const width = 600;
     const height = 700;
@@ -148,9 +131,9 @@ export function openGitHubOAuthPopup(authUrl: string): Promise<{ code: string | 
       return;
     }
 
-    // Monitor for callback postMessage
+    let resolved = false;
+
     const handleMessage = (event: MessageEvent) => {
-      // Validate origin: accept from same origin or run.app or localhost
       const origin = event.origin;
       const isAllowedOrigin =
         origin === window.location.origin ||
@@ -160,26 +143,32 @@ export function openGitHubOAuthPopup(authUrl: string): Promise<{ code: string | 
       if (!isAllowedOrigin) return;
 
       if (event.data?.type === "OAUTH_AUTH_SUCCESS") {
+        resolved = true;
         window.removeEventListener("message", handleMessage);
         clearInterval(closedCheck);
-        resolve({
-          code: event.data.code || null,
-          error: event.data.error || null,
-        });
+        resolve(true);
       }
     };
 
     window.addEventListener("message", handleMessage);
 
-    // Monitor if user closed popup without completing auth
     const closedCheck = setInterval(() => {
       if (popup.closed) {
         clearInterval(closedCheck);
         window.removeEventListener("message", handleMessage);
-        resolve({ code: null, error: "Popup was closed by user" });
+        if (!resolved) {
+          resolve(false);
+        }
       }
     }, 800);
   });
+}
+
+/**
+ * Legacy stub for code exchange (now completed automatically by server callback)
+ */
+export async function exchangeGitHubCode(_code?: string): Promise<{ connected: boolean }> {
+  return { connected: true };
 }
 
 let memoryCachedUser: GitHubUser | null = null;

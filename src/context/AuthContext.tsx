@@ -145,25 +145,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const establishGitHubSession = async (firebaseUser: User, githubAccessToken: string) => {
-    const idToken = await firebaseUser.getIdToken(true);
-    const response = await fetch("/api/projects/github-session", {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${idToken}`,
-      },
-      body: JSON.stringify({ githubAccessToken }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(
-        data.error || "Sua conta AFTER está ativa, mas não foi possível concluir a conexão com o GitHub. Tente conectar novamente."
-      );
-    }
-  };
-
   const signInWithEmail = async (email: string, password: string) => {
     const cleanEmail = email.trim().toLowerCase();
     await signInWithEmailAndPassword(auth, cleanEmail, password);
@@ -185,25 +166,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user) throw new Error("Entre na sua conta AFTER antes de conectar o GitHub.");
 
     try {
+      const token = await user.getIdToken();
       const response = await fetch("/api/projects/github-auth-url", {
         headers: {
-            Authorization: `Bearer ${await user.getIdToken()}`
-        }
+          Authorization: `Bearer ${token}`,
+        },
       });
-      if (!response.ok) throw new Error("Failed to initiate GitHub OAuth.");
-      const { url } = await response.json();
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.url) {
+        throw new Error(data.error || "Failed to initiate GitHub OAuth.");
+      }
 
-      const authWindow = window.open(url, 'oauth_popup', 'width=600,height=700');
-      if (!authWindow) throw new Error('Please allow popups for this site to connect your GitHub account.');
-      
-      return new Promise<void>((resolve, reject) => {
+      const authWindow = window.open(data.url, "oauth_popup", "width=600,height=700");
+      if (!authWindow) throw new Error("Please allow popups for this site to connect your GitHub account.");
+
+      return new Promise<void>((resolve) => {
+        let finished = false;
         const handleMessage = (event: MessageEvent) => {
-          if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
-            window.removeEventListener('message', handleMessage);
+          const origin = event.origin;
+          const isAllowedOrigin =
+            origin === window.location.origin ||
+            origin.endsWith(".run.app") ||
+            origin.includes("localhost");
+
+          if (!isAllowedOrigin) return;
+
+          if (event.data?.type === "OAUTH_AUTH_SUCCESS") {
+            finished = true;
+            window.removeEventListener("message", handleMessage);
+            clearInterval(timer);
+            setIsGitHubConnected(true);
             resolve();
           }
         };
-        window.addEventListener('message', handleMessage);
+
+        window.addEventListener("message", handleMessage);
+
+        const timer = setInterval(() => {
+          if (authWindow.closed) {
+            clearInterval(timer);
+            window.removeEventListener("message", handleMessage);
+            if (!finished) {
+              resolve();
+            }
+          }
+        }, 800);
       });
     } catch (error: any) {
       throw error;
@@ -371,13 +378,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isGitHubConnected, setIsGitHubConnected] = useState(false);
 
   useEffect(() => {
+    let active = true;
     if (user) {
-      fetch("/api/projects/github-user", {
-        headers: { Authorization: `Bearer ${user.getIdToken(true)}` }
-      }).then(res => setIsGitHubConnected(res.ok)).catch(() => setIsGitHubConnected(false));
+      user.getIdToken(true).then((token) => {
+        if (!active) return;
+        return fetch("/api/projects/github-user", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      }).then(res => {
+        if (active && res) setIsGitHubConnected(res.ok);
+      }).catch(() => {
+        if (active) setIsGitHubConnected(false);
+      });
     } else {
       setIsGitHubConnected(false);
     }
+    return () => { active = false; };
   }, [user]);
 
   return (

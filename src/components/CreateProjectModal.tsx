@@ -84,21 +84,6 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess }: CreateProject
   const [loadingStep, setLoadingStep] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  // Instant preview of GitHub user identity from Firebase session
-  useEffect(() => {
-    if (!connectedUser && firebaseUser?.photoURL) {
-      setConnectedUser({
-        id: 0,
-        login: firebaseUser.displayName || "github-user",
-        name: firebaseUser.displayName || null,
-        email: firebaseUser.email || null,
-        avatar_url: firebaseUser.photoURL,
-        html_url: `https://github.com/${firebaseUser.displayName || ""}`,
-        public_repos: 0,
-      });
-    }
-  }, [firebaseUser, connectedUser]);
-
   // Close on Escape key press
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
