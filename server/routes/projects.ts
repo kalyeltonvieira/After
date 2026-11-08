@@ -144,15 +144,15 @@ projectsRouter.get("/github-callback", async (req: express.Request, res: express
 
     res.cookie("after_github_session", sessionId, {
       httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      sameSite: "none",
+      secure: true,
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: "/",
     });
     res.cookie("after_github_token", createEncryptedGitHubTokenCookie(githubAccessToken), {
       httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      sameSite: "none",
+      secure: true,
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: "/",
     });

@@ -106,6 +106,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (currentUser) {
+        // Immediately unblock app loading while profile is fetched in background
+        setLoading(false);
+
         const userDocRef = doc(db, "users", currentUser.uid);
 
         unsubscribeProfile = onSnapshot(
@@ -124,15 +127,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setProfile(null);
               setNeedsOnboarding(true);
             }
-            setLoading(false);
           },
           (error) => {
-            handleFirestoreError(
-              error,
-              OperationType.GET,
-              `users/${currentUser.uid}`
-            );
-            setLoading(false);
+            console.warn("Could not fetch user profile from Firestore (quota or permission issue):", error?.message);
           }
         );
       } else {
