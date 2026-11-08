@@ -12,7 +12,7 @@ import {
   createOAuthState,
   consumeOAuthState,
 } from "../githubSession.js";
-import { loadProjectContext, listUserProjectsViaRest, fetchProjectViaRest } from "../projectContext.js";
+import { loadProjectContext, fetchProjectViaRest } from "../projectContext.js";
 import { enqueueIncrementalAnalysis } from "../services/incrementalAnalysis.js";
 import { persistGraphSnapshot } from "../services/graphStore.js";
 import { analyzeSource } from "../services/codeAnalyzer.js";
@@ -126,7 +126,7 @@ projectsRouter.get("/github-callback", async (req: express.Request, res: express
     return res.status(400).send("Invalid OAuth callback parameters.");
   }
 
-  const stateRecord = consumeOAuthState(state);
+  const stateRecord = await consumeOAuthState(state);
   if (!stateRecord) return res.status(400).send("Invalid or expired OAuth state.");
 
   try {
@@ -180,21 +180,26 @@ projectsRouter.get("/github-callback", async (req: express.Request, res: express
       path: "/",
     });
 
+    const appOrigin = new URL(
+      process.env.APP_URL || `${req.protocol}://${req.get("host")}`
+    ).origin;
+    const safeUserJson = JSON.stringify(githubUser).replace(/</g, "\\u003c");
+
     res.send(`
+      <!doctype html>
       <html>
         <body>
           <script>
-            const user = ${JSON.stringify(githubUser)};
-            const token = ${JSON.stringify(githubAccessToken)};
-            
-            localStorage.setItem('after_github_user', JSON.stringify(user));
-            localStorage.setItem('after_github_token', token);
-
+            const user = ${safeUserJson};
+            localStorage.setItem("after_github_user", JSON.stringify(user));
             if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user, token }, '*');
+              window.opener.postMessage(
+                { type: "OAUTH_AUTH_SUCCESS", user },
+                ${JSON.stringify(appOrigin)}
+              );
               window.close();
             } else {
-              window.location.href = '/';
+              window.location.replace("/");
             }
           </script>
           <p>Autenticação concluída com sucesso. Redirecionando...</p>
@@ -506,7 +511,7 @@ projectsRouter.get("/", requireGitHubUser, async (req: AuthenticatedRequest, res
       const cleanId = validateFirestoreDocPath(requestedId);
       if (!cleanId) return res.status(400).json({ error: "A valid, non-empty projectId is required." });
 
-      const context = await loadProjectContext(cleanId, req.user?.uid || "github-user", req.firebaseToken || req.githubToken);
+      const context = await loadProjectContext(cleanId, req.user?.uid || "github-user", req.firebaseToken);
       if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
 
       const statistics = await computeProjectStatistics(context, githubToken);
@@ -531,14 +536,15 @@ projectsRouter.get("/", requireGitHubUser, async (req: AuthenticatedRequest, res
     // List all projects for current user using authenticated token
     // List all projects for current user using REST API
     let projectsList: any[] = [];
-    const authToken = req.firebaseToken || req.githubToken;
-    if (authToken) {
-      try {
-        projectsList = await listUserProjectsViaRest(req.user?.uid || "github-user", authToken);
-      } catch (err: any) {
-        console.warn("REST project listing failed:", err.message);
-        projectsList = [];
-      }
+    try {
+      const snapshot = await getAdminFirestore()
+        .collection("projects")
+        .where("ownerId", "==", req.user?.uid || "")
+        .get();
+      projectsList = snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
+    } catch (err: any) {
+      console.error("Admin Firestore project listing failed:", err?.message || err);
+      projectsList = [];
     }
 
     const projectsWithStats = await Promise.all(
@@ -588,7 +594,7 @@ projectsRouter.get("/:projectId", requireGitHubUser, async (req: AuthenticatedRe
     if (!cleanId) return res.status(400).json({ error: "Invalid projectId." });
 
     const githubToken = (await resolveGitHubToken(req, res)) || undefined;
-    const context = await loadProjectContext(cleanId, req.user?.uid || "github-user", req.firebaseToken || req.githubToken);
+    const context = await loadProjectContext(cleanId, req.user?.uid || "github-user", req.firebaseToken);
     if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
 
     const statistics = await computeProjectStatistics(context, githubToken);
@@ -609,7 +615,7 @@ projectsRouter.get("/analysis-jobs/latest", requireGitHubUser, async (req: Authe
   try {
     const projectId = validateFirestoreDocPath(req.query.projectId);
     if (!projectId) return res.status(400).json({ error: "A valid, non-empty projectId is required." });
-    const context = await loadProjectContext(projectId, req.user?.uid || "github-user", req.firebaseToken || req.githubToken);
+    const context = await loadProjectContext(projectId, req.user?.uid || "github-user", req.firebaseToken);
     if (!context) return res.status(404).json({ error: "Project not found or not owned by the current user." });
     const jobs = Array.isArray(context.project.analysisJobs)
       ? [...context.project.analysisJobs]
